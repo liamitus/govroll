@@ -1,0 +1,37 @@
+/**
+ * Shared types for the bill reader (`/bills/[id]/read`).
+ *
+ * `ReaderSection` is the merged shape passed from the RSC page down
+ * into the (eventually) client `<BillReader>` shell — it bundles the
+ * parsed section content, the canonical slug, and the AI caption (if
+ * any) so the rendering tree never has to know about the parser or
+ * the captions table independently.
+ */
+
+import type { BillSection } from "@/lib/bill-sections";
+
+export interface ReaderSection extends BillSection {
+  /** Stable URL-safe slug, computed once via `sectionSlugsForBill`. */
+  slug: string;
+  /** Visual nesting depth (1 = top-level Section/Title/Division, deeper
+   *  = subsections). Used to map to h2/h3/h4 in the renderer. */
+  depth: number;
+  /** AI-generated one-sentence caption, or null if not yet generated
+   *  (or filtered out by validation in section-caption.ts). */
+  caption: string | null;
+}
+
+export interface ReaderBillMeta {
+  id: number;
+  billId: string;
+  title: string;
+  billType: string;
+}
+
+export interface ReaderVersionMeta {
+  id: number;
+  versionCode: string;
+  versionType: string;
+  versionDate: Date;
+  isSubstantive: boolean;
+}

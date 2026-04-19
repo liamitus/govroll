@@ -30,6 +30,7 @@ on:
     - cron: "0 */3 * * *" # fetch-bills                (every 3h)
     - cron: "20 */4 * * *" # generate-change-summaries  (every 4h, budget-gated)
     - cron: "30 */6 * * *" # refresh-bill-metadata      (every 6h)
+    - cron: "50 */6 * * *" # generate-section-captions  (every 6h, budget-gated)
     - cron: "0 0 * * *" # evaluate-budget            (daily midnight UTC)
     - cron: "0 10 * * 1" # fetch-representatives      (weekly, Mon 10:00 UTC)
 
@@ -49,6 +50,7 @@ on:
           - fetch-bills
           - generate-change-summaries
           - refresh-bill-metadata
+          - generate-section-captions
           - evaluate-budget
           - fetch-representatives
 
@@ -91,6 +93,7 @@ jobs:
             "0 */3 * * *")   echo "endpoint=fetch-bills"               >> "$GITHUB_OUTPUT" ;;
             "20 */4 * * *")  echo "endpoint=generate-change-summaries" >> "$GITHUB_OUTPUT" ;;
             "30 */6 * * *")  echo "endpoint=refresh-bill-metadata"     >> "$GITHUB_OUTPUT" ;;
+            "50 */6 * * *")  echo "endpoint=generate-section-captions" >> "$GITHUB_OUTPUT" ;;
             "0 0 * * *")     echo "endpoint=evaluate-budget"           >> "$GITHUB_OUTPUT" ;;
             "0 10 * * 1")    echo "endpoint=fetch-representatives"     >> "$GITHUB_OUTPUT" ;;
             *)

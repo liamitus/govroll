@@ -10,6 +10,7 @@ import {
 } from "@/lib/bill-helpers";
 import { BillAboutSection } from "@/components/bills/bill-about-section";
 import { SponsorCard } from "@/components/bills/sponsor-card";
+import { ReadTextCTA } from "@/components/bills/read-text-cta";
 import { BillDetailInteractive } from "./interactive";
 import { parseSponsorString, partyCodeToNames } from "@/lib/sponsor";
 import { maybeFetchBillTextInBackground } from "@/lib/on-demand-bill-text";
@@ -209,6 +210,14 @@ export default async function BillDetailPage({
         daysSinceLastAction={bill.daysSinceLastAction}
         deathReason={bill.deathReason as DeathReason | null}
       />
+
+      {/* ── Read the full text → /bills/[id]/read ── */}
+      {textVersions.length > 0 && (
+        <ReadTextCTA
+          billId={bill.id}
+          latestVersion={textVersions[textVersions.length - 1]}
+        />
+      )}
 
       {/* ── Who's behind this bill ── */}
       {parsedSponsor && (

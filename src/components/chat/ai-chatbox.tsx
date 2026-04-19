@@ -45,7 +45,62 @@ const WIDTH_STORAGE_KEY = "govroll:ai-chat:width";
 type ChatMetadata = { conversationId?: string };
 type ChatMessage = UIMessage<ChatMetadata>;
 
-function AiMessageContent({ text }: { text: string }) {
+/** Section permalinks emitted by the AI in reader mode look like
+ *  `?section=<slug>`. Intercept those links and do an in-page jump
+ *  with a brief highlight; let everything else navigate normally. */
+function isReaderCitationHref(href: string | undefined): href is string {
+  if (!href) return false;
+  if (href.startsWith("?section=")) return true;
+  // Some markdown parsers drop the leading "?" — accept both forms.
+  if (href.startsWith("section=")) return true;
+  return false;
+}
+
+function extractSectionSlug(href: string): string | null {
+  const match = href.match(/section=([^&]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function jumpToSection(slug: string) {
+  const target = document.getElementById(slug);
+  if (!target) return;
+
+  const url = new URL(window.location.href);
+  url.searchParams.set("section", slug);
+  window.history.replaceState(null, "", url.toString());
+
+  // Honor reduced-motion: skip the smooth scroll (which can be
+  // disorienting for vestibular-sensitive users) and snap.
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  target.scrollIntoView({
+    block: "start",
+    behavior: reducedMotion ? "auto" : "smooth",
+  });
+
+  // Briefly flash the section background so the eye can locate it
+  // after the scroll. CSS class drops itself off via animationend.
+  // The .is-flashing animation is itself disabled under reduced-motion
+  // by the corresponding media query in globals.css.
+  target.classList.remove("is-flashing");
+  // Force a reflow so the same class can be re-added back-to-back.
+  void target.offsetWidth;
+  target.classList.add("is-flashing");
+  const onEnd = () => {
+    target.classList.remove("is-flashing");
+    target.removeEventListener("animationend", onEnd);
+  };
+  target.addEventListener("animationend", onEnd);
+}
+
+function AiMessageContent({
+  text,
+  readerMode = false,
+}: {
+  text: string;
+  readerMode?: boolean;
+}) {
   return (
     <ReactMarkdown
       components={{
@@ -64,6 +119,35 @@ function AiMessageContent({ text }: { text: string }) {
         ol: ({ children }) => (
           <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>
         ),
+        a: ({ href, children, ...rest }) => {
+          if (readerMode && isReaderCitationHref(href)) {
+            const slug = extractSectionSlug(href);
+            return (
+              <a
+                href={href}
+                className="text-civic-gold font-medium underline-offset-2 hover:underline"
+                onClick={(e) => {
+                  if (!slug) return;
+                  e.preventDefault();
+                  jumpToSection(slug);
+                }}
+              >
+                {children}
+              </a>
+            );
+          }
+          return (
+            <a
+              href={href}
+              {...rest}
+              target={href?.startsWith("http") ? "_blank" : undefined}
+              rel={href?.startsWith("http") ? "noopener noreferrer" : undefined}
+              className="text-civic-gold underline-offset-2 hover:underline"
+            >
+              {children}
+            </a>
+          );
+        },
       }}
     >
       {text}
@@ -79,12 +163,42 @@ function messageText(message: ChatMessage): string {
     .join("");
 }
 
+export interface ChatSectionContext {
+  /** Slug of the section the user is asking about (matches the
+   *  reader's URL anchor). */
+  sectionId: string;
+  /** Heading path of the section (e.g. ["Section 5. Funding",
+   *  "(a) In general"]). */
+  sectionPath: string[];
+}
+
 export function AiChatbox({
   billId,
   onSignUp,
+  /** Reader mode: emit + intercept section permalink citations,
+   *  hide the inline input trigger (the reader provides its own
+   *  floating button), enable section-scoped chips. */
+  mode = "default",
+  /** When provided, the chatbox is "controlled" — the parent owns
+   *  the open state. Pass `controlledOpen` and `onOpenChange`
+   *  together. The inline trigger is hidden in this mode. */
+  controlledOpen,
+  onOpenChange,
+  /** Pre-scope the next question to a specific section. Sent in
+   *  the request body so the chat route biases section selection
+   *  and skips the first-turn cache. */
+  sectionContext = null,
+  /** Called when the user clicks × on the section chip to clear
+   *  the scope. If omitted, the × button is hidden. */
+  onClearSectionContext,
 }: {
   billId: number;
   onSignUp?: () => void;
+  mode?: "default" | "reader";
+  controlledOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  sectionContext?: ChatSectionContext | null;
+  onClearSectionContext?: () => void;
 }) {
   const { user } = useAuth();
   const userId = user?.id;
@@ -101,7 +215,24 @@ export function AiChatbox({
   const [textTier, setTextTier] = useState<
     "full" | "summary" | "title-only" | null
   >(null);
-  const [open, setOpen] = useState(false);
+
+  // Open state — either controlled by the parent (reader use case)
+  // or owned internally (detail page use case). The Sheet's
+  // onOpenChange always flows through `setOpen` so internal close
+  // affordances (Esc, click-outside) propagate up to the parent.
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlled) setInternalOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange],
+  );
+
+  const inReaderMode = mode === "reader";
+  const hideInlineTrigger = inReaderMode || isControlled;
   const [input, setInput] = useState("");
   const [width, setWidth] = useState<number>(() => {
     if (typeof window === "undefined") return DEFAULT_WIDTH;
@@ -121,8 +252,10 @@ export function AiChatbox({
     () => ({
       billId,
       conversationId: conversationIdRef.current,
+      sectionContext,
+      mode: inReaderMode ? "reader" : undefined,
     }),
-    [billId],
+    [billId, sectionContext, inReaderMode],
   );
 
   const transport = useMemo(
@@ -254,7 +387,7 @@ export function AiChatbox({
     }
     setOpen(true);
     submit(text);
-  }, [input, submit]);
+  }, [input, submit, setOpen]);
 
   // Drag-to-resize the sheet
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -303,55 +436,57 @@ export function AiChatbox({
 
   return (
     <>
-      {aiPaused && (
+      {aiPaused && !hideInlineTrigger && (
         <AiPausedPanel
           incomeCents={aiPaused.incomeCents}
           spendCents={aiPaused.spendCents}
         />
       )}
-      <div className="space-y-2">
-        <div className="flex gap-2">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question…"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                submitFromTrigger();
-              }
-            }}
-          />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setOpen(true)}
-            aria-label="Open full chat"
-            title="Open full chat"
-          >
-            <Maximize2 className="h-4 w-4" />
-          </Button>
-          <Button
-            size="sm"
-            onClick={submitFromTrigger}
-            disabled={!input.trim()}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
+      {!hideInlineTrigger && (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask a question…"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitFromTrigger();
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setOpen(true)}
+              aria-label="Open full chat"
+              title="Open full chat"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              onClick={submitFromTrigger}
+              disabled={!input.trim()}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
 
-        {hasHistory && (
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
-          >
-            <MessageSquare className="h-3 w-3" />
-            Continue conversation ({messages.length}{" "}
-            {messages.length === 1 ? "message" : "messages"})
-          </button>
-        )}
-      </div>
+          {hasHistory && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
+            >
+              <MessageSquare className="h-3 w-3" />
+              Continue conversation ({messages.length}{" "}
+              {messages.length === 1 ? "message" : "messages"})
+            </button>
+          )}
+        </div>
+      )}
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent width={width}>
@@ -467,7 +602,10 @@ export function AiChatbox({
                         }`}
                       >
                         {msg.role === "assistant" ? (
-                          <AiMessageContent text={messageText(msg)} />
+                          <AiMessageContent
+                            text={messageText(msg)}
+                            readerMode={inReaderMode}
+                          />
                         ) : (
                           messageText(msg)
                         )}
@@ -516,6 +654,24 @@ export function AiChatbox({
           </div>
 
           <div className="bg-background border-t px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            {sectionContext ? (
+              <div className="border-civic-gold/40 bg-civic-gold/10 mb-2 flex items-center justify-between rounded-md px-2 py-1.5 text-xs">
+                <span className="text-foreground min-w-0 truncate">
+                  <span className="text-muted-foreground">Asking about:</span>{" "}
+                  {sectionContext.sectionPath.join(" › ")}
+                </span>
+                {onClearSectionContext ? (
+                  <button
+                    type="button"
+                    onClick={onClearSectionContext}
+                    aria-label="Clear section context"
+                    className="text-muted-foreground hover:text-foreground ml-2 flex-none px-1 text-base leading-none"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex gap-2">
               <Input
                 ref={sheetInputRef}

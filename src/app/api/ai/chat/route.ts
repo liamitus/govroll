@@ -105,6 +105,14 @@ export async function POST(request: NextRequest) {
     messages?: UIMessage[];
     billId?: string | number;
     conversationId?: string | null;
+    /** Optional reader-side context: pre-scope the question to a
+     *  specific section. Biases section selection in the AI prompt
+     *  and disables the first-turn cache (since two askers may have
+     *  different scopes for the same passage). */
+    sectionContext?: { sectionId: string; sectionPath: string[] } | null;
+    /** "reader" → AI emits markdown-link citations the reader can
+     *  intercept; otherwise the default human attribution. */
+    mode?: "reader" | "default" | null;
   };
   try {
     body = await request.json();
@@ -138,6 +146,26 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  const sectionContext =
+    body.sectionContext && Array.isArray(body.sectionContext.sectionPath)
+      ? {
+          sectionId: String(body.sectionContext.sectionId ?? ""),
+          sectionPath: body.sectionContext.sectionPath.filter(
+            (s): s is string => typeof s === "string",
+          ),
+        }
+      : null;
+  const readerMode = body.mode === "reader";
+
+  // When section-scoped, prepend a relevance hint to the user message
+  // for AI biasing. We keep `userMessageText` as the original (for DB
+  // persistence + cache lookup parity) and use `aiUserMessage` only
+  // for the AI input.
+  const aiUserMessage =
+    sectionContext && sectionContext.sectionPath.length > 0
+      ? `[Asking about ${sectionContext.sectionPath.join(" > ")}]: ${userMessageText}`
+      : userMessageText;
 
   try {
     // ── Pre-stream gates ───────────────────────────────────────────────
@@ -248,8 +276,11 @@ export async function POST(request: NextRequest) {
 
     // ── First-turn cache short-circuit ─────────────────────────────────
     // Previously stored conversation messages (before this turn) count:
-    // uiMessages length minus the one we just added.
-    const isFirstTurn = uiMessages.length <= 1;
+    // uiMessages length minus the one we just added. We also skip cache
+    // when sectionContext is set — the same question scoped to two
+    // different sections may have meaningfully different answers, and
+    // collapsing them would surface the wrong one.
+    const isFirstTurn = uiMessages.length <= 1 && !sectionContext;
     if (isFirstTurn) {
       const cached = await getCachedResponse(numericBillId, userMessageText);
       if (cached) {
@@ -287,7 +318,7 @@ export async function POST(request: NextRequest) {
       const filtered = await selectSectionsForQuestion(
         bill?.title || "Unknown Bill",
         allSections,
-        userMessageText,
+        aiUserMessage,
       );
       sectionsToUse = filtered.sections;
       await tryRecordSpend({
@@ -298,11 +329,28 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Main streaming call ────────────────────────────────────────────
+    // Replace the last user UI message with `aiUserMessage` (the
+    // section-prefixed version) so the model sees the relevance hint
+    // without polluting the user-visible thread. The original text is
+    // already persisted to the DB above.
+    const aiUiMessages: UIMessage[] =
+      sectionContext && uiMessages.length > 0
+        ? uiMessages.map((m, i) =>
+            i === uiMessages.length - 1
+              ? {
+                  ...m,
+                  parts: [{ type: "text" as const, text: aiUserMessage }],
+                }
+              : m,
+          )
+        : uiMessages;
+
     const streamResult = await streamBillChatResponse({
       billTitle: bill?.title || "Unknown Bill",
       billSections: sectionsToUse,
       metadata,
-      uiMessages,
+      uiMessages: aiUiMessages,
+      readerMode,
       onFinish: async ({ text, usage }) => {
         await tryRecordSpend({ userId, feature: "chat", usage });
 

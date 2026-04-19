@@ -18,6 +18,7 @@ import {
 
 import type { BillSection } from "./bill-sections";
 import { buildSectionIndex, filterSections } from "./bill-sections";
+import { sectionSlugFromHeading } from "./section-slug";
 import type { BillMetadata } from "./congress-api";
 
 /** Canonical usage shape consumed by the spend ledger. */
@@ -59,6 +60,21 @@ const CITATION_INSTRUCTIONS = `When answering, quote directly from the bill text
 > "exact quote from the bill"
 >
 > — Section 4(a)
+
+If the user asks about something not covered in the bill sections provided, say so plainly. Do not invent provisions. Stay factual and neutral.`;
+
+/**
+ * Reader-mode citations: same blockquote shape, but the attribution
+ * is a markdown link to the section's slug. The reader page intercepts
+ * the click, scrolls to the matching section, and applies a brief
+ * highlight animation. If the AI omits the link or formats it
+ * incorrectly, plain text falls back gracefully.
+ */
+const CITATION_INSTRUCTIONS_READER = `When answering, quote directly from the bill text using markdown blockquotes when it helps. Attribute each quote with a markdown LINK to the section anchor in the reader. Use the slug shown in brackets after each section's heading, in the form \`?section=<slug>\`:
+
+> "exact quote from the bill"
+>
+> — [Section 4(a)](?section=sec-4--a)
 
 If the user asks about something not covered in the bill sections provided, say so plainly. Do not invent provisions. Stay factual and neutral.`;
 
@@ -113,22 +129,43 @@ function formatMetadataForPrompt(metadata: BillMetadata | null): string {
   return lines.join("\n");
 }
 
-function formatSectionsForPrompt(sections: BillSection[]): string {
+function formatSectionsForPrompt(
+  sections: BillSection[],
+  opts: { includeSlugs?: boolean } = {},
+): string {
   return sections
-    .map((s) => `### ${s.heading}\n\n${s.content}`)
+    .map((s) => {
+      const slugLine = opts.includeSlugs
+        ? `\n[slug: ${sectionSlugFromHeading(s.heading)}]`
+        : "";
+      return `### ${s.heading}${slugLine}\n\n${s.content}`;
+    })
     .join("\n\n---\n\n");
 }
 
 /**
  * Build the system prompt for a bill chat turn. Extracted so we can test it
  * deterministically and share between streaming and non-streaming paths.
+ *
+ * `opts.readerMode` switches the citation format from human-readable
+ * `— Section 4(a)` to clickable markdown links `[Section 4(a)](?section=sec-4--a)`
+ * AND threads each section's slug into the prompt so the AI has the
+ * exact link target. The reader page intercepts these clicks for an
+ * in-page jump + highlight; on the detail page (default mode) the
+ * shorter human attribution is preferred.
  */
+export interface BillChatPromptOptions {
+  readerMode?: boolean;
+}
+
 export function buildBillChatSystemPrompt(
   billTitle: string,
   billSections: BillSection[] | null,
   metadata: BillMetadata | null = null,
+  opts: BillChatPromptOptions = {},
 ): string {
   const metadataBlock = formatMetadataForPrompt(metadata);
+  const readerMode = opts.readerMode === true;
 
   // No sections — answer from title / CRS summary / metadata only.
   if (!billSections || billSections.length === 0) {
@@ -166,7 +203,12 @@ For questions about specific substantive provisions of the bill (what it actuall
 Stay factual and neutral. Do not repeat the "text not available" caveat in every paragraph; one upfront mention is enough, and only when the question actually requires the bill text to answer.`;
   }
 
-  const billTextBlock = formatSectionsForPrompt(billSections);
+  const billTextBlock = formatSectionsForPrompt(billSections, {
+    includeSlugs: readerMode,
+  });
+  const citationInstructions = readerMode
+    ? CITATION_INSTRUCTIONS_READER
+    : CITATION_INSTRUCTIONS;
 
   return `You are a helpful, nonpartisan assistant that helps citizens understand U.S. legislation. You answer questions clearly and accessibly, prioritizing direct quotes from the bill text.
 
@@ -174,7 +216,7 @@ ${metadataBlock ? `Bill information:\n${metadataBlock}\n\n` : ""}Here is the tex
 
 ${billTextBlock}
 
-${CITATION_INSTRUCTIONS}`;
+${citationInstructions}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -255,6 +297,9 @@ export interface StreamBillChatParams {
   billSections: BillSection[] | null;
   metadata: BillMetadata | null;
   uiMessages: UIMessage[];
+  /** When true, citations are emitted as `[Section X](?section=…)` links
+   *  the reader page can intercept for in-page jumps. */
+  readerMode?: boolean;
   onFinish?: (event: {
     text: string;
     usage: AiUsageRecord;
@@ -273,10 +318,19 @@ export interface StreamBillChatParams {
 export async function streamBillChatResponse(
   params: StreamBillChatParams,
 ): Promise<StreamTextResult<Record<string, never>, never>> {
-  const { billTitle, billSections, metadata, uiMessages, onFinish, onError } =
-    params;
+  const {
+    billTitle,
+    billSections,
+    metadata,
+    uiMessages,
+    readerMode,
+    onFinish,
+    onError,
+  } = params;
 
-  const system = buildBillChatSystemPrompt(billTitle, billSections, metadata);
+  const system = buildBillChatSystemPrompt(billTitle, billSections, metadata, {
+    readerMode,
+  });
   const messages: ModelMessage[] = await convertToModelMessages(uiMessages);
 
   return streamText({
@@ -307,6 +361,52 @@ export async function streamBillChatResponse(
 // ─────────────────────────────────────────────────────────────────────────
 //  Change summary (non-streaming, used by the change-summaries cron)
 // ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Plain-language explanation of a single user-selected passage from a
+ * bill. Powers the reader's "select-to-explain" popover.
+ *
+ * Bounded task: small input, capped output. Haiku is the right tier;
+ * the explanation must stay grounded in the passage itself, not
+ * editorialize, and not invent facts. The route layer is responsible
+ * for the server-side passage-existence check before this is called.
+ */
+export async function generateExplainPassage(
+  billTitle: string,
+  sectionPath: string[],
+  passage: string,
+): Promise<{ content: string; usage: AiUsageRecord }> {
+  const system = `You are explaining one passage from a U.S. federal bill to a citizen reader who is not a lawyer.
+
+Bill: "${billTitle}"
+Section: ${sectionPath.length > 0 ? sectionPath.join(" > ") : "Unspecified"}
+
+The user has selected this passage:
+> ${passage}
+
+In 2–4 sentences of plain English, explain what this passage means and what its practical effect would be. Do not invent facts not present in the passage. Do not editorialize politically. If the passage is purely procedural or definitional, say so plainly. Avoid hedging phrases like "this provision provides" — describe the actual effect.`;
+
+  const result = await generateText({
+    model: HAIKU_MODEL,
+    system,
+    messages: [
+      {
+        role: "user",
+        content: "Explain this passage in 2-4 plain-English sentences.",
+      },
+    ],
+    maxOutputTokens: 220,
+  });
+
+  return {
+    content: result.text.trim(),
+    usage: {
+      model: HAIKU_MODEL,
+      inputTokens: result.usage?.inputTokens ?? 0,
+      outputTokens: result.usage?.outputTokens ?? 0,
+    },
+  };
+}
 
 /**
  * Plain-language summary of what changed between two bill versions.

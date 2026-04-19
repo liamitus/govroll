@@ -152,6 +152,13 @@ model BillTextVersion {
   fullText      String?
   isSubstantive Boolean  @default(true)
   changeSummary String?
+  // AI-generated one-sentence captions for each parsed section, used by
+  // the bill reader's smart outline. Stored as [{ sectionId, caption }]
+  // aligned to the slugs produced by sectionSlugsForBill(...). Null means
+  // "not yet generated for this version" — the reader degrades gracefully.
+  sectionCaptions   Json?
+  captionsModel     String?
+  captionsCreatedAt DateTime?
   createdAt     DateTime @default(now())
 
   bill        Bill          @relation(fields: [billId], references: [id])
