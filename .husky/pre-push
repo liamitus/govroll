@@ -1,3 +1,10 @@
-npm run format:check
-npm run lint
-npm run typecheck
+#!/usr/bin/env sh
+# Pre-push: run the same fast checks that CI runs. Blocks a push if any
+# of them fail, so pushes can't green-light a PR that CI will reject.
+#
+# Uses `npm run check` (format:check + lint + typecheck + test) — the
+# canonical local equivalent of the "Format check", "Lint", "Typecheck",
+# and "Test" jobs in .github/workflows. Integration tests + Playwright
+# aren't included — they need a Postgres container / browser env that
+# isn't always available locally, and CI covers them anyway.
+npm run check

@@ -24,7 +24,8 @@
     "db:studio": "prisma studio",
     "compute-momentum": "npx tsx src/scripts/compute-momentum.ts",
     "compute-momentum:full": "npx tsx src/scripts/compute-momentum.ts full 20000",
-    "prepare": "husky"
+    "prepare": "husky && sh scripts/setup-git-hooks.sh",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": [
