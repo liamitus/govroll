@@ -66,7 +66,12 @@ export function ReaderInteractive({
       const sectionPath = pathFromHeading(heading);
       if (sectionPath.length === 0) return;
 
+      // When the Ask-AI button lives inside a `<summary>` of a
+      // collapsible group, a plain click would also toggle the
+      // `<details>`. Stop propagation so the chat opens without
+      // the section silently collapsing/expanding under the user.
       e.preventDefault();
+      e.stopPropagation();
       setSectionContext({ sectionId: slug, sectionPath });
       setChatOpen(true);
     }

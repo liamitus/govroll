@@ -366,22 +366,32 @@
 .bill-prose-section {
   position: relative;
 }
+/* Depth padding is ABSOLUTE (not cumulative) because every section
+   renders as a flat DOM sibling, not nested. Steps are ~1.75rem per
+   level — enough to read as nested when scanning, matching the indent
+   cadence congress.gov uses for (a) → (1) → (A) → inserted paragraph. */
 .bill-prose-section[data-section-depth="2"] {
   padding-left: 1.25rem;
   margin-top: 0.5em;
 }
 .bill-prose-section[data-section-depth="3"] {
-  padding-left: 2.5rem;
+  padding-left: 3rem;
   margin-top: 0.25em;
 }
 .bill-prose-section[data-section-depth="4"] {
-  padding-left: 3.5rem;
+  padding-left: 4.75rem;
   margin-top: 0.15em;
 }
-.bill-prose-section[data-section-depth="5"],
-.bill-prose-section[data-section-depth="6"],
+.bill-prose-section[data-section-depth="5"] {
+  padding-left: 6.5rem;
+  margin-top: 0.1em;
+}
+.bill-prose-section[data-section-depth="6"] {
+  padding-left: 7.75rem;
+  margin-top: 0.1em;
+}
 .bill-prose-section[data-section-depth="7"] {
-  padding-left: 4.25rem;
+  padding-left: 8.75rem;
   margin-top: 0.1em;
 }
 /* Guide line — drawn for depth ≥ 2, sits flush with the depth's new
@@ -413,21 +423,26 @@
 }
 /* Mobile: collapse indentation to something much tighter — the 72ch
    measure isn't long enough to afford large indents on small screens,
-   but we still want the tree guide so the nesting reads. */
+   but we still want the tree guide so the nesting reads. Steps are
+   ~0.65rem to preserve the hierarchy on narrow viewports. */
 @media (max-width: 640px) {
   .bill-prose-section[data-section-depth="2"] {
     padding-left: 0.75rem;
   }
   .bill-prose-section[data-section-depth="3"] {
-    padding-left: 1.25rem;
+    padding-left: 1.4rem;
   }
   .bill-prose-section[data-section-depth="4"] {
-    padding-left: 1.75rem;
+    padding-left: 2.05rem;
   }
-  .bill-prose-section[data-section-depth="5"],
-  .bill-prose-section[data-section-depth="6"],
+  .bill-prose-section[data-section-depth="5"] {
+    padding-left: 2.7rem;
+  }
+  .bill-prose-section[data-section-depth="6"] {
+    padding-left: 3.15rem;
+  }
   .bill-prose-section[data-section-depth="7"] {
-    padding-left: 2rem;
+    padding-left: 3.5rem;
   }
 }
 
@@ -461,6 +476,105 @@
   font-size: 0.875rem;
   font-style: italic;
   color: var(--muted-foreground);
+}
+
+/* -------------------------------------------------------------------- */
+/* Collapsible top-level sections.                                       */
+/*                                                                       */
+/* Each depth-1 section is wrapped in a native <details> so readers can  */
+/* scan a long bill from a summary view and drill into specific sections.*/
+/* Uses native HTML so collapsed/expanded state is server-renderable and */
+/* keyboard-accessible by default.                                        */
+/* -------------------------------------------------------------------- */
+.bill-prose-top {
+  padding-left: 0;
+  margin-top: 0;
+}
+.bill-prose-top + .bill-prose-top {
+  margin-top: 0.25rem;
+}
+.bill-prose-details {
+  /* The first group already sits under the reader header; the rest get
+     a thin divider + breathing room so the wall of collapsed summaries
+     doesn't feel undifferentiated. */
+  border-top: 1px solid rgba(184, 134, 11, 0.18);
+  padding-top: 0.75rem;
+}
+.dark .bill-prose-details {
+  border-top-color: rgba(212, 160, 23, 0.22);
+}
+.bill-prose-section:first-of-type .bill-prose-details {
+  border-top: none;
+  padding-top: 0;
+}
+.bill-prose-summary {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.25rem 0.25rem 0.25rem 0;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 0.5rem;
+  transition: background-color 120ms ease;
+}
+.bill-prose-summary::-webkit-details-marker {
+  display: none;
+}
+.bill-prose-summary:hover {
+  background-color: rgba(184, 134, 11, 0.06);
+}
+.bill-prose-summary:focus-visible {
+  outline: 2px solid var(--color-civic-gold);
+  outline-offset: 2px;
+}
+.bill-prose-summary-chevron {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.65em;
+  color: var(--muted-foreground);
+  transition: transform 160ms ease;
+}
+.bill-prose-details[open] > .bill-prose-summary > .bill-prose-summary-chevron {
+  transform: rotate(90deg);
+}
+.bill-prose-summary-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.bill-prose-summary-text h2 {
+  /* Keep the heading compact inside a summary — the existing
+     .bill-prose h2 margin-top: 2.5em is meant for standalone headings,
+     not summary rows. */
+  margin: 0;
+}
+.bill-prose-summary-caption {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  line-height: 1.45;
+}
+.bill-prose-summary-ask-ai {
+  align-self: flex-start;
+  margin-top: 0.5em;
+}
+.bill-prose-details-body {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+/* Tighten the first nested section's top margin when the body opens —
+   otherwise a depth-2 `<h3>` gets pushed far below the summary. */
+.bill-prose-details-body > .bill-prose-section:first-child {
+  margin-top: 0.75rem;
 }
 
 /* Heading + per-section "Ask AI" inline action. The action is hidden

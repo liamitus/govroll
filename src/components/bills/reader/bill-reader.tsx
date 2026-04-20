@@ -1,6 +1,8 @@
 import dayjs from "dayjs";
 
 import { SectionRenderer } from "./section-renderer";
+import { CollapsibleTopSection } from "./collapsible-top-section";
+import { ExpandCollapseAll } from "./expand-collapse-all";
 import { DeepLinkScroller } from "./deep-link-scroller";
 import { ScrollSpyProvider } from "./scroll-spy";
 import { StickyBreadcrumb } from "./sticky-breadcrumb";
@@ -47,6 +49,14 @@ export function BillReader({
     heading: s.heading,
   }));
   const minutes = readingMinutes(sections);
+  const groups = groupByTopLevel(sections);
+  const autoExpandAll = shouldAutoExpand(sections);
+  // If a deep link targets a specific section, the group containing
+  // that section must render open on the server — otherwise a brief
+  // flash of collapsed content precedes the client-side expansion.
+  const initialOpenGroupSlug = initialSlug
+    ? findContainingGroupSlug(groups, initialSlug)
+    : null;
 
   return (
     <ScrollSpyProvider slugsInOrder={slugsInOrder}>
@@ -77,19 +87,45 @@ export function BillReader({
                   </span>
                 </div>
                 <h1 className="bill-prose-title">{bill.title}</h1>
-                <p className="text-muted-foreground bill-prose-meta mt-2 text-sm">
-                  {sections.length} section{sections.length === 1 ? "" : "s"} ·{" "}
-                  {minutes} min read
-                </p>
+                <div className="text-muted-foreground bill-prose-meta mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  <span>
+                    {sections.length} section
+                    {sections.length === 1 ? "" : "s"} · {minutes} min read
+                  </span>
+                  {groups.length > 1 ? (
+                    <>
+                      <span aria-hidden className="opacity-40">
+                        ·
+                      </span>
+                      <ExpandCollapseAll />
+                    </>
+                  ) : null}
+                </div>
               </header>
 
               <article
                 className="bill-prose"
                 aria-label={`Full text of ${bill.title}`}
               >
-                {sections.map((section) => (
-                  <SectionRenderer key={section.slug} section={section} />
-                ))}
+                {groups.map((group) => {
+                  if (!group.head) {
+                    // Orphans: subsections before any depth-1 heading.
+                    // Rare, but render flat so content isn't lost.
+                    return group.body.map((section) => (
+                      <SectionRenderer key={section.slug} section={section} />
+                    ));
+                  }
+                  const defaultOpen =
+                    autoExpandAll || initialOpenGroupSlug === group.head.slug;
+                  return (
+                    <CollapsibleTopSection
+                      key={group.head.slug}
+                      head={group.head}
+                      body={group.body}
+                      defaultOpen={defaultOpen}
+                    />
+                  );
+                })}
               </article>
             </main>
           </div>
@@ -105,9 +141,80 @@ export function BillReader({
  * not a budget.
  */
 function readingMinutes(sections: ReaderSection[]): number {
-  const words = sections.reduce(
+  const words = countWords(sections);
+  return Math.max(1, Math.round(words / 250));
+}
+
+function countWords(sections: ReaderSection[]): number {
+  return sections.reduce(
     (sum, s) => sum + s.content.split(/\s+/).filter(Boolean).length,
     0,
   );
-  return Math.max(1, Math.round(words / 250));
+}
+
+interface TopLevelGroup {
+  /** The depth-1 "head" section. May be null only when the bill begins
+   *  with deeper sections before any depth-1 heading — a parser quirk
+   *  we tolerate rather than lose content over. */
+  head: ReaderSection | null;
+  /** Every subsequent section (any depth ≥ 2, plus any depth-1 content
+   *  split across a single logical group isn't supported — each depth-1
+   *  starts a new group). */
+  body: ReaderSection[];
+}
+
+/**
+ * Walk the flat section list and partition it into top-level groups.
+ * A new group starts at every depth-1 section; subsequent deeper
+ * sections get attached to the most recent top-level until the next
+ * depth-1 arrives.
+ */
+function groupByTopLevel(sections: ReaderSection[]): TopLevelGroup[] {
+  const groups: TopLevelGroup[] = [];
+  for (const section of sections) {
+    if (section.depth === 1) {
+      groups.push({ head: section, body: [] });
+    } else if (groups.length > 0) {
+      groups[groups.length - 1].body.push(section);
+    } else {
+      // Orphan (no depth-1 ancestor yet). Rare; keep content visible.
+      groups.push({ head: null, body: [section] });
+    }
+  }
+  return groups;
+}
+
+/**
+ * Short bills read better fully expanded — the scroll cost is trivial
+ * and readers see the whole thing at once. Long bills collapse by
+ * default so the page doesn't feel overwhelming; the summary rail and
+ * the AI captions on each collapsed group give readers enough to pick
+ * what to expand.
+ *
+ * Thresholds: ≤12 groups OR ≤3,000 words of body text. Either of those
+ * tends to mean the bill fits in a few screens at normal reading speed.
+ */
+function shouldAutoExpand(sections: ReaderSection[]): boolean {
+  const topLevelCount = sections.filter((s) => s.depth === 1).length;
+  if (topLevelCount === 0) return true;
+  if (topLevelCount <= 12) return true;
+  return countWords(sections) <= 3000;
+}
+
+/**
+ * Find the slug of the depth-1 group that contains the given section.
+ * Used to force a specific group open on the server when the page
+ * loads targeting a nested subsection.
+ */
+function findContainingGroupSlug(
+  groups: TopLevelGroup[],
+  targetSlug: string,
+): string | null {
+  for (const group of groups) {
+    if (group.head?.slug === targetSlug) return group.head.slug;
+    if (group.body.some((s) => s.slug === targetSlug)) {
+      return group.head?.slug ?? null;
+    }
+  }
+  return null;
 }
