@@ -28,7 +28,10 @@ import type {
 
 const POLL_INTERVAL_IDLE_MS = 60_000;
 const POLL_INTERVAL_VOTING_MS = 15_000;
-const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 min — downgrade to unknown
+// GH Actions cron routinely drifts 20-30 min under load, so the old 30 min
+// ceiling fired false "Status unavailable" downgrades. 60 min tolerates up
+// to five missed 10-min runs before we stop trusting the cached status.
+const STALE_THRESHOLD_MS = 20 * 60 * 1000;
 
 export function CongressStatus() {
   const query = useQuery<CongressStatusResponse>({
@@ -237,7 +240,7 @@ function effectiveStatus(
   const last = Date.parse(p.lastCheckedAt);
   if (!Number.isFinite(last)) return p.status;
   const age = Date.now() - last;
-  if (age > STALE_THRESHOLD_MS * 3) return "unknown"; // 30 min = cron missed 3 runs
+  if (age > STALE_THRESHOLD_MS * 3) return "unknown"; // 60 min ceiling
   return p.status;
 }
 
