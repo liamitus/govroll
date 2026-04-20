@@ -1,18 +1,19 @@
 import Link from "next/link";
 import dayjs from "dayjs";
+import { billReadHref, type BillForUrl } from "@/lib/bills/url";
 
 /**
- * Prominent CTA card linking from the bill detail page to the new
- * `/bills/[id]/read` reader. Renders only when at least one text
- * version exists in our DB — otherwise we don't make a promise we
- * might not deliver on. The reader page itself handles the case where
- * the row exists but has no `fullText` yet.
+ * Prominent CTA card linking from the bill detail page to the
+ * reader. Renders only when at least one text version exists in our
+ * DB — otherwise we don't make a promise we might not deliver on.
+ * The reader page itself handles the case where the row exists but
+ * has no `fullText` yet.
  */
 export function ReadTextCTA({
-  billId,
+  bill,
   latestVersion,
 }: {
-  billId: number;
+  bill: BillForUrl;
   latestVersion: {
     versionType: string;
     versionDate: Date;
@@ -21,7 +22,7 @@ export function ReadTextCTA({
 }) {
   return (
     <Link
-      href={`/bills/${billId}/read`}
+      href={billReadHref(bill)}
       className="border-civic-gold/40 bg-civic-cream/40 hover:bg-civic-cream/60 dark:bg-card dark:hover:bg-accent/30 group focus-visible:ring-civic-gold/40 focus-visible:border-civic-gold block rounded-xl border p-5 transition-colors focus:outline-none focus-visible:ring-2"
     >
       <div className="flex items-start gap-4">

@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
+import { billHref } from "@/lib/bills/url";
 
 // Regenerate hourly so new bills/reps appear without a redeploy
 export const revalidate = 3600;
@@ -26,12 +27,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // can't reach the DB (e.g. Vercel build network can't hit the direct-connect
   // port, or DATABASE_URL isn't set in preview env), emit the static-only
   // sitemap and let the next revalidate fill in bill/rep URLs.
-  let bills: { id: number; currentStatusDate: Date }[] = [];
+  let bills: {
+    billId: string;
+    title: string;
+    currentStatusDate: Date;
+  }[] = [];
   let reps: { bioguideId: string; slug: string | null }[] = [];
   try {
     [bills, reps] = await Promise.all([
       prisma.bill.findMany({
-        select: { id: true, currentStatusDate: true },
+        select: { billId: true, title: true, currentStatusDate: true },
         orderBy: { currentStatusDate: "desc" },
       }),
       prisma.representative.findMany({
@@ -46,7 +51,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   const billRoutes: MetadataRoute.Sitemap = bills.map((bill) => ({
-    url: `${base}/bills/${bill.id}`,
+    url: `${base}${billHref(bill)}`,
     lastModified: bill.currentStatusDate,
     changeFrequency: "daily",
     priority: 0.7,

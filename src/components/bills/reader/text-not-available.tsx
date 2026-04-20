@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { billHref } from "@/lib/bills/url";
 
 /**
  * Friendly state for when a bill has no usable text yet (and therefore
@@ -10,7 +11,7 @@ import Link from "next/link";
 export function TextNotAvailable({
   bill,
 }: {
-  bill: { id: number; title: string; link?: string | null };
+  bill: { billId: string; title: string; link?: string | null };
 }) {
   return (
     <div className="bg-civic-cream/40 dark:bg-card min-h-screen">
@@ -28,7 +29,7 @@ export function TextNotAvailable({
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link
-            href={`/bills/${bill.id}`}
+            href={billHref(bill)}
             className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium transition-colors"
           >
             Back to bill page
