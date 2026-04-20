@@ -8,10 +8,22 @@ import type { MomentumTier, DeathReason } from "@/types";
 
 interface BillAboutProps {
   title: string;
+  /** AI-generated 2–3 sentence plain-language description. Preferred over
+   *  `shortText` as the lead summary — written at a grade 8–10 level and
+   *  derived from the current bill text, not the introduced version. */
+  aiShortDescription: string | null;
+  /** AI-generated specific-provision bullets. Empty when no explainer has
+   *  been generated yet; the lead falls back to `shortText` in that case. */
+  aiKeyPoints: string[];
+  /** Original CRS summary of the introduced bill. Moved into the "More
+   *  detail" disclosure unless there's no AI explainer yet, in which case
+   *  we fall back to it up top. */
   shortText: string | null;
   introducedDate: string;
   lastActionDate: string | null;
   link: string | null;
+  /** Internal reader href. Null when we have no text version to link to. */
+  readerHref: string | null;
   typeLabel: string;
   typeDescription: string;
   statusHeadline: string;
@@ -19,9 +31,6 @@ interface BillAboutProps {
   statusStyle: string;
   chamberStyle: string;
   journeySteps: JourneyStep[];
-  /** Number of substantive bill versions after the introduced version. Used
-   *  to warn users that the CRS summary may no longer describe current text. */
-  amendmentCount: number;
   momentumTier: MomentumTier | null;
   daysSinceLastAction: number | null;
   deathReason: DeathReason | null;
@@ -127,10 +136,13 @@ const BANNER_STYLES: Record<MomentumBanner["tone"], string> = {
 
 export function BillAboutSection({
   title,
+  aiShortDescription,
+  aiKeyPoints,
   shortText,
   introducedDate,
   lastActionDate,
   link,
+  readerHref,
   typeLabel,
   typeDescription,
   statusHeadline,
@@ -138,19 +150,27 @@ export function BillAboutSection({
   statusStyle,
   chamberStyle,
   journeySteps,
-  amendmentCount,
   momentumTier,
   daysSinceLastAction,
   deathReason,
 }: BillAboutProps) {
   const [open, setOpen] = useState(false);
-  const [summaryExpanded, setSummaryExpanded] = useState(false);
-  const longSummary = (shortText?.length ?? 0) > 400;
+  const [crsExpanded, setCrsExpanded] = useState(false);
   const banner = momentumBanner(momentumTier, daysSinceLastAction, deathReason);
   const isInactive =
     momentumTier === "DEAD" ||
     momentumTier === "DORMANT" ||
     momentumTier === "STALLED";
+
+  // Prefer the AI explainer as the lead. When it's missing (pre-backfill or
+  // text unavailable) we fall back to the CRS summary so the page still
+  // says something, but we skip the legalese label and the amendment
+  // warning — the warning was a symptom of leading with CRS in the first
+  // place, not a signal we want to preserve.
+  const hasExplainer = Boolean(
+    aiShortDescription && aiShortDescription.trim().length > 0,
+  );
+  const fallbackShortText = !hasExplainer ? shortText : null;
 
   return (
     <header className="space-y-3">
@@ -211,48 +231,63 @@ export function BillAboutSection({
           </div>
         )}
 
-      {/* Plain-language summary — always visible, with provenance label and
-          amendment warning so users can judge how current the summary is. */}
-      {shortText && (
-        <div className="space-y-1.5">
-          <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-            Summary · Congressional Research Service (nonpartisan)
+      {/* Lead: plain-language description + key points. Shown above the
+          fold so every persona — casual voter, activist, researcher — has
+          the gist without digging. */}
+      {hasExplainer ? (
+        <div className="space-y-3">
+          <p className="text-foreground text-base leading-relaxed">
+            {aiShortDescription}
           </p>
-          {longSummary ? (
-            summaryExpanded ? (
-              <div className="relative">
-                <div className="border-border/40 bg-muted/20 text-muted-foreground max-h-80 overflow-y-auto scroll-smooth rounded-md border px-4 py-3 text-sm leading-relaxed">
-                  {shortText}
-                </div>
-                <button
-                  onClick={() => setSummaryExpanded(false)}
-                  className="text-navy/70 hover:text-navy mt-1.5 text-xs font-medium transition-colors"
+          {aiKeyPoints.length > 0 && (
+            <ul className="space-y-1.5">
+              {aiKeyPoints.map((point, i) => (
+                <li
+                  key={i}
+                  className="text-foreground/90 flex gap-2 text-sm leading-relaxed"
                 >
-                  Show less
-                </button>
-              </div>
-            ) : (
-              <div>
-                <p className="text-muted-foreground line-clamp-4 text-sm leading-relaxed">
-                  {shortText}
-                </p>
-                <button
-                  onClick={() => setSummaryExpanded(true)}
-                  className="text-navy/70 hover:text-navy mt-1.5 text-xs font-medium transition-colors"
-                >
-                  Show full summary
-                </button>
-              </div>
-            )
-          ) : (
-            <p className="text-muted-foreground text-base leading-relaxed">
-              {shortText}
-            </p>
+                  <span
+                    className="text-civic-gold mt-[0.55em] h-1 w-1 flex-none rounded-full bg-current"
+                    aria-hidden
+                  />
+                  <span>{point}</span>
+                </li>
+              ))}
+            </ul>
           )}
-          {amendmentCount > 0 && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+        </div>
+      ) : fallbackShortText ? (
+        // No AI explainer yet — show the CRS summary without the old
+        // "SUMMARY · CRS" legalese label or the amendment warning. Trimmed
+        // to ~4 lines, click to expand inline.
+        <div>
+          <p
+            className={`text-foreground/90 text-base leading-relaxed ${crsExpanded ? "" : "line-clamp-4"}`}
+          >
+            {fallbackShortText}
+          </p>
+          {fallbackShortText.length > 320 && (
+            <button
+              onClick={() => setCrsExpanded((v) => !v)}
+              className="text-navy/70 hover:text-navy mt-1.5 cursor-pointer text-xs font-medium transition-colors"
+            >
+              {crsExpanded ? "Show less" : "Show full summary"}
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      {/* Primary actions row — one clear CTA for the full text, plus the
+          external authoritative link. */}
+      {(readerHref || link) && (
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          {readerHref && (
+            <a
+              href={readerHref}
+              className="border-civic-gold/50 bg-civic-cream/50 text-foreground hover:bg-civic-cream focus-visible:ring-civic-gold/40 dark:bg-card dark:hover:bg-accent/30 inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2"
+            >
               <svg
-                className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                className="text-civic-gold h-4 w-4"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -262,60 +297,58 @@ export function BillAboutSection({
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
                 />
               </svg>
-              <span className="leading-relaxed">
-                This summary describes the bill as introduced. It has been
-                amended{" "}
-                {amendmentCount === 1 ? "once" : `${amendmentCount} times`}{" "}
-                since — the current text may differ.
-                {link && (
-                  <>
-                    {" "}
-                    <a
-                      href={link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium underline underline-offset-2 hover:no-underline"
-                    >
-                      View latest version
-                    </a>
-                  </>
-                )}
-              </span>
-            </div>
+              Read full text
+              <svg
+                className="h-3.5 w-3.5 opacity-60"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M14 5l7 7m0 0l-7 7m7-7H3"
+                />
+              </svg>
+            </a>
+          )}
+          {link && (
+            <a
+              href={link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
+            >
+              GovTrack
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
+              </svg>
+            </a>
           )}
         </div>
       )}
 
-      {/* Meta row — always visible */}
-      <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+      {/* Meta row — dates only, with GovTrack pulled up into the action row
+          above. Kept small and tertiary. */}
+      <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span>Introduced {introducedDate}</span>
         {lastActionDate && <span>Last action {lastActionDate}</span>}
-        {link && (
-          <a
-            href={link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary inline-flex items-center gap-1 hover:underline"
-          >
-            GovTrack
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-              />
-            </svg>
-          </a>
-        )}
       </div>
 
       {/* Learn more toggle — only shown when collapsed */}
@@ -324,7 +357,7 @@ export function BillAboutSection({
           onClick={() => setOpen(true)}
           className="text-primary inline-flex cursor-pointer items-center gap-1 text-sm font-medium hover:underline"
         >
-          Learn more about this bill
+          More detail
           <svg
             className="h-3 w-3"
             fill="none"
@@ -359,6 +392,20 @@ export function BillAboutSection({
               {statusDetail}
             </p>
           </div>
+
+          {/* CRS summary — lives here now, available to readers who want
+              the full nonpartisan government wording. Kept clearly
+              labeled so its provenance is transparent. */}
+          {hasExplainer && shortText && (
+            <div className="space-y-1.5">
+              <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                Summary · Congressional Research Service (nonpartisan)
+              </p>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {shortText}
+              </p>
+            </div>
+          )}
 
           {/* Bill type */}
           <div className="text-muted-foreground text-sm leading-relaxed">
