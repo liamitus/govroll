@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { RepVoteRecord } from "@/types";
+import { billHref } from "@/lib/bills/url";
 
 interface RepKeyVotesProps {
   keyVotes: RepVoteRecord[];
@@ -39,7 +40,7 @@ export function RepKeyVotes({ keyVotes, repFirstName }: RepKeyVotesProps) {
 
             <div className="min-w-0 flex-1">
               <Link
-                href={`/bills/${vote.billId}`}
+                href={billHref({ billId: vote.billSlug, title: vote.title })}
                 className="text-navy line-clamp-2 text-base leading-snug font-semibold hover:underline"
               >
                 {vote.title}

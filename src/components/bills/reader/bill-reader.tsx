@@ -56,8 +56,7 @@ export function BillReader({
       <ReaderInteractive billId={bill.id} outlineEntries={outlineEntries}>
         <div className="bill-prose-page min-h-screen">
           <StickyBreadcrumb
-            billId={bill.id}
-            billTitle={bill.title}
+            bill={{ billId: bill.billId, title: bill.title }}
             sections={breadcrumbSections}
           />
 

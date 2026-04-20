@@ -22,6 +22,7 @@ import {
   userCommentsQueryKey,
   type UserCommentsPage,
 } from "@/lib/queries/account-client";
+import { billHref } from "@/lib/bills/url";
 
 export default function AccountPage() {
   const { user, loading: authLoading } = useAuth();
@@ -251,7 +252,10 @@ export default function AccountPage() {
                 <p className="text-base">{comment.content}</p>
                 {comment.bill && (
                   <Link
-                    href={`/bills/${comment.bill.id}`}
+                    href={billHref({
+                      billId: comment.bill.billId,
+                      title: comment.bill.title,
+                    })}
                     className="text-primary mt-1 block text-sm hover:underline"
                   >
                     {comment.bill.title}

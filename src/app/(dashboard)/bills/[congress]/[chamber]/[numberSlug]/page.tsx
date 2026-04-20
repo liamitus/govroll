@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import dayjs from "dayjs";
 import {
   getBillTypeInfo,
@@ -14,32 +14,61 @@ import { ReadTextCTA } from "@/components/bills/read-text-cta";
 import { BillDetailInteractive } from "./interactive";
 import { parseSponsorString, partyCodeToNames } from "@/lib/sponsor";
 import { maybeFetchBillTextInBackground } from "@/lib/on-demand-bill-text";
+import { billHref, billIdentifierFor, parseBillPath } from "@/lib/bills/url";
 import type { MomentumTier, DeathReason } from "@/types";
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+type RouteParams = Promise<{
+  congress: string;
+  chamber: string;
+  numberSlug: string;
+}>;
+
+async function resolveBill(params: RouteParams) {
+  const { congress, chamber, numberSlug } = await params;
+  const parsed = parseBillPath([congress, chamber, numberSlug]);
+  if (!parsed) return { bill: null, parsed: null } as const;
+
+  const billIdKey = billIdentifierFor(
+    parsed.chamberCode,
+    parsed.number,
+    parsed.congress,
+  );
+  if (!billIdKey) return { bill: null, parsed } as const;
+
   const bill = await prisma.bill.findUnique({
-    where: { id: parseInt(id) },
-    select: { title: true, shortText: true },
+    where: { billId: billIdKey },
+    select: {
+      id: true,
+      billId: true,
+      title: true,
+      shortText: true,
+    },
   });
+
+  return { bill, parsed } as const;
+}
+
+export async function generateMetadata({ params }: { params: RouteParams }) {
+  const { bill } = await resolveBill(params);
 
   const title = bill ? `${bill.title} — Govroll` : "Bill — Govroll";
   const description =
     bill?.shortText ??
     "Track this bill, see how your representatives voted, and share your opinion.";
+  const canonical = bill
+    ? billHref({ billId: bill.billId, title: bill.title })
+    : undefined;
 
   return {
     title,
     description,
+    alternates: canonical ? { canonical } : undefined,
     openGraph: {
       title,
       description,
       siteName: "Govroll",
       type: "article",
+      ...(canonical ? { url: canonical } : {}),
     },
     twitter: {
       card: "summary",
@@ -52,20 +81,28 @@ export async function generateMetadata({
 export default async function BillDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: RouteParams;
 }) {
-  const { id } = await params;
-  const billId = parseInt(id);
+  const { congress, chamber, numberSlug } = await params;
+  const parsed = parseBillPath([congress, chamber, numberSlug]);
+  if (!parsed) notFound();
+
+  const billIdKey = billIdentifierFor(
+    parsed.chamberCode,
+    parsed.number,
+    parsed.congress,
+  );
+  if (!billIdKey) notFound();
 
   const [bill, actions, textVersions, cosponsorRows] = await Promise.all([
-    prisma.bill.findUnique({ where: { id: billId } }),
+    prisma.bill.findUnique({ where: { billId: billIdKey } }),
     prisma.billAction.findMany({
-      where: { billId },
+      where: { bill: { billId: billIdKey } },
       orderBy: { actionDate: "asc" },
       select: { actionDate: true, chamber: true, text: true, actionType: true },
     }),
     prisma.billTextVersion.findMany({
-      where: { billId },
+      where: { bill: { billId: billIdKey } },
       orderBy: { versionDate: "asc" },
       select: {
         versionCode: true,
@@ -76,7 +113,7 @@ export default async function BillDetailPage({
       },
     }),
     prisma.billCosponsor.findMany({
-      where: { billId, withdrawnAt: null },
+      where: { bill: { billId: billIdKey }, withdrawnAt: null },
       orderBy: [{ representative: { lastName: "asc" } }],
       select: {
         representative: {
@@ -96,6 +133,15 @@ export default async function BillDetailPage({
 
   if (!bill) notFound();
 
+  // Canonicalize the URL: if the request came in via a non-canonical
+  // shape (Congress.gov word form, uppercase chamber) or with a slug
+  // that doesn't match the current title, 301 to the canonical.
+  const canonicalHref = billHref({ billId: bill.billId, title: bill.title });
+  const currentPath = `/bills/${congress}/${chamber}/${numberSlug}`;
+  if (!parsed.canonical || currentPath !== canonicalHref) {
+    permanentRedirect(canonicalHref);
+  }
+
   // If this bill has no text and the cron hasn't tried recently, kick off
   // a background fetch so the user gets text on their next load instead
   // of waiting for the hourly backfill to reach their bill. No-op when
@@ -104,6 +150,7 @@ export default async function BillDetailPage({
   maybeFetchBillTextInBackground({
     id: bill.id,
     billId: bill.billId,
+    title: bill.title,
     fullText: bill.fullText,
     textFetchAttemptedAt: bill.textFetchAttemptedAt,
   });
@@ -211,10 +258,10 @@ export default async function BillDetailPage({
         deathReason={bill.deathReason as DeathReason | null}
       />
 
-      {/* ── Read the full text → /bills/[id]/read ── */}
+      {/* ── Read the full text ── */}
       {textVersions.length > 0 && (
         <ReadTextCTA
-          billId={bill.id}
+          bill={{ billId: bill.billId, title: bill.title }}
           latestVersion={textVersions[textVersions.length - 1]}
         />
       )}

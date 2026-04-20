@@ -16,7 +16,7 @@ export async function GET(
       prisma.comment.findMany({
         where: { userId },
         include: {
-          bill: { select: { id: true, title: true } },
+          bill: { select: { id: true, billId: true, title: true } },
         },
         orderBy: { date: "desc" },
         skip,

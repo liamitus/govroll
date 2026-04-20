@@ -4,6 +4,7 @@ import Link, { useLinkStatus } from "next/link";
 import dayjs from "dayjs";
 import type { BillSummary, MomentumTier, DeathReason, VoteType } from "@/types";
 import { getTopicForPolicyArea } from "@/lib/topic-mapping";
+import { billHref } from "@/lib/bills/url";
 
 // Reddit's visited-link cue, translated to our palette: a muted title + a
 // vote-tinted chip that tells you *how* you voted at a glance.
@@ -180,9 +181,11 @@ export function BillCard({
   );
   const voteChip = userVote ? voteChipStyle(userVote) : null;
 
+  const href = billHref(bill);
+
   return (
     <Link
-      href={`/bills/${bill.id}`}
+      href={href}
       className="group focus-visible:ring-navy/40 block rounded-lg transition-transform focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none active:scale-[0.997]"
     >
       <div
@@ -312,13 +315,13 @@ export function BillCard({
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    window.location.href = `/bills/${bill.id}#discussion`;
+                    window.location.href = `${href}#discussion`;
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       e.stopPropagation();
-                      window.location.href = `/bills/${bill.id}#discussion`;
+                      window.location.href = `${href}#discussion`;
                     }
                   }}
                   className="hover:text-navy inline-flex cursor-pointer items-center gap-1 underline-offset-2 transition-colors hover:underline"
