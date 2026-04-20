@@ -10,11 +10,13 @@
 import {
   streamText,
   generateText,
+  generateObject,
   type StreamTextResult,
   type ModelMessage,
   type UIMessage,
   convertToModelMessages,
 } from "ai";
+import { z } from "zod";
 
 import type { BillSection } from "./bill-sections";
 import { buildSectionIndex, filterSections } from "./bill-sections";
@@ -54,6 +56,10 @@ const FALLBACK_SECTION_COUNT = 120;
 /** Chars per version passed to the diff-summary model. Raised from 30_000
  *  so a 4 MB NDAA diff captures more than the first ~0.7% of each side. */
 const CHANGE_SUMMARY_CHARS = 120_000;
+
+/** Chars of bill text fed to the explainer model. Kept well below Haiku's
+ *  context so the CRS summary + metadata also fit comfortably. */
+const EXPLAINER_TEXT_CHARS = 120_000;
 
 const CITATION_INSTRUCTIONS = `When answering, quote directly from the bill text using markdown blockquotes when it helps. Attribute quotes to the section they came from:
 
@@ -448,6 +454,105 @@ Summarize the substantive changes between these two versions.`;
         outputTokens: result.usage?.outputTokens ?? 0,
       },
     ],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Bill explainer — plain-language description + key points
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Structured shape returned by the explainer model. Fed through zod so
+ *  the AI SDK can enforce schema on Haiku's JSON output. */
+const BillExplainerSchema = z.object({
+  shortDescription: z
+    .string()
+    .min(40)
+    .max(600)
+    .describe(
+      "2–3 plain-language sentences describing what the bill does and who it affects. Grade 8–10 reading level. Concrete, not vague. No procedural preamble ('This bill would…') — write in plain declarative voice.",
+    ),
+  keyPoints: z
+    .array(z.string().min(8).max(140))
+    .min(2)
+    .max(4)
+    .describe(
+      "2–4 short bullets naming the most important specific provisions. Each ≤ 15 words, starts with a verb, concrete. No duplication of the short description.",
+    ),
+});
+
+export type BillExplainer = z.infer<typeof BillExplainerSchema>;
+
+/**
+ * Generate a plain-language short description + key points for a bill.
+ * Shown at the top of the bill detail page so citizens aren't reading CRS
+ * legalese first. Regenerated when a new substantive text version lands.
+ *
+ * Bounded structured-output task over a single bill — Haiku is sufficient
+ * and keeps the backfill cost low (the whole corpus is ~12k bills).
+ */
+export async function generateBillExplainer(args: {
+  billTitle: string;
+  /** Latest substantive version text when we have it. Passed as-is, truncated. */
+  billText: string | null;
+  /** Kind of the version the text came from (e.g. "Enrolled Bill"). */
+  versionType: string | null;
+  /** CRS nonpartisan summary, if available. Useful when billText is missing. */
+  crsSummary: string | null;
+  /** e.g. "Senate Bill", "House Joint Resolution". */
+  billTypeLabel: string;
+  /** Human-readable current status headline ("Signed into law", "Failed in Senate"). */
+  statusHeadline: string;
+}): Promise<{ explainer: BillExplainer; usage: AiUsageRecord }> {
+  const system = `You are a nonpartisan legislative analyst helping ordinary citizens understand U.S. federal legislation. Explain bills in clear, concrete plain language at a grade 8–10 reading level. Be accurate, brief, and specific — name what the bill actually does, not generic phrases like "addresses issues" or "provides for". Stay strictly factual; do not editorialize, predict outcomes, or imply political stance.`;
+
+  const parts: string[] = [];
+  parts.push(`Bill: "${args.billTitle}"`);
+  parts.push(`Type: ${args.billTypeLabel}`);
+  parts.push(`Current status: ${args.statusHeadline}`);
+
+  if (args.billText && args.billText.trim().length > 0) {
+    parts.push("");
+    parts.push(`Current bill text (${args.versionType ?? "latest version"}):`);
+    parts.push(args.billText.slice(0, EXPLAINER_TEXT_CHARS));
+  } else if (args.crsSummary && args.crsSummary.trim().length > 0) {
+    parts.push("");
+    parts.push("Congressional Research Service summary (nonpartisan):");
+    parts.push(args.crsSummary);
+  } else {
+    parts.push("");
+    parts.push(
+      "(No bill text or summary is available yet — base the explainer on the title and type alone, and keep claims minimal and hedged accordingly.)",
+    );
+  }
+
+  if (args.crsSummary && args.billText && args.crsSummary.trim().length > 0) {
+    parts.push("");
+    parts.push(
+      "Additional CRS summary for context (nonpartisan, may describe an earlier version):",
+    );
+    parts.push(args.crsSummary);
+  }
+
+  parts.push("");
+  parts.push(
+    "Write the shortDescription so a reader who has never heard of this bill understands, in three sentences or fewer, what it does and who it affects. Write keyPoints as specific provisions — thresholds, groups covered, actions required — not restatements of the description.",
+  );
+
+  const result = await generateObject({
+    model: HAIKU_MODEL,
+    system,
+    schema: BillExplainerSchema,
+    messages: [{ role: "user", content: parts.join("\n") }],
+    maxOutputTokens: 600,
+  });
+
+  return {
+    explainer: result.object,
+    usage: {
+      model: HAIKU_MODEL,
+      inputTokens: result.usage?.inputTokens ?? 0,
+      outputTokens: result.usage?.outputTokens ?? 0,
+    },
   };
 }
 

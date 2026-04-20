@@ -10,11 +10,15 @@ import {
 } from "@/lib/bill-helpers";
 import { BillAboutSection } from "@/components/bills/bill-about-section";
 import { SponsorCard } from "@/components/bills/sponsor-card";
-import { ReadTextCTA } from "@/components/bills/read-text-cta";
 import { BillDetailInteractive } from "./interactive";
 import { parseSponsorString, partyCodeToNames } from "@/lib/sponsor";
 import { maybeFetchBillTextInBackground } from "@/lib/on-demand-bill-text";
-import { billHref, billIdentifierFor, parseBillPath } from "@/lib/bills/url";
+import {
+  billHref,
+  billReadHref,
+  billIdentifierFor,
+  parseBillPath,
+} from "@/lib/bills/url";
 import type { MomentumTier, DeathReason } from "@/types";
 
 type RouteParams = Promise<{
@@ -188,13 +192,6 @@ export default async function BillDetailPage({
     actions,
     textVersions,
   );
-  // Count substantive versions after the introduced version. The CRS summary
-  // shown on this page describes only the introduced text, so any substantive
-  // amendments mean the summary may no longer reflect current bill content.
-  const substantiveVersionCount = textVersions.filter(
-    (v) => v.isSubstantive,
-  ).length;
-  const amendmentCount = Math.max(0, substantiveVersionCount - 1);
   const journeySteps =
     actions.length > 0
       ? buildDynamicJourney(
@@ -222,9 +219,11 @@ export default async function BillDetailPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-6 py-8">
-      {/* ── Title + expandable about section (title, journey, explainer, AI chat) ── */}
+      {/* ── Title + plain-language lead + expandable about section ── */}
       <BillAboutSection
         title={bill.title}
+        aiShortDescription={bill.aiShortDescription}
+        aiKeyPoints={bill.aiKeyPoints}
         shortText={bill.shortText}
         introducedDate={dayjs(bill.introducedDate).format("MMM D, YYYY")}
         lastActionDate={
@@ -233,6 +232,11 @@ export default async function BillDetailPage({
             : null
         }
         link={bill.link}
+        readerHref={
+          textVersions.length > 0
+            ? billReadHref({ billId: bill.billId, title: bill.title })
+            : null
+        }
         typeLabel={typeInfo.label}
         typeDescription={typeInfo.description}
         statusHeadline={statusExplanation.headline}
@@ -252,19 +256,10 @@ export default async function BillDetailPage({
             : "border-senate text-senate"
         }
         journeySteps={journeySteps}
-        amendmentCount={amendmentCount}
         momentumTier={bill.momentumTier as MomentumTier | null}
         daysSinceLastAction={bill.daysSinceLastAction}
         deathReason={bill.deathReason as DeathReason | null}
       />
-
-      {/* ── Read the full text ── */}
-      {textVersions.length > 0 && (
-        <ReadTextCTA
-          bill={{ billId: bill.billId, title: bill.title }}
-          latestVersion={textVersions[textVersions.length - 1]}
-        />
-      )}
 
       {/* ── Who's behind this bill ── */}
       {parsedSponsor && (

@@ -68,6 +68,16 @@ model Bill {
   shortTitle        String?
   displayTitle      String?
   searchVector      Unsupported("tsvector")?
+  // AI-generated plain-language explainer shown at the top of the bill
+  // detail page. `aiSummaryVersionId` points at the BillTextVersion.id the
+  // explainer was generated from, so the backfill script can regenerate
+  // after a new substantive amendment lands. Kept as a loose Int (not a
+  // relation) for consistency with other AI-provenance columns.
+  aiShortDescription  String?
+  aiKeyPoints         String[]  @default([])
+  aiSummaryModel      String?
+  aiSummaryCreatedAt  DateTime?
+  aiSummaryVersionId  Int?
   votes             RepresentativeVote[]
   publicVotes       Vote[]
   comments          Comment[]
