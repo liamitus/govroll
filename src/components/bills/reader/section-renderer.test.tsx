@@ -34,7 +34,7 @@ describe("<SectionRenderer> — heading depth → tag mapping", () => {
     expect(h2).toBeInTheDocument();
   });
 
-  it("depth 2 renders <h3>", () => {
+  it("depth 2 with a descriptive label renders <h3>", () => {
     render(
       <SectionRenderer
         section={makeSection({
@@ -47,12 +47,12 @@ describe("<SectionRenderer> — heading depth → tag mapping", () => {
     expect(screen.getByRole("heading", { level: 3 })).toBeInTheDocument();
   });
 
-  it("depth 3 renders <h4>", () => {
+  it("depth 3 with a descriptive label renders <h4>", () => {
     render(
       <SectionRenderer
         section={makeSection({
           depth: 3,
-          heading: "Section 1 > (a) > (1) Eligible",
+          heading: "Section 1 > (a) In general > (1) Eligible",
           slug: "sec-1--a--1-eligible",
         })}
       />,
@@ -60,12 +60,12 @@ describe("<SectionRenderer> — heading depth → tag mapping", () => {
     expect(screen.getByRole("heading", { level: 4 })).toBeInTheDocument();
   });
 
-  it("depth 5 still renders <h4> (clamped — visual hierarchy collapses past h4)", () => {
+  it("depth 5 with a descriptive label still renders <h4> (clamped)", () => {
     render(
       <SectionRenderer
         section={makeSection({
           depth: 5,
-          heading: "Section 1 > (a) > (1) > (A) > (i) Period",
+          heading: "Section 1 > (a) > (1) > (A) > (i) Covered period",
           slug: "sec-1-deep-clause",
         })}
       />,
@@ -189,7 +189,20 @@ describe("<SectionRenderer> — data attributes (event-delegation contract)", ()
 });
 
 describe("<SectionRenderer> — heading text fidelity", () => {
-  it("renders the full joined heading verbatim (path with ` > `)", () => {
+  it("depth-1 headings render the full heading verbatim (no path to strip)", () => {
+    render(
+      <SectionRenderer
+        section={makeSection({
+          depth: 1,
+          heading: "Section 1. Short title",
+        })}
+      />,
+    );
+    const heading = screen.getByRole("heading", { level: 2 });
+    expect(heading.textContent).toBe("Section 1. Short title");
+  });
+
+  it("depth ≥ 2 headings render only the innermost path segment", () => {
     render(
       <SectionRenderer
         section={makeSection({
@@ -199,7 +212,20 @@ describe("<SectionRenderer> — heading text fidelity", () => {
       />,
     );
     const heading = screen.getByRole("heading", { level: 4 });
-    expect(heading.textContent).toBe(
+    expect(heading.textContent).toBe("(1) Eligible person");
+  });
+
+  it("preserves the full path on data-section-heading for scroll-spy/breadcrumb", () => {
+    const { container } = render(
+      <SectionRenderer
+        section={makeSection({
+          depth: 3,
+          heading: "Section 5. Funding > (a) In general > (1) Eligible person",
+        })}
+      />,
+    );
+    const sectionEl = container.querySelector("section") as HTMLElement;
+    expect(sectionEl.dataset.sectionHeading).toBe(
       "Section 5. Funding > (a) In general > (1) Eligible person",
     );
   });
@@ -214,5 +240,77 @@ describe("<SectionRenderer> — heading text fidelity", () => {
     );
     const heading = screen.getByRole("heading", { level: 2 });
     expect(heading.textContent).toContain("\u201cShort\u201d");
+  });
+});
+
+describe("<SectionRenderer> — marker-only inlining", () => {
+  it("bare-marker subsection (e.g. `(1)`) renders no heading and inlines the marker into the first paragraph", () => {
+    const { container } = render(
+      <SectionRenderer
+        section={makeSection({
+          depth: 2,
+          heading: "Section 2 > (1)",
+          slug: "sec-2--1",
+          content: "The intent of this Act is to permit claims.",
+        })}
+      />,
+    );
+    // No heading element rendered for this section
+    expect(container.querySelector("h2, h3, h4")).toBeNull();
+    // Marker appears as a <strong> prefix on the first paragraph
+    const strong = container.querySelector(".bill-prose-marker") as HTMLElement;
+    expect(strong).toBeTruthy();
+    expect(strong.textContent).toBe("(1)");
+    // And the body text still appears in the paragraph
+    expect(container.textContent).toContain(
+      "The intent of this Act is to permit claims.",
+    );
+  });
+
+  it("bare-marker subsection with descriptive text (e.g. `(a) In general`) renders a heading, not an inline marker", () => {
+    const { container } = render(
+      <SectionRenderer
+        section={makeSection({
+          depth: 2,
+          heading: "Section 2 > (a) In general",
+          slug: "sec-2--a",
+          content: "Some content here.",
+        })}
+      />,
+    );
+    expect(container.querySelector("h3")).toBeTruthy();
+    expect(container.querySelector(".bill-prose-marker")).toBeNull();
+  });
+
+  it("depth-1 sections are never marker-inlined, even if they would match the pattern", () => {
+    const { container } = render(
+      <SectionRenderer
+        section={makeSection({
+          depth: 1,
+          heading: "(1)",
+          slug: "weird-top-level",
+          content: "Body content.",
+        })}
+      />,
+    );
+    // Depth-1 always renders a real heading.
+    expect(container.querySelector("h2")).toBeTruthy();
+    expect(container.querySelector(".bill-prose-marker")).toBeNull();
+  });
+
+  it("inlined-marker section with empty body still renders the marker", () => {
+    const { container } = render(
+      <SectionRenderer
+        section={makeSection({
+          depth: 3,
+          heading: "Section 1 > (a) > (A)",
+          slug: "sec-1--a--a",
+          content: "",
+        })}
+      />,
+    );
+    const strong = container.querySelector(".bill-prose-marker") as HTMLElement;
+    expect(strong).toBeTruthy();
+    expect(strong.textContent).toBe("(A)");
   });
 });

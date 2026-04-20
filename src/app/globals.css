@@ -325,20 +325,21 @@
   letter-spacing: -0.005em;
 }
 .bill-prose h3 {
-  font-size: 1.125rem;
-  font-weight: 500;
+  font-size: 1rem;
+  font-weight: 600;
   color: var(--color-navy);
   scroll-margin-top: 80px;
-  margin-top: 1.75em;
-  margin-bottom: 0.35em;
+  margin-top: 1.25em;
+  margin-bottom: 0.25em;
+  letter-spacing: 0;
 }
 .bill-prose h4 {
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 0.95rem;
+  font-weight: 600;
   color: var(--color-navy);
   scroll-margin-top: 80px;
-  margin-top: 1.4em;
-  margin-bottom: 0.3em;
+  margin-top: 1em;
+  margin-bottom: 0.2em;
 }
 .dark .bill-prose h2,
 .dark .bill-prose h3,
@@ -347,10 +348,101 @@
 }
 .bill-prose p {
   margin-top: 0;
-  margin-bottom: 1em;
+  margin-bottom: 0.85em;
 }
 .bill-prose-section:first-of-type h2 {
   margin-top: 0;
+}
+
+/* -------------------------------------------------------------------- */
+/* Depth-based indentation + tree guides.                                */
+/*                                                                       */
+/* Legal bills are deeply nested (Section > (a) > (1) > (A) > (i)).      */
+/* Rather than repeat the path as text on every heading, we show         */
+/* hierarchy the way congress.gov does: progressive left indent, with    */
+/* a faint vertical guide line at each depth so the reader's eye can     */
+/* follow the tree without re-reading parent labels.                     */
+/* -------------------------------------------------------------------- */
+.bill-prose-section {
+  position: relative;
+}
+.bill-prose-section[data-section-depth="2"] {
+  padding-left: 1.25rem;
+  margin-top: 0.5em;
+}
+.bill-prose-section[data-section-depth="3"] {
+  padding-left: 2.5rem;
+  margin-top: 0.25em;
+}
+.bill-prose-section[data-section-depth="4"] {
+  padding-left: 3.5rem;
+  margin-top: 0.15em;
+}
+.bill-prose-section[data-section-depth="5"],
+.bill-prose-section[data-section-depth="6"],
+.bill-prose-section[data-section-depth="7"] {
+  padding-left: 4.25rem;
+  margin-top: 0.1em;
+}
+/* Guide line — drawn for depth ≥ 2, sits flush with the depth's new
+   left edge minus the indent step, so every nested block hangs off
+   its parent visually.  The line starts near the heading baseline
+   and runs the full height of the section. */
+.bill-prose-section[data-section-depth="2"]::before,
+.bill-prose-section[data-section-depth="3"]::before,
+.bill-prose-section[data-section-depth="4"]::before,
+.bill-prose-section[data-section-depth="5"]::before,
+.bill-prose-section[data-section-depth="6"]::before,
+.bill-prose-section[data-section-depth="7"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.5em;
+  bottom: 0.25em;
+  width: 2px;
+  border-radius: 1px;
+  background-color: rgba(184, 134, 11, 0.18);
+}
+.dark .bill-prose-section[data-section-depth="2"]::before,
+.dark .bill-prose-section[data-section-depth="3"]::before,
+.dark .bill-prose-section[data-section-depth="4"]::before,
+.dark .bill-prose-section[data-section-depth="5"]::before,
+.dark .bill-prose-section[data-section-depth="6"]::before,
+.dark .bill-prose-section[data-section-depth="7"]::before {
+  background-color: rgba(212, 160, 23, 0.25);
+}
+/* Mobile: collapse indentation to something much tighter — the 72ch
+   measure isn't long enough to afford large indents on small screens,
+   but we still want the tree guide so the nesting reads. */
+@media (max-width: 640px) {
+  .bill-prose-section[data-section-depth="2"] {
+    padding-left: 0.75rem;
+  }
+  .bill-prose-section[data-section-depth="3"] {
+    padding-left: 1.25rem;
+  }
+  .bill-prose-section[data-section-depth="4"] {
+    padding-left: 1.75rem;
+  }
+  .bill-prose-section[data-section-depth="5"],
+  .bill-prose-section[data-section-depth="6"],
+  .bill-prose-section[data-section-depth="7"] {
+    padding-left: 2rem;
+  }
+}
+
+/* Inline markers ((1), (A), (i)) — rendered as the first element of
+   the first paragraph in bare-marker subsections.  Fixed-width so
+   sibling markers align visually and the eye can scan a list of
+   subclauses without the content jumping around. */
+.bill-prose-marker {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  color: var(--color-navy);
+  margin-right: 0.1em;
+}
+.dark .bill-prose-marker {
+  color: var(--foreground);
 }
 
 .bill-prose-caption {

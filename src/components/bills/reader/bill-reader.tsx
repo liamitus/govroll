@@ -68,11 +68,18 @@ export function BillReader({
               className="max-w-[72ch] min-w-0 flex-1 pt-6 pb-32 sm:pt-8 lg:pb-24"
             >
               <header className="mb-10">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <span className="border-civic-gold/40 bg-civic-gold/10 text-navy dark:text-civic-gold inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold tracking-wide uppercase">
+                    {version.versionType}
+                  </span>
+                  <span className="text-muted-foreground bill-prose-meta text-xs">
+                    {dayjs(version.versionDate).format("MMM D, YYYY")}
+                  </span>
+                </div>
                 <h1 className="bill-prose-title">{bill.title}</h1>
                 <p className="text-muted-foreground bill-prose-meta mt-2 text-sm">
                   {sections.length} section{sections.length === 1 ? "" : "s"} ·{" "}
-                  {minutes} min read · {version.versionType} (
-                  {dayjs(version.versionDate).format("MMM D, YYYY")})
+                  {minutes} min read
                 </p>
               </header>
 
