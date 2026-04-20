@@ -42,12 +42,22 @@ export interface BillDetail extends BillSummary {
   fullText: string | null;
 }
 
+export interface ParsedCitationSummary {
+  shortLabel: string;
+  number: number;
+  congress: number | null;
+}
+
 export interface BillListResponse {
   total: number;
   page: number;
   pageSize: number;
   bills: BillSummary[];
   hiddenByMomentum: number;
+  /** Bill citation the user typed (e.g. "HR 1234"). Null if input isn't a citation. */
+  citation: ParsedCitationSummary | null;
+  /** Direct match for the typed citation. Null if citation didn't resolve. */
+  exactMatch: BillSummary | null;
 }
 
 export interface RepresentativeInfo {

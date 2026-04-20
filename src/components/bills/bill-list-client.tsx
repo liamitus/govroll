@@ -17,6 +17,7 @@ import { BillGroupCard } from "./bill-group-card";
 import { TOPICS } from "@/lib/topic-mapping";
 import { useAuth } from "@/hooks/use-auth";
 import { groupBills } from "@/lib/bill-grouping";
+import { formatOrdinal } from "@/lib/parse-bill-citation";
 import {
   billsQueryKey,
   fetchBillsPageClient,
@@ -98,6 +99,8 @@ export function BillListClient() {
   );
   const total = data?.pages[0]?.total ?? 0;
   const hiddenByMomentum = data?.pages[0]?.hiddenByMomentum ?? 0;
+  const exactMatch = data?.pages[0]?.exactMatch ?? null;
+  const citation = data?.pages[0]?.citation ?? null;
   const error = queryError
     ? "Something went wrong loading bills. Please try again."
     : null;
@@ -415,6 +418,38 @@ export function BillListClient() {
           )}
         </p>
       </div>
+
+      {/* Jump-to row — when the user typed a bill citation. Sits above
+          the main feed so they can still browse other results. */}
+      {citation && (
+        <div className="animate-fade-slide-up">
+          <div className="text-muted-foreground mb-1.5 px-0.5 text-[11px] font-medium tracking-wide uppercase">
+            {exactMatch ? (
+              <>
+                Jump to {citation.shortLabel} {citation.number}
+                {citation.congress !== null && (
+                  <> · {formatOrdinal(citation.congress)} Congress</>
+                )}
+              </>
+            ) : (
+              <>
+                No bill found for {citation.shortLabel} {citation.number}
+                {citation.congress !== null && (
+                  <> · {formatOrdinal(citation.congress)} Congress</>
+                )}
+              </>
+            )}
+          </div>
+          {exactMatch && (
+            <div className="border-navy/20 hover:border-navy/40 rounded-lg border border-dashed transition-colors">
+              <BillCard
+                bill={exactMatch}
+                userVote={userVotes.get(exactMatch.id) ?? null}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bill list */}
       <div

@@ -245,6 +245,9 @@ export async function POST(request: NextRequest) {
             : null,
           latestActionText: bill.latestActionText,
           shortText: bill.shortText,
+          popularTitle: bill.popularTitle,
+          displayTitle: bill.displayTitle,
+          shortTitle: bill.shortTitle,
           billType: bill.billType ? bill.billType.toUpperCase() : null,
           chamber: bill.currentChamber,
           introducedDate: bill.introducedDate

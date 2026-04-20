@@ -85,6 +85,9 @@ describe("buildBillChatSystemPrompt — reader mode toggle", () => {
         latestActionDate: null,
         latestActionText: null,
         shortText: "Plain summary.",
+        popularTitle: null,
+        displayTitle: null,
+        shortTitle: null,
       },
       { readerMode: true },
     );
