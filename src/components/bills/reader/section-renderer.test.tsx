@@ -74,26 +74,32 @@ describe("<SectionRenderer> — heading depth → tag mapping", () => {
   });
 });
 
-describe("<SectionRenderer> — caption rendering", () => {
-  it("renders the AI caption when present", () => {
+describe("<SectionRenderer> — caption is never rendered inline", () => {
+  // Captions are surfaced by the outline rail and the collapsed-group
+  // summary. Rendering them inline in the body duplicated the content
+  // and broke reading flow, so the renderer intentionally ignores
+  // `section.caption`.
+  it("does not render the caption even when present", () => {
     render(
       <SectionRenderer
         section={makeSection({ caption: "Names the bill the Test Act." })}
       />,
     );
-    expect(
-      screen.getByLabelText("AI summary of this section"),
-    ).toHaveTextContent("Names the bill the Test Act.");
-  });
-
-  it("omits the caption element entirely when caption is null", () => {
-    render(<SectionRenderer section={makeSection({ caption: null })} />);
     expect(screen.queryByLabelText("AI summary of this section")).toBeNull();
   });
 
-  it("omits the caption element when caption is empty string", () => {
-    render(<SectionRenderer section={makeSection({ caption: "" })} />);
-    expect(screen.queryByLabelText("AI summary of this section")).toBeNull();
+  it("does not render caption markup when caption is null", () => {
+    const { container } = render(
+      <SectionRenderer section={makeSection({ caption: null })} />,
+    );
+    expect(container.querySelector(".bill-prose-caption")).toBeNull();
+  });
+
+  it("does not render caption markup when caption is empty string", () => {
+    const { container } = render(
+      <SectionRenderer section={makeSection({ caption: "" })} />,
+    );
+    expect(container.querySelector(".bill-prose-caption")).toBeNull();
   });
 });
 
@@ -105,9 +111,7 @@ describe("<SectionRenderer> — content paragraphs", () => {
       />,
     );
     const sectionEl = container.querySelector("section");
-    const paragraphs = sectionEl?.querySelectorAll(
-      "p:not(.bill-prose-caption)",
-    );
+    const paragraphs = sectionEl?.querySelectorAll("p");
     expect(paragraphs?.length).toBe(1);
   });
 
@@ -121,7 +125,6 @@ describe("<SectionRenderer> — content paragraphs", () => {
     );
     const sectionEl = container.querySelector("section");
     const paragraphs = sectionEl?.querySelectorAll("p");
-    // 3 body + 0 caption = 3.
     expect(paragraphs?.length).toBe(3);
   });
 

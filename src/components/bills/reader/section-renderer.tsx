@@ -1,10 +1,10 @@
 import type { ReaderSection } from "./reader-types";
 
 /**
- * Render a single bill section: heading + (optional) AI caption + body
- * paragraphs. Server-rendered, no interactivity. The wrapping
- * `<section>` carries `id={slug}` so deep-link scrolling and the
- * intersection-observer scroll-spy resolve consistently.
+ * Render a single bill section: heading + body paragraphs. Server-
+ * rendered, no interactivity. The wrapping `<section>` carries
+ * `id={slug}` so deep-link scrolling and the intersection-observer
+ * scroll-spy resolve consistently.
  *
  * Heading display strategy:
  *   - Depth 1 (top-level `Section N. Title`): full heading as an <h2>.
@@ -16,6 +16,10 @@ import type { ReaderSection } from "./reader-types";
  *     element — the marker is inlined as a `<strong>` prefix on the
  *     first paragraph. Matches how legal text actually reads and how
  *     congress.gov presents numeric subclauses.
+ *
+ * AI captions are NOT rendered inline here. The outline rail and the
+ * collapsed-group summary already surface them; duplicating captions
+ * in the body crowded the text and interrupted reading flow.
  *
  * The full path stays on `data-section-heading` so the sticky
  * breadcrumb and scroll-spy keep working unchanged.
@@ -78,15 +82,6 @@ export function SectionRenderer({ section }: { section: ReaderSection }) {
           </button>
         </div>
       )}
-
-      {section.caption ? (
-        <p
-          className="bill-prose-caption"
-          aria-label="AI summary of this section"
-        >
-          {section.caption}
-        </p>
-      ) : null}
 
       {paragraphs.length > 0 ? (
         paragraphs.map((para, i) => (
