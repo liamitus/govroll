@@ -61,6 +61,13 @@ model Bill {
   // can't get text for (genuinely unpublished, withdrawn, etc.) rotate to
   // the back of the queue instead of blocking all other bills behind them.
   textFetchAttemptedAt DateTime?
+  // Title variants fetched from Congress.gov /titles endpoint. We search
+  // on all of these via the weighted searchVector generated column —
+  // users type popular names ("CHIPS Act"), not official titles.
+  popularTitle      String?
+  shortTitle        String?
+  displayTitle      String?
+  searchVector      Unsupported("tsvector")?
   votes             RepresentativeVote[]
   publicVotes       Vote[]
   comments          Comment[]

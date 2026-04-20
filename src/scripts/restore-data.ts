@@ -28,6 +28,9 @@ interface BillEnrichmentRecord {
   policyArea: string | null;
   latestActionText: string | null;
   latestActionDate: string | null;
+  popularTitle: string | null;
+  displayTitle: string | null;
+  shortTitle: string | null;
 }
 
 interface AiOutputRecord {
@@ -64,6 +67,9 @@ async function restoreEnrichment(force: boolean): Promise<number> {
         policyArea: true,
         latestActionText: true,
         latestActionDate: true,
+        popularTitle: true,
+        displayTitle: true,
+        shortTitle: true,
       },
     });
     if (!existing) continue;
@@ -84,6 +90,11 @@ async function restoreEnrichment(force: boolean): Promise<number> {
         ? new Date(b.latestActionDate)
         : null;
     }
+    if (force || existing.popularTitle === null)
+      data.popularTitle = b.popularTitle;
+    if (force || existing.displayTitle === null)
+      data.displayTitle = b.displayTitle;
+    if (force || existing.shortTitle === null) data.shortTitle = b.shortTitle;
 
     if (Object.keys(data).length > 0) {
       await prisma.bill.update({ where: { id: existing.id }, data });

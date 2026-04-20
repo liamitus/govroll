@@ -97,6 +97,9 @@ export async function refreshBillMetadataFunction(limit = 25) {
             ? new Date(meta.latestActionDate)
             : null,
           shortText: meta.shortText,
+          popularTitle: meta.popularTitle,
+          displayTitle: meta.displayTitle,
+          shortTitle: meta.shortTitle,
           ...(gotSummary ? { lastMetadataRefreshAt: new Date() } : {}),
         },
       });

@@ -47,6 +47,9 @@ describe("buildBillChatSystemPrompt", () => {
       latestActionDate: "2026-04-01",
       latestActionText: "Referred.",
       shortText: "This bill does something specific.",
+      popularTitle: null,
+      displayTitle: null,
+      shortTitle: null,
     });
     expect(prompt).toContain("This bill does something specific");
     expect(prompt).toContain("Congressional Research Service summary");
@@ -70,6 +73,9 @@ describe("buildBillChatSystemPrompt", () => {
       latestActionDate: "2026-04-10",
       latestActionText: "Referred.",
       shortText: null,
+      popularTitle: null,
+      displayTitle: null,
+      shortTitle: null,
       billType: "HR",
       chamber: "House",
       introducedDate: "2026-03-01",
@@ -109,6 +115,9 @@ describe("buildBillChatSystemPrompt", () => {
       latestActionDate: null,
       latestActionText: null,
       shortText: null,
+      popularTitle: null,
+      displayTitle: null,
+      shortTitle: null,
       cosponsors,
     });
     // First entries are included…
