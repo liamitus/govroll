@@ -38,6 +38,9 @@ interface BillEnrichmentRecord {
   policyArea: string | null;
   latestActionText: string | null;
   latestActionDate: string | null;
+  popularTitle: string | null;
+  displayTitle: string | null;
+  shortTitle: string | null;
 }
 
 interface AiOutputRecord {
@@ -55,7 +58,8 @@ interface BackupMetadata {
   schemaVersion: number;
 }
 
-const SCHEMA_VERSION = 1;
+// v2: added popularTitle, displayTitle, shortTitle from Congress.gov /titles.
+const SCHEMA_VERSION = 2;
 const DATA_DIR = path.resolve(process.cwd(), "data");
 
 async function backupEnrichment(): Promise<BillEnrichmentRecord[]> {
@@ -66,6 +70,9 @@ async function backupEnrichment(): Promise<BillEnrichmentRecord[]> {
         { sponsor: { not: null } },
         { policyArea: { not: null } },
         { latestActionText: { not: null } },
+        { popularTitle: { not: null } },
+        { displayTitle: { not: null } },
+        { shortTitle: { not: null } },
       ],
     },
     select: {
@@ -77,6 +84,9 @@ async function backupEnrichment(): Promise<BillEnrichmentRecord[]> {
       policyArea: true,
       latestActionText: true,
       latestActionDate: true,
+      popularTitle: true,
+      displayTitle: true,
+      shortTitle: true,
     },
   });
 
@@ -92,6 +102,9 @@ async function backupEnrichment(): Promise<BillEnrichmentRecord[]> {
       latestActionDate: b.latestActionDate
         ? b.latestActionDate.toISOString()
         : null,
+      popularTitle: b.popularTitle,
+      displayTitle: b.displayTitle,
+      shortTitle: b.shortTitle,
     }))
     .sort((a, b) => a.billId.localeCompare(b.billId));
 }

@@ -299,6 +299,12 @@ export interface BillMetadata {
   latestActionText: string | null;
   /** Plain-text CRS summary, most recent version. Null if none published. */
   shortText: string | null;
+  /** Colloquial name — "CHIPS Act", "Inflation Reduction Act". Null if none. */
+  popularTitle: string | null;
+  /** Title Congress.gov's UI displays. Often same as official, sometimes shorter. */
+  displayTitle: string | null;
+  /** Short title — prefers enacted form over introduced. */
+  shortTitle: string | null;
   /** Short bill-type code, e.g. "HR", "S", "HJRES". */
   billType?: string | null;
   /** Originating chamber, e.g. "House" or "Senate". */
@@ -315,6 +321,83 @@ export interface BillMetadata {
    * the count + party-split stays authoritative for totals.
    */
   cosponsors?: string[];
+}
+
+/**
+ * Title variants fetched from Congress.gov's /titles endpoint.
+ *
+ * Congress.gov returns a titles[] array where each entry is typed via
+ * titleTypeCode. We care about:
+ *   30 — Popular Title (colloquial, what users type)
+ *   45 — Display Title (what Congress.gov shows in their UI)
+ *   19 — Short Title as Enacted
+ *   14 — Short Title as Introduced
+ *
+ * Any of these can be null: not every bill has a popular or display title.
+ */
+export interface BillTitles {
+  popularTitle: string | null;
+  displayTitle: string | null;
+  shortTitle: string | null;
+}
+
+interface CongressTitle {
+  titleType?: string;
+  titleTypeCode?: number;
+  title?: string;
+  updateDate?: string;
+}
+
+/** Pick the most-recently-updated title from a filtered subset. */
+function pickLatestTitle(titles: CongressTitle[]): string | null {
+  if (titles.length === 0) return null;
+  const sorted = [...titles].sort((a, b) =>
+    (b.updateDate ?? "").localeCompare(a.updateDate ?? ""),
+  );
+  const t = sorted[0].title?.trim();
+  return t || null;
+}
+
+export async function fetchBillTitles(
+  congress: number,
+  apiBillType: string,
+  billNumber: number,
+): Promise<BillTitles | null> {
+  try {
+    const res = await withRetry(() =>
+      congressApiClient.get(
+        `/bill/${congress}/${apiBillType}/${billNumber}/titles`,
+      ),
+    );
+    const raw: CongressTitle[] = Array.isArray(res.data?.titles)
+      ? res.data.titles
+      : [];
+    if (raw.length === 0)
+      return { popularTitle: null, displayTitle: null, shortTitle: null };
+
+    const popularTitle = pickLatestTitle(
+      raw.filter((t) => t.titleTypeCode === 30),
+    );
+    const displayTitle = pickLatestTitle(
+      raw.filter((t) => t.titleTypeCode === 45),
+    );
+    // Prefer enacted short title (code 19) when it exists; fall back to
+    // introduced (code 14). Enacted titles are authoritative for law.
+    const shortTitleEnacted = pickLatestTitle(
+      raw.filter((t) => t.titleTypeCode === 19),
+    );
+    const shortTitle =
+      shortTitleEnacted ??
+      pickLatestTitle(raw.filter((t) => t.titleTypeCode === 14));
+
+    return { popularTitle, displayTitle, shortTitle };
+  } catch (error: unknown) {
+    console.error(
+      "Failed to fetch bill titles:",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
 }
 
 /**
@@ -457,7 +540,7 @@ export async function fetchBillMetadata(
   billNumber: number,
 ): Promise<BillMetadata | null> {
   try {
-    const [billRes, cosponsorList, summary] = await Promise.all([
+    const [billRes, cosponsorList, summary, titles] = await Promise.all([
       withRetry(() =>
         congressApiClient.get(`/bill/${congress}/${apiBillType}/${billNumber}`),
       ),
@@ -469,6 +552,7 @@ export async function fetchBillMetadata(
         "cosponsors",
       ).catch(() => null),
       fetchBillSummary(congress, apiBillType, billNumber),
+      fetchBillTitles(congress, apiBillType, billNumber),
     ]);
 
     const bill = billRes.data?.bill;
@@ -502,6 +586,9 @@ export async function fetchBillMetadata(
       latestActionDate: bill.latestAction?.actionDate ?? null,
       latestActionText: bill.latestAction?.text ?? null,
       shortText: summary,
+      popularTitle: titles?.popularTitle ?? null,
+      displayTitle: titles?.displayTitle ?? null,
+      shortTitle: titles?.shortTitle ?? null,
     };
   } catch (error: unknown) {
     console.error(

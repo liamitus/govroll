@@ -123,6 +123,9 @@ export async function fetchBillTextFunction(targetBillId?: string, limit = 10) {
             ? new Date(metadata.latestActionDate)
             : null;
           updates.shortText = metadata.shortText;
+          updates.popularTitle = metadata.popularTitle;
+          updates.displayTitle = metadata.displayTitle;
+          updates.shortTitle = metadata.shortTitle;
         }
         if (Object.keys(updates).length > 0) {
           await prisma.bill.update({ where: { id: bill.id }, data: updates });
