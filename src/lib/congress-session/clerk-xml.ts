@@ -42,6 +42,16 @@ function easternYmd(now: Date): string {
     .replace(/-/g, "");
 }
 
+/** Hour-of-day (0-23) in US Eastern time. */
+function etHour(now: Date): number {
+  const h = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    hour12: false,
+  }).format(now);
+  return parseInt(h, 10);
+}
+
 export async function getHouseClerkSignal(
   now: Date = new Date(),
 ): Promise<Signal | null> {
@@ -63,11 +73,20 @@ export async function getHouseClerkSignal(
       // 404 = no proceedings published for today = almost certainly not in
       // session. Surface that as a positive signal rather than null so
       // the waterfall can short-circuit to calendar context.
+      //
+      // Before the House's typical noon ET gavel-in, the Clerk hasn't
+      // written today's XML yet — a 404 then doesn't mean "recess", it
+      // means "we haven't started". Soften the detail copy so citizens
+      // don't read the morning pill as "Recess — no proceedings today".
       if (res.status === 404) {
+        const detail =
+          etHour(now) < 12
+            ? "House has not yet gaveled in"
+            : "No floor proceedings published today";
         return {
           status: "recess",
           observedAt: null,
-          detail: "No floor proceedings published today",
+          detail,
           source: "clerk_xml",
         };
       }

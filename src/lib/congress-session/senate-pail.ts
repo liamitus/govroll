@@ -93,6 +93,24 @@ export async function getSenatePailSignal(
     };
   }
 
+  // PAIL uses bare "Convene at 3:00 p.m." (future tense, no 'd') for days
+  // the Senate is scheduled to meet but hasn't gaveled in yet. Without this
+  // branch we fall through to null → unknown and the pill reads "Status
+  // unavailable" every morning before convene.
+  const scheduled = matchTime(
+    section,
+    /\bconvene\s+at\s+([0-9:apm.\s]+)/i,
+    now,
+  );
+  if (scheduled && scheduled.getTime() > now.getTime()) {
+    return {
+      status: "recess",
+      observedAt: null,
+      detail: `Senate convenes at ${formatEtTime(scheduled)} ET`,
+      source: "senate_pail",
+    };
+  }
+
   return null;
 }
 
@@ -170,6 +188,17 @@ function parseEtTime(raw: string, reference: Date): Date | null {
 
 function pad(n: number): string {
   return n.toString().padStart(2, "0");
+}
+
+/** "3:00 p.m." — matches the style PAIL itself uses. */
+function formatEtTime(d: Date): string {
+  const raw = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+  return raw.replace(/\b([AP])M\b/, (_, c: string) => `${c.toLowerCase()}.m.`);
 }
 
 function stripTags(html: string): string {
