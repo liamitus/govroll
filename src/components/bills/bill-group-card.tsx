@@ -6,6 +6,7 @@ import dayjs from "dayjs";
 import type { BillSummary, VoteType } from "@/types";
 import { getTopicForPolicyArea } from "@/lib/topic-mapping";
 import { formatBillNumber } from "@/lib/bill-grouping";
+import { billHref } from "@/lib/bills/url";
 import { voteChipStyle } from "./bill-card";
 
 // Swaps the chevron for a spinner while this specific sub-row's Link is
@@ -229,7 +230,7 @@ export function BillGroupCard({
                   return (
                     <li key={b.id}>
                       <Link
-                        href={`/bills/${b.id}`}
+                        href={billHref(b)}
                         className="group flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-white"
                       >
                         <span

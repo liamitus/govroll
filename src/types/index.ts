@@ -163,7 +163,7 @@ export interface CommentData {
   date: string;
   voteCount: number;
   replies: CommentData[];
-  bill?: { id: number; title: string };
+  bill?: { id: number; billId: string; title: string };
 }
 
 export type VoteType = "For" | "Against" | "Abstain";

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { RepVoteRecord } from "@/types";
+import { billHref } from "@/lib/bills/url";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 interface VoteComparisonFeedProps {
@@ -133,7 +134,10 @@ export function VoteComparisonFeed({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 flex-1">
                     <Link
-                      href={`/bills/${bill.billId}`}
+                      href={billHref({
+                        billId: bill.billSlug,
+                        title: bill.title,
+                      })}
                       className="text-navy line-clamp-2 text-base leading-snug font-semibold hover:underline"
                     >
                       {bill.title}

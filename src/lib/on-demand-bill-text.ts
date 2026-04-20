@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { fetchBillTextFunction } from "@/scripts/fetch-bill-text";
+import { billHref } from "@/lib/bills/url";
 
 /**
  * Cold-start threshold — if we haven't tried to fetch a bill's text within
@@ -32,6 +33,7 @@ const TRY_AGAIN_AFTER_MS = 60 * 60 * 1000; // 1 hour
 export function maybeFetchBillTextInBackground(bill: {
   id: number;
   billId: string;
+  title: string;
   fullText: string | null;
   textFetchAttemptedAt: Date | null;
 }): void {
@@ -64,7 +66,7 @@ export function maybeFetchBillTextInBackground(bill: {
       if (claimed.count === 0) return;
 
       await fetchBillTextFunction(bill.billId, 1);
-      revalidatePath(`/bills/${bill.id}`);
+      revalidatePath(billHref({ billId: bill.billId, title: bill.title }));
     } catch {
       // Swallow — the failure is already logged by fetchBillTextFunction,
       // and the claim timestamp we just wrote will prevent hot-looping.

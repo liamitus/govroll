@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 
 import { pathFromHeading } from "@/lib/section-slug";
+import { billHref, type BillForUrl } from "@/lib/bills/url";
 import { useScrollSpy } from "./scroll-spy";
 
 /**
@@ -19,12 +20,10 @@ import { useScrollSpy } from "./scroll-spy";
  * not the whole bar.
  */
 export function StickyBreadcrumb({
-  billId,
-  billTitle,
+  bill,
   sections,
 }: {
-  billId: number;
-  billTitle: string;
+  bill: BillForUrl;
   sections: Array<{ slug: string; heading: string }>;
 }) {
   const { activeSlug } = useScrollSpy();
@@ -39,7 +38,7 @@ export function StickyBreadcrumb({
     <div className="border-civic-gold/30 bg-civic-cream/85 dark:bg-card/85 supports-[backdrop-filter]:bg-civic-cream/65 sticky top-0 z-30 border-b backdrop-blur">
       <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-2.5 sm:px-6">
         <Link
-          href={`/bills/${billId}`}
+          href={billHref(bill)}
           className="text-muted-foreground hover:text-foreground flex-none rounded-md px-1 text-xs font-medium transition-colors"
           aria-label="Back to bill page"
         >
@@ -47,7 +46,7 @@ export function StickyBreadcrumb({
         </Link>
 
         <div className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-          <span className="text-foreground">{billTitle}</span>
+          <span className="text-foreground">{bill.title}</span>
           <span className="text-muted-foreground" suppressHydrationWarning>
             {path.length > 0 ? (
               <>
