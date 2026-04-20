@@ -127,10 +127,10 @@ export function RepresentativesDashboard() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (inputAddr.trim()) {
-                  setUserAddress(inputAddr.trim());
-                  setEditAddress(false);
-                }
+                const trimmed = inputAddr.trim();
+                // Empty submit clears the saved address.
+                setUserAddress(trimmed);
+                setEditAddress(false);
               }}
               className="flex gap-1.5"
             >
@@ -142,12 +142,11 @@ export function RepresentativesDashboard() {
                   setUserAddress(addr);
                   setEditAddress(false);
                 }}
-                placeholder={address}
                 className="border-input focus:ring-navy/30 h-7 w-52 rounded border px-2 text-sm focus:ring-2 focus:outline-none"
                 autoFocus
               />
               <button className="bg-navy hover:bg-navy-light h-7 rounded px-2 text-sm text-white">
-                Update
+                {inputAddr.trim() ? "Update" : "Clear"}
               </button>
               <button
                 type="button"
@@ -160,7 +159,7 @@ export function RepresentativesDashboard() {
           ) : (
             <button
               onClick={() => {
-                setInputAddr("");
+                setInputAddr(address);
                 setEditAddress(true);
               }}
               className="text-muted-foreground hover:text-navy text-sm transition-colors"
