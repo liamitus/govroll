@@ -121,6 +121,50 @@ describe("Pipeline round-trip — s1884 HEAR Act fixture", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+//  Real-bill round-trip — S.3706 Victims' VOICES Act (after-quoted-block)
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("Pipeline round-trip — S.3706 Victims' VOICES Act fixture", () => {
+  it("does not produce two sections with the identical Section 2 heading", async () => {
+    const chunks = await parseXml(fixture("s3706-victims-voices.xml"));
+    const fullText = renderToFullText(chunks);
+    const parsed = parseSectionsFromFullText(fullText);
+
+    const headingCounts = new Map<string, number>();
+    for (const s of parsed) {
+      headingCounts.set(s.heading, (headingCounts.get(s.heading) ?? 0) + 1);
+    }
+    const duplicates = [...headingCounts.entries()].filter(([, n]) => n > 1);
+    expect(
+      duplicates,
+      `duplicate headings: ${duplicates.map(([h]) => h).join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("no parsed section has degenerate content (e.g. a lone period)", async () => {
+    const chunks = await parseXml(fixture("s3706-victims-voices.xml"));
+    const parsed = parseSectionsFromFullText(renderToFullText(chunks));
+    for (const s of parsed) {
+      expect(
+        s.content.trim(),
+        `section "${s.heading}" has degenerate content`,
+      ).not.toMatch(/^[.,;:!?]+$/);
+    }
+  });
+
+  it("all slugs are unique (duplicate headings would force a collision suffix)", async () => {
+    const chunks = await parseXml(fixture("s3706-victims-voices.xml"));
+    const parsed = parseSectionsFromFullText(renderToFullText(chunks));
+    const slugs = sectionSlugsForBill(parsed);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    // And — more specifically — there should be no "-2" suffixed twin
+    // of sec-2-restitution, which is the visible signature of the bug.
+    const twins = slugs.filter((s) => /^sec-2-restitution.*-2$/.test(s));
+    expect(twins).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 //  Synthetic edge cases — inline XML, no fixture files
 // ─────────────────────────────────────────────────────────────────────────
 
