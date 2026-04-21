@@ -141,6 +141,82 @@ describe("BillXmlParser — unknown container recursion", () => {
   });
 });
 
+describe("BillXmlParser — S.3706 Victims' VOICES Act (after-quoted-block phantom)", () => {
+  it("does not emit a phantom chunk for an after-quoted-block containing only closing punctuation", async () => {
+    const chunks = await parse(fixture("s3706-victims-voices.xml"));
+    // Before the fix, the parser emitted a trailing ParsedChunk at
+    // Section 2's path with content just "." — the closing punctuation
+    // of the outer amending sentence. That phantom chunk re-rendered
+    // as a duplicate "Section 2. Restitution…" heading in the reader.
+    for (const chunk of chunks) {
+      expect(
+        chunk.content.trim(),
+        `phantom chunk at ${chunk.path.join(" > ")}`,
+      ).not.toMatch(/^[.,;:!?]+$/);
+    }
+  });
+
+  it("emits exactly one chunk at Section 2's bare path (the lead-in text), not two", async () => {
+    const chunks = await parse(fixture("s3706-victims-voices.xml"));
+    const section2Bare = chunks.filter(
+      (c) =>
+        c.path.length === 1 &&
+        c.path[0].startsWith("Section 2.") &&
+        c.path[0].includes("Restitution"),
+    );
+    expect(section2Bare).toHaveLength(1);
+    // And that one chunk carries the amending sentence lead-in.
+    expect(section2Bare[0].content).toContain("Section 3663A(a) of title 18");
+  });
+
+  it("preserves inserted amendment content and its (A)/(B)/(C) subparagraphs", async () => {
+    const chunks = await parse(fixture("s3706-victims-voices.xml"));
+    const all = render(chunks);
+    expect(all).toContain("(4) Clarification");
+    expect(all).toContain("In ordering restitution under this section");
+    expect(all).toContain("lost income, child care, transportation");
+    expect(all).toContain(
+      "transporting the victim for necessary medical and related professional services",
+    );
+    expect(all).toContain(
+      "to receive necessary physical and occupational therapy and rehabilitation",
+    );
+  });
+});
+
+describe("BillXmlParser — after-quoted-block with substantive continuation text", () => {
+  it("attaches substantive after-quoted-block text to the outer section's lead-in, not as a duplicate heading", async () => {
+    // Synthetic: after-quoted-block occasionally carries real tail
+    // text that continues the outer amending sentence. It must not
+    // spawn a second chunk at the outer section's path (which would
+    // re-render as a duplicate heading downstream).
+    const xml = `<?xml version="1.0"?>
+<bill>
+  <legis-body>
+    <section>
+      <enum>2.</enum>
+      <header>Amendment</header>
+      <text>Section X is amended by adding the following:</text>
+      <quoted-block>
+        <text>New statutory language.</text>
+        <after-quoted-block>; and by striking the second sentence.</after-quoted-block>
+      </quoted-block>
+    </section>
+  </legis-body>
+</bill>`;
+    const chunks = await parse(xml);
+    const section2Bare = chunks.filter(
+      (c) => c.path.length === 1 && c.path[0].startsWith("Section 2."),
+    );
+    // Exactly one chunk at the outer section's bare path — the
+    // continuation text should merge into the lead-in, not stand alone.
+    expect(section2Bare).toHaveLength(1);
+    // The continuation text survives somewhere in the chunk set.
+    const all = render(chunks);
+    expect(all).toContain("striking the second sentence");
+  });
+});
+
 describe("BillXmlParser — empty / degenerate input", () => {
   it("returns empty array for a bill with no body", async () => {
     const chunks = await parse(`<?xml version="1.0"?><bill></bill>`);

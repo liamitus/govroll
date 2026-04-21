@@ -54,9 +54,49 @@ export const BillXmlParser = { extractSections };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 async function extractSections(xmlObj: any): Promise<ParsedChunk[]> {
-  if (xmlObj.bill) return parseBillOrResolution(xmlObj.bill);
-  if (xmlObj.resolution) return parseBillOrResolution(xmlObj.resolution);
-  return [];
+  let chunks: ParsedChunk[] = [];
+  if (xmlObj.bill) chunks = parseBillOrResolution(xmlObj.bill);
+  else if (xmlObj.resolution) chunks = parseBillOrResolution(xmlObj.resolution);
+  else return [];
+  return coalesceSamePathChunks(chunks);
+}
+
+/**
+ * Collapse any chunks that land at the same path into the first such
+ * chunk. <quoted-block> is a header-less pass-through, so its child
+ * <after-quoted-block> (typically just the closing "." of the outer
+ * amending sentence) would otherwise emit a second chunk at the outer
+ * section's path — re-rendering downstream as a duplicate heading
+ * with near-empty body. Collapsing here keeps one heading per path.
+ */
+function coalesceSamePathChunks(chunks: ParsedChunk[]): ParsedChunk[] {
+  const firstIdxByKey = new Map<string, number>();
+  const out: ParsedChunk[] = [];
+  for (const chunk of chunks) {
+    const key = chunk.path.join("\u0000");
+    const existingIdx = firstIdxByKey.get(key);
+    if (existingIdx !== undefined) {
+      const existing = out[existingIdx];
+      existing.content = mergeContent(existing.content, chunk.content);
+      continue;
+    }
+    firstIdxByKey.set(key, out.length);
+    out.push(chunk);
+  }
+  return out;
+}
+
+function mergeContent(existing: string, addition: string): string {
+  const trimmed = addition.trim();
+  if (!trimmed) return existing;
+  // Pure punctuation continuations (the after-quoted-block "." case):
+  // if the existing chunk already terminates cleanly, drop the
+  // redundant punctuation; otherwise append without a preceding space.
+  if (/^[.,;:!?]+$/.test(trimmed)) {
+    if (/[.;:!?]$/.test(existing)) return existing;
+    return existing + trimmed;
+  }
+  return tidyContent(existing + " " + trimmed);
 }
 
 function parseBillOrResolution(topNode: any): ParsedChunk[] {
