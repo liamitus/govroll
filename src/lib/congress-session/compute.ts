@@ -5,7 +5,7 @@ import { getVoteRecencySignal } from "./vote-recency";
 import {
   getRecessToday,
   getNextRecess,
-  recessReturnDate,
+  nextInSessionDate,
   type CalendarWindow,
 } from "./calendar";
 import type { Chamber, ChamberStatus, Signal } from "./types";
@@ -41,12 +41,14 @@ export async function computeChamberStatus(
   chamber: Chamber,
   now: Date = new Date(),
 ): Promise<ChamberStatus> {
-  const [liveSignal, voteSignal, recessToday, nextRecess] = await Promise.all([
-    chamber === "house" ? getHouseClerkSignal(now) : getSenatePailSignal(now),
-    getVoteRecencySignal(prisma, chamber, now),
-    getRecessToday(prisma, chamber, now),
-    getNextRecess(prisma, chamber, now),
-  ]);
+  const [liveSignal, voteSignal, recessToday, nextRecess, nextSession] =
+    await Promise.all([
+      chamber === "house" ? getHouseClerkSignal(now) : getSenatePailSignal(now),
+      getVoteRecencySignal(prisma, chamber, now),
+      getRecessToday(prisma, chamber, now),
+      getNextRecess(prisma, chamber, now),
+      nextInSessionDate(prisma, chamber, now),
+    ]);
 
   // ── 1. Voting rule — any signal with `voting` status wins outright ─────
   const votingSignal = pickVoting(liveSignal, voteSignal);
@@ -111,10 +113,7 @@ export async function computeChamberStatus(
       detail: recessToday.label,
       source: "calendar",
       lastActionAt: null,
-      nextTransitionAtOverride: recessReturnDate(recessToday),
-      nextTransitionLabelOverride: `Returns ${formatReturns(
-        recessReturnDate(recessToday),
-      )}`,
+      nextSession,
       now,
     });
   }
@@ -132,7 +131,7 @@ export async function computeChamberStatus(
       detail: "Weekend — chamber not in session",
       source: "calendar",
       lastActionAt: null,
-      nextRecess,
+      nextSession,
       now,
     });
   }
@@ -145,7 +144,7 @@ export async function computeChamberStatus(
       detail: liveSignal.detail,
       source: liveSignal.source,
       lastActionAt: null,
-      nextRecess,
+      nextSession,
       now,
     });
   }
@@ -176,19 +175,25 @@ interface ShapeArgs {
   source: ChamberStatus["source"];
   lastActionAt: Date | null;
   nextRecess?: CalendarWindow | null;
-  nextTransitionAtOverride?: Date;
-  nextTransitionLabelOverride?: string;
+  nextSession?: Date | null;
   now: Date;
 }
 
 function shape(args: ShapeArgs): ChamberStatus {
-  const nextTransitionAt =
-    args.nextTransitionAtOverride ?? args.nextRecess?.startDate ?? null;
-  const nextTransitionLabel =
-    args.nextTransitionLabelOverride ??
-    (args.nextRecess
-      ? `Next recess ${formatReturns(args.nextRecess.startDate)} — ${args.nextRecess.label}`
-      : null);
+  // When the chamber is currently in recess, the useful transition is
+  // "when do they next convene" — not "when's the next recess," which
+  // reads as a contradiction ("in recess … next recess tomorrow?").
+  // For in-session / voting states, surface the upcoming recess instead.
+  let nextTransitionAt: Date | null = null;
+  let nextTransitionLabel: string | null = null;
+
+  if (args.status === "recess" && args.nextSession) {
+    nextTransitionAt = args.nextSession;
+    nextTransitionLabel = `Returns ${formatReturns(args.nextSession, true)}`;
+  } else if (args.nextRecess) {
+    nextTransitionAt = args.nextRecess.startDate;
+    nextTransitionLabel = `Next recess ${formatReturns(args.nextRecess.startDate)} — ${args.nextRecess.label}`;
+  }
 
   return {
     chamber: args.chamber,
@@ -202,9 +207,10 @@ function shape(args: ShapeArgs): ChamberStatus {
   };
 }
 
-function formatReturns(d: Date): string {
+function formatReturns(d: Date, withWeekday = false): string {
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "UTC",
+    ...(withWeekday ? { weekday: "short" } : {}),
     month: "short",
     day: "numeric",
   }).format(d);

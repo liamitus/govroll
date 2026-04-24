@@ -72,12 +72,66 @@ export async function getNextRecess(
 }
 
 /**
- * Last day of the current recess window (for "Returns <day>" copy).
- * We return the day AFTER endDate — Congress returns the morning after the
- * recess ends.
+ * Next ET calendar day from tomorrow that isn't inside a scheduled recess
+ * window and isn't a weekend. Used as the "Returns {date}" label when a
+ * chamber is currently in recess — including pre-recess limbo days (House
+ * hasn't gaveled in yet, but a named recess starts tomorrow) and back-to-back
+ * adjacent recesses where the naive "endDate + 1" would land inside another
+ * window.
+ *
+ * Walks day-by-day: if cursor falls in a recess, jump to that window's
+ * endDate + 1; if cursor is Sat/Sun, advance to Monday. 180-iteration cap
+ * so malformed calendar data can't hang the request.
  */
-export function recessReturnDate(window: CalendarWindow): Date {
-  const d = new Date(window.endDate);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d;
+export async function nextInSessionDate(
+  prisma: PrismaClient,
+  chamber: Chamber,
+  now: Date = new Date(),
+): Promise<Date | null> {
+  const todayIso = easternCalendarDay(now);
+  const windows = await prisma.$queryRaw<{ startDate: Date; endDate: Date }[]>`
+    SELECT "startDate", "endDate"
+    FROM "CongressRecess"
+    WHERE "chamber" = ${chamber}
+      AND "endDate" >= ${todayIso}::date
+    ORDER BY "startDate" ASC
+  `;
+
+  let cursor = addUtcDays(parseUtcDate(todayIso), 1);
+
+  for (let i = 0; i < 180; i++) {
+    const cursorMs = cursor.getTime();
+    const hit = windows.find(
+      (w) =>
+        cursorMs >= w.startDate.getTime() && cursorMs <= w.endDate.getTime(),
+    );
+    if (hit) {
+      cursor = addUtcDays(hit.endDate, 1);
+      continue;
+    }
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      weekday: "short",
+    }).format(cursor);
+    if (weekday === "Sat") {
+      cursor = addUtcDays(cursor, 2);
+      continue;
+    }
+    if (weekday === "Sun") {
+      cursor = addUtcDays(cursor, 1);
+      continue;
+    }
+    return cursor;
+  }
+  return null;
+}
+
+function parseUtcDate(iso: string): Date {
+  return new Date(`${iso}T00:00:00.000Z`);
+}
+
+function addUtcDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setUTCDate(r.getUTCDate() + n);
+  return r;
 }
