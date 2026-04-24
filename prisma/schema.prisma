@@ -8,7 +8,7 @@ generator client {
 }
 
 model Profile {
-  id        String   @id           // Supabase auth user UUID
+  id        String   @id // Supabase auth user UUID
   username  String   @default("Anonymous")
   email     String?
   createdAt DateTime @default(now())
@@ -25,33 +25,33 @@ model Profile {
 }
 
 model Bill {
-  id                Int                  @id @default(autoincrement())
-  billId            String               @unique
-  title             String
-  date              DateTime
-  billType          String
-  currentChamber    String?
-  currentStatus     String
-  currentStatusDate DateTime
-  introducedDate    DateTime
-  link              String
-  shortText         String?
-  fullText          String?
-  sponsor             String?
-  cosponsorCount      Int?
-  cosponsorPartySplit String?
-  policyArea          String?
-  latestActionText    String?
-  latestActionDate    DateTime?
+  id                    Int                      @id @default(autoincrement())
+  billId                String                   @unique
+  title                 String
+  date                  DateTime
+  billType              String
+  currentChamber        String?
+  currentStatus         String
+  currentStatusDate     DateTime
+  introducedDate        DateTime
+  link                  String
+  shortText             String?
+  fullText              String?
+  sponsor               String?
+  cosponsorCount        Int?
+  cosponsorPartySplit   String?
+  policyArea            String?
+  latestActionText      String?
+  latestActionDate      DateTime?
   // Momentum signal — computed daily by compute-momentum.
   // Tier: DEAD | DORMANT | STALLED | ACTIVE | ADVANCING | ENACTED
   // deathReason: CONGRESS_ENDED | FAILED_VOTE | VETOED | LONG_SILENCE | null
-  congressNumber      Int?
-  momentumScore       Int?
-  momentumTier        String?
-  daysSinceLastAction Int?
-  deathReason         String?
-  momentumComputedAt  DateTime?
+  congressNumber        Int?
+  momentumScore         Int?
+  momentumTier          String?
+  daysSinceLastAction   Int?
+  deathReason           String?
+  momentumComputedAt    DateTime?
   // Set whenever refresh-bill-metadata successfully calls Congress.gov.
   // Used to avoid re-fetching bills whose CRS summary hasn't been
   // published yet — without it the cron loops over ~12k bills forever.
@@ -60,39 +60,39 @@ model Bill {
   // The text backfill cron orders by this ascending NULLS FIRST so bills we
   // can't get text for (genuinely unpublished, withdrawn, etc.) rotate to
   // the back of the queue instead of blocking all other bills behind them.
-  textFetchAttemptedAt DateTime?
+  textFetchAttemptedAt  DateTime?
   // Title variants fetched from Congress.gov /titles endpoint. We search
   // on all of these via the weighted searchVector generated column —
   // users type popular names ("CHIPS Act"), not official titles.
-  popularTitle      String?
-  shortTitle        String?
-  displayTitle      String?
-  searchVector      Unsupported("tsvector")?
+  popularTitle          String?
+  shortTitle            String?
+  displayTitle          String?
+  searchVector          Unsupported("tsvector")?
   // AI-generated plain-language explainer shown at the top of the bill
   // detail page. `aiSummaryVersionId` points at the BillTextVersion.id the
   // explainer was generated from, so the backfill script can regenerate
   // after a new substantive amendment lands. Kept as a loose Int (not a
   // relation) for consistency with other AI-provenance columns.
-  aiShortDescription  String?
-  aiKeyPoints         String[]  @default([])
-  aiSummaryModel      String?
-  aiSummaryCreatedAt  DateTime?
-  aiSummaryVersionId  Int?
-  votes             RepresentativeVote[]
-  publicVotes       Vote[]
-  comments          Comment[]
-  conversations     Conversation[]
-  actions           BillAction[]
-  textVersions      BillTextVersion[]
-  voteHistory       VoteHistory[]
-  cosponsors        BillCosponsor[]
-
-  @@index([momentumTier, momentumScore(sort: Desc)])
-  @@index([congressNumber])
+  aiShortDescription    String?
+  aiKeyPoints           String[]                 @default([])
+  aiSummaryModel        String?
+  aiSummaryCreatedAt    DateTime?
+  aiSummaryVersionId    Int?
+  votes                 RepresentativeVote[]
+  publicVotes           Vote[]
+  comments              Comment[]
+  conversations         Conversation[]
+  actions               BillAction[]
+  textVersions          BillTextVersion[]
+  voteHistory           VoteHistory[]
+  cosponsors            BillCosponsor[]
   // Partial index on textFetchAttemptedAt (WHERE fullText IS NULL) lives in
   // the 20260418150000 migration — Prisma schema can't express partial
   // indexes, and a full-table index would waste space on the bills that
   // already have text.
+
+  @@index([momentumTier, momentumScore(sort: Desc)])
+  @@index([congressNumber])
 }
 
 model BillCosponsor {
@@ -112,12 +112,12 @@ model BillCosponsor {
 }
 
 model BillAction {
-  id          Int      @id @default(autoincrement())
-  billId      Int
-  actionDate  DateTime
-  chamber     String?
-  text        String
-  actionType  String?
+  id         Int      @id @default(autoincrement())
+  billId     Int
+  actionDate DateTime
+  chamber    String?
+  text       String
+  actionType String?
 
   bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
@@ -126,24 +126,24 @@ model BillAction {
 }
 
 model Representative {
-  id        Int                  @id @default(autoincrement())
-  bioguideId String              @unique
-  slug      String?              @unique
-  firstName String
-  lastName  String
-  state     String
-  district  String?
-  party     String
-  chamber   String
-  imageUrl  String?
-  link      String?
-  phone     String?
-  votes     RepresentativeVote[]
+  id             Int                  @id @default(autoincrement())
+  bioguideId     String               @unique
+  slug           String?              @unique
+  firstName      String
+  lastName       String
+  state          String
+  district       String?
+  party          String
+  chamber        String
+  imageUrl       String?
+  link           String?
+  phone          String?
+  votes          RepresentativeVote[]
   cosponsorships BillCosponsor[]
 }
 
 model RepresentativeVote {
-  id               Int            @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   representativeId Int
   billId           Int
   vote             String
@@ -161,14 +161,14 @@ model RepresentativeVote {
 }
 
 model BillTextVersion {
-  id            Int      @id @default(autoincrement())
-  billId        Int
-  versionCode   String
-  versionType   String
-  versionDate   DateTime
-  fullText      String?
-  isSubstantive Boolean  @default(true)
-  changeSummary String?
+  id                Int       @id @default(autoincrement())
+  billId            Int
+  versionCode       String
+  versionType       String
+  versionDate       DateTime
+  fullText          String?
+  isSubstantive     Boolean   @default(true)
+  changeSummary     String?
   // AI-generated one-sentence captions for each parsed section, used by
   // the bill reader's smart outline. Stored as [{ sectionId, caption }]
   // aligned to the slugs produced by sectionSlugsForBill(...). Null means
@@ -176,14 +176,45 @@ model BillTextVersion {
   sectionCaptions   Json?
   captionsModel     String?
   captionsCreatedAt DateTime?
-  createdAt     DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
   bill        Bill          @relation(fields: [billId], references: [id])
   activeVotes Vote[]
   voteHistory VoteHistory[]
+  summaryJob  SummaryJob?
 
   @@unique([billId, versionCode])
   @@index([billId])
+  @@index([versionDate])
+}
+
+// ============================================================================
+// Ingest plumbing — resumable cursors and lazy AI-generation job tracking
+// ============================================================================
+
+// Persisted resume point for long-running ingest tasks. Each task owns one row
+// (keyed by task name) and advances the cursor as it makes progress. Lets a
+// 60s-capped cron do small slices without losing track of where it left off.
+model IngestCursor {
+  key       String   @id
+  cursor    DateTime
+  updatedAt DateTime @updatedAt
+}
+
+// One row per BillTextVersion that is currently (or has recently been) having
+// its AI change-summary generated. Acts as a lightweight queue / dedupe so
+// multiple viewers of the same bill don't double-spend on generation, and so
+// the UI can show a distinct "generating" state instead of a bare null.
+model SummaryJob {
+  versionId    Int       @id
+  status       String
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  errorMessage String?
+
+  textVersion BillTextVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([status])
 }
 
 model Vote {
@@ -219,18 +250,18 @@ model VoteHistory {
 }
 
 model Comment {
-  id              Int           @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   content         String
   userId          String?
-  username        String        @default("Anonymous")
+  username        String   @default("Anonymous")
   billId          Int
   parentCommentId Int?
-  date            DateTime      @default(now())
+  date            DateTime @default(now())
 
-  profile       Profile?       @relation(fields: [userId], references: [id], onDelete: SetNull)
-  bill          Bill           @relation(fields: [billId], references: [id], onDelete: Cascade)
-  parentComment Comment?       @relation("CommentToReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
-  replies       Comment[]      @relation("CommentToReplies")
+  profile       Profile?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  bill          Bill          @relation(fields: [billId], references: [id], onDelete: Cascade)
+  parentComment Comment?      @relation("CommentToReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies       Comment[]     @relation("CommentToReplies")
   commentVotes  CommentVote[]
 
   @@index([userId])
@@ -302,31 +333,31 @@ enum RecurringStatus {
 }
 
 model Donation {
-  id               String               @id @default(cuid())
+  id               String              @id @default(cuid())
   // Stripe identifiers. For one-time: PaymentIntent id. For recurring: Subscription id.
-  stripePaymentId  String               @unique
+  stripePaymentId  String              @unique
   stripeCustomerId String?
   // Supabase auth user id — nullable because logged-out donations are allowed.
   userId           String?
   amountCents      Int
-  currency         String               @default("usd")
-  isRecurring      Boolean              @default(false)
+  currency         String              @default("usd")
+  isRecurring      Boolean             @default(false)
   recurringStatus  RecurringStatus?
-  displayMode      DonationDisplayMode  @default(ANONYMOUS)
-  displayName      String?              // post-moderation, safe to show publicly
-  displayNameRaw   String?              // pre-moderation, audit trail only
-  tributeName      String?              // post-moderation
-  tributeNameRaw   String?              // pre-moderation
-  moderationStatus DonationModStatus    @default(PENDING)
+  displayMode      DonationDisplayMode @default(ANONYMOUS)
+  displayName      String? // post-moderation, safe to show publicly
+  displayNameRaw   String? // pre-moderation, audit trail only
+  tributeName      String? // post-moderation
+  tributeNameRaw   String? // pre-moderation
+  moderationStatus DonationModStatus   @default(PENDING)
   moderationNotes  String?
-  regionCode       String?              // state-level only (e.g. "US-OH") from Stripe billing
-  email            String?              // for receipt + linking token
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  hiddenAt         DateTime?            // user-requested removal from public page (soft)
+  regionCode       String? // state-level only (e.g. "US-OH") from Stripe billing
+  email            String? // for receipt + linking token
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  hiddenAt         DateTime? // user-requested removal from public page (soft)
 
-  profile          Profile?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-  linkToken        DonorLinkToken?
+  profile   Profile?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  linkToken DonorLinkToken?
 
   @@index([createdAt])
   @@index([userId])
@@ -342,25 +373,25 @@ model DonorLinkToken {
   usedAt     DateTime?
   createdAt  DateTime  @default(now())
 
-  donation   Donation  @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  donation Donation @relation(fields: [donationId], references: [id], onDelete: Cascade)
 
   @@index([token])
 }
 
 model BudgetLedger {
-  id              String   @id @default(cuid())
+  id               String   @id @default(cuid())
   // YYYY-MM identifier for the budget period. One row per month.
-  period          String   @unique
-  incomeCents     Int      @default(0)
-  spendCents      Int      @default(0)
+  period           String   @unique
+  incomeCents      Int      @default(0)
+  spendCents       Int      @default(0)
   // Reserve withheld from "available" before flipping AI on.
-  reserveCents    Int      @default(0)
-  aiEnabled       Boolean  @default(true)
+  reserveCents     Int      @default(0)
+  aiEnabled        Boolean  @default(true)
   // Reason the current aiEnabled value was set. "budget" | "manual" | "bootstrap"
   aiDisabledReason String?
-  lastEvaluated   DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  lastEvaluated    DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model AiUsageEvent {

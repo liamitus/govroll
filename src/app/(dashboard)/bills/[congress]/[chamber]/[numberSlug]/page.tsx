@@ -9,6 +9,7 @@ import {
   buildDynamicJourney,
 } from "@/lib/bill-helpers";
 import { BillAboutSection } from "@/components/bills/bill-about-section";
+import { BillChangeSummary } from "@/components/bills/bill-change-summary";
 import { SponsorCard } from "@/components/bills/sponsor-card";
 import { BillDetailInteractive } from "./interactive";
 import { parseSponsorString, partyCodeToNames } from "@/lib/sponsor";
@@ -217,6 +218,16 @@ export default async function BillDetailPage({
     effectiveStatus.startsWith("vetoed_") ||
     effectiveStatus.startsWith("prov_kill_");
 
+  // Latest substantive version, if the bill has been meaningfully amended
+  // past the introduced version. When present, the page renders an AI-
+  // generated "what changed" card below the about section; the card lazily
+  // kicks off summary generation on first view if we don't have one yet.
+  const substantiveVersions = textVersions.filter((v) => v.isSubstantive);
+  const latestSubstantiveVersion =
+    substantiveVersions.length > 1
+      ? substantiveVersions[substantiveVersions.length - 1]
+      : null;
+
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-6 py-8">
       {/* ── Title + plain-language lead + expandable about section ── */}
@@ -260,6 +271,19 @@ export default async function BillDetailPage({
         daysSinceLastAction={bill.daysSinceLastAction}
         deathReason={bill.deathReason as DeathReason | null}
       />
+
+      {/* ── AI-generated change summary (lazy-loaded on demand) ── */}
+      {latestSubstantiveVersion && (
+        <BillChangeSummary
+          billId={bill.id}
+          initialVersion={{
+            versionCode: latestSubstantiveVersion.versionCode,
+            versionType: latestSubstantiveVersion.versionType,
+            versionDate: latestSubstantiveVersion.versionDate.toISOString(),
+            changeSummary: latestSubstantiveVersion.changeSummary,
+          }}
+        />
+      )}
 
       {/* ── Who's behind this bill ── */}
       {parsedSponsor && (
