@@ -54,11 +54,7 @@ export function CongressStatus() {
   const resolved = resolveOverall(query.data);
   const label = labelFor(resolved.status);
   const chamberHint = chamberHintFor(resolved);
-  // When the current status is already "Recess", the pill would otherwise
-  // read "RECESS · NEXT RECESS MAY 25 — …" which is tautological at a glance.
-  // The popover still surfaces the upcoming named recess for context.
-  const pillNextTransition =
-    resolved.status === "recess" ? null : resolved.nextTransitionLabel;
+  const pillNextTransition = resolved.nextTransitionLabel;
 
   return (
     <Popover.Root>
