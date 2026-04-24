@@ -10,9 +10,15 @@ import { reportError } from "@/lib/error-reporting";
  * if the monthly AI budget is exhausted the underlying function refuses
  * gracefully and this endpoint reports ok with zero work done.
  *
+ * Scope: only versions published in the last `sinceDays` days (default 7).
+ * The historical backlog (~20k versions) is served on-demand from the bill
+ * page via /api/bills/[id]/summary — the cron just keeps fresh content
+ * moving through without an expensive drain. Override with ?sinceDays=.
+ *
  * Query params:
- *   - limit (default 5, max 25) — cap on summaries generated per run.
- *     Each one costs ~$0.02 and takes 3-6s.
+ *   - limit (default 5, max 25) — cap on bills touched per run. Each
+ *     version within those bills costs ~$0.02 and takes 3-6s.
+ *   - sinceDays (default 7) — window of recent versions to consider.
  *
  * Idempotent (skips versions that already have a summary). Invoked by
  * GitHub Actions on a slow cadence so billing stays predictable.
@@ -37,13 +43,19 @@ export async function GET(request: Request) {
     25,
     Math.max(1, parseInt(url.searchParams.get("limit") ?? "5", 10)),
   );
+  const sinceDays = Math.max(
+    1,
+    parseInt(url.searchParams.get("sinceDays") ?? "7", 10),
+  );
 
   const start = Date.now();
   try {
-    await generateChangeSummariesFunction(undefined, limit);
+    await generateChangeSummariesFunction(undefined, limit, sinceDays);
     const ms = Date.now() - start;
-    console.log(`[change-summaries cron] processed up to ${limit} in ${ms}ms`);
-    return NextResponse.json({ ok: true, ms, limit });
+    console.log(
+      `[change-summaries cron] processed up to ${limit} in ${ms}ms (last ${sinceDays}d)`,
+    );
+    return NextResponse.json({ ok: true, ms, limit, sinceDays });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error(`[change-summaries cron] failed:`, msg);

@@ -3,22 +3,35 @@ import { generateChangeSummary } from "../lib/ai";
 import { recordSpend } from "../lib/budget";
 import { assertAiEnabled, AiDisabledError } from "../lib/ai-gate";
 import { createStandalonePrisma } from "../lib/prisma-standalone";
+import dayjs from "dayjs";
 
 const prisma = createStandalonePrisma();
 
 /**
  * Generate AI-powered change summaries for bill text versions that don't have one yet.
  * Compares each version to its predecessor and stores a plain-language summary.
+ *
+ * @param targetBillId   If provided, summarize every version of this one bill
+ *                       (manual backfill path). Ignores `sinceDays`.
+ * @param limit          Max bills to process in one run (unused when targetBillId
+ *                       is set — that path processes a single bill end-to-end).
+ * @param sinceDays      When set (no targetBillId), only consider versions with
+ *                       `versionDate` within the last N days. This is how the
+ *                       cron avoids draining the 20k-version historical backlog;
+ *                       older versions get generated on-demand instead.
  */
 export async function generateChangeSummariesFunction(
   targetBillId?: number,
   limit = 100,
+  sinceDays?: number,
 ) {
   console.log(
     "Generating change summaries for:",
     targetBillId
       ? `bill ${targetBillId}`
-      : `up to ${limit} bills with missing summaries`,
+      : sinceDays
+        ? `up to ${limit} bills with versions from the last ${sinceDays} days`
+        : `up to ${limit} bills with missing summaries`,
   );
 
   // Gate on budget — AI features can be paused when funding runs low.
@@ -33,13 +46,27 @@ export async function generateChangeSummariesFunction(
   }
 
   try {
-    // Find bills that have versions without summaries
+    // Find bills that have versions without summaries, optionally scoped to a
+    // recent window. The `some` filter with nested `versionDate` keeps the set
+    // small — matches only bills where at least one unsummarized version falls
+    // inside the window — then the in-loop check below ensures we only actually
+    // generate for versions in that window.
+    const versionFilter: {
+      changeSummary: null;
+      versionDate?: { gte: Date };
+    } = { changeSummary: null };
+    if (!targetBillId && sinceDays !== undefined) {
+      versionFilter.versionDate = {
+        gte: dayjs().subtract(sinceDays, "day").toDate(),
+      };
+    }
+
     const billFilter = targetBillId ? { id: targetBillId } : {};
     const bills = await prisma.bill.findMany({
       where: {
         ...billFilter,
         textVersions: {
-          some: { changeSummary: null },
+          some: versionFilter,
         },
       },
       select: {
@@ -65,6 +92,10 @@ export async function generateChangeSummariesFunction(
 
     let generated = 0;
     let totalCostCents = 0;
+    const windowCutoff =
+      !targetBillId && sinceDays !== undefined
+        ? dayjs().subtract(sinceDays, "day").toDate()
+        : null;
 
     for (const bill of bills) {
       console.log(`\n${bill.title.slice(0, 60)}...`);
@@ -74,6 +105,11 @@ export async function generateChangeSummariesFunction(
 
         // Skip if already has a summary
         if (version.changeSummary) continue;
+
+        // When scoped to a recent window, don't walk back into old versions
+        // just because this bill also has one fresh unsummarized version.
+        // Historical versions are served on-demand from the bill page.
+        if (windowCutoff && version.versionDate < windowCutoff) continue;
 
         // First version — set baseline summary, no AI needed
         if (i === 0) {
