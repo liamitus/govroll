@@ -29,14 +29,13 @@ export async function GET(request: Request) {
 
   const start = Date.now();
   try {
-    // Hobby plan caps this function at 60s. Keep the re-walk window tight
-    // so the sequential upsert loop fits. The cron fires every 3h, so a
-    // 1-month overlap still self-heals any bill GovTrack indexes late —
-    // a later run will sweep it up.
-    await fetchBillsFunction(undefined, { lookbackMonths: 1 });
+    // Cursor-driven — each invocation processes a few 2-day windows, bails
+    // at the internal 50s deadline, and persists progress. GitHub Actions
+    // reinvokes hourly; the cursor converges within a couple of runs.
+    const result = await fetchBillsFunction();
     const ms = Date.now() - start;
-    console.log(`[fetch-bills cron] completed in ${ms}ms`);
-    return NextResponse.json({ ok: true, ms });
+    console.log(`[fetch-bills cron] completed in ${ms}ms`, result);
+    return NextResponse.json({ ok: true, ms, ...result });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error(`[fetch-bills cron] failed:`, msg);
