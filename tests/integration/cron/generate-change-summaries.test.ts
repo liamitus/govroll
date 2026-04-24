@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
+import dayjs from "dayjs";
 import { GET } from "@/app/api/cron/generate-change-summaries/route";
 import { getTestPrisma } from "../db";
 import { seedBill } from "../fixtures";
 import { invokeCron } from "../invoke";
+
+// The cron scopes to versions introduced in the last 7 days by default.
+// Tests use dates relative to "now" so they stay inside that window as time
+// passes. Older-version behavior is exercised on-demand via the bill page
+// summary endpoint, not this cron.
+const recentDate = (offsetDays = 0) =>
+  dayjs().subtract(offsetDays, "day").toDate();
 
 describe("GET /api/cron/generate-change-summaries", () => {
   it("rejects missing auth", async () => {
@@ -24,7 +32,7 @@ describe("GET /api/cron/generate-change-summaries", () => {
         billId: bill.id,
         versionCode: "ih",
         versionType: "Introduced",
-        versionDate: new Date("2026-03-01"),
+        versionDate: recentDate(2),
         fullText: "Version 1 text",
       },
     });
@@ -52,14 +60,14 @@ describe("GET /api/cron/generate-change-summaries", () => {
           billId: bill.id,
           versionCode: "ih",
           versionType: "Introduced",
-          versionDate: new Date("2026-03-01"),
+          versionDate: recentDate(3),
           fullText: "Original",
         },
         {
           billId: bill.id,
           versionCode: "rh",
           versionType: "Reported",
-          versionDate: new Date("2026-03-15"),
+          versionDate: recentDate(1),
           fullText: "Reported",
         },
       ],
