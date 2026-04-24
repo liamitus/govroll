@@ -65,7 +65,11 @@ export async function getHouseClerkSignal(
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": USER_AGENT, Accept: "application/xml" },
+      // clerk.house.gov serves Content-Type: text/xml and 406s requests that
+      // ask for Accept: application/xml — keep this aligned with what the
+      // server actually returns, or every cron call fails and we fall
+      // through to "unknown" (the pill's "Status unavailable" state).
+      headers: { "User-Agent": USER_AGENT, Accept: "text/xml" },
       // Revalidate per-invocation; cron runs every 10 min.
       cache: "no-store",
     });
