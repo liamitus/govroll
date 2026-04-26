@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserId } from "@/lib/auth";
 import { parseSectionsFromFullText } from "@/lib/bill-sections";
 import { generateExplainPassage } from "@/lib/ai";
 import { assertAiEnabled, AiDisabledError } from "@/lib/ai-gate";
-import {
-  assertIpRateLimit,
-  assertUserRateLimit,
-  RateLimitError,
-} from "@/lib/rate-limit";
+import { assertUserRateLimit, RateLimitError } from "@/lib/rate-limit";
 import { recordSpend } from "@/lib/budget";
 import { getCachedResponse, setCachedResponse } from "@/lib/ai-cache";
 import { reportError } from "@/lib/error-reporting";
@@ -17,11 +13,11 @@ import { reportError } from "@/lib/error-reporting";
 /**
  * POST /api/ai/explain-passage
  *
- * The brand-defining moment of the reader: user selects a passage,
- * single tap → 2-second Haiku call → plain-English explanation in a
- * popover. Anonymous users can call this (per the design decision in
- * the plan) so the magical first-touch survives unauthenticated SEO
- * traffic; abuse is bounded by IP rate limit + the global budget gate.
+ * User selects a passage in the reader, single tap → ~2-second Haiku
+ * call → plain-English explanation in a popover. Auth is required —
+ * the original "anonymous SEO moment" rationale was unvalidated and
+ * the open route was a free AI endpoint payable from the budget. We
+ * can re-enable anonymous access if/when SEO traffic data justifies it.
  *
  * Request body:
  *   { billId: number, passage: string, sectionPath: string[] }
@@ -29,6 +25,7 @@ import { reportError } from "@/lib/error-reporting";
  * Response:
  *   200: { explanation: string, model: string, cached: boolean }
  *   400: { error } — validation
+ *   401: { error } — not signed in
  *   404: { error } — section not found in bill text
  *   429: RateLimitError.toJSON()
  *   503: AiDisabledError.toJSON()
@@ -39,7 +36,6 @@ export const maxDuration = 60;
 const MIN_PASSAGE_LENGTH = 40;
 const MAX_PASSAGE_LENGTH = 4000;
 const MAX_PER_USER_PER_HOUR = 30;
-const MAX_PER_IP_PER_HOUR = 15;
 
 interface RequestBody {
   billId: unknown;
@@ -96,20 +92,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ── Auth required ───────────────────────────────────────────────────
+  const { userId, error: authError } = await getAuthenticatedUserId();
+  if (authError) return authError;
+
   try {
-    // ── Auth (optional) + rate limits ─────────────────────────────────
-    // We don't require sign-in for explain — the magical first-touch
-    // for anonymous SEO traffic depends on it. Authed users get the
-    // higher limit; anon users get the IP limit. Both honor the
-    // global budget gate via assertAiEnabled.
-    const userId = await getOptionalUserId();
-
-    if (userId) {
-      await assertUserRateLimit(userId, "explain", MAX_PER_USER_PER_HOUR);
-    }
-    const ip = clientIpFromRequest(request);
-    assertIpRateLimit(ip, MAX_PER_IP_PER_HOUR);
-
+    await assertUserRateLimit(userId, "explain", MAX_PER_USER_PER_HOUR);
     await assertAiEnabled("explain");
 
     // ── Server-side passage existence check ───────────────────────────
@@ -186,7 +174,7 @@ export async function POST(request: NextRequest) {
     // invisibly.
     try {
       await recordSpend({
-        userId: userId ?? null,
+        userId,
         feature: "explain",
         model: usage.model,
         inputTokens: usage.inputTokens,
@@ -231,44 +219,4 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-//  Helpers
-// ─────────────────────────────────────────────────────────────────────────
-
-/**
- * Read the auth user without requiring a sign-in. Returns the userId
- * if a session is present, or null otherwise. Doesn't upsert the
- * Profile row — that's the responsibility of authed-only endpoints
- * (and irrelevant here for anonymous calls).
- */
-async function getOptionalUserId(): Promise<string | null> {
-  try {
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    return user?.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Best-effort client IP. On Vercel the platform sets x-forwarded-for
- * with the real client IP first in the comma-separated chain; behind
- * other proxies x-real-ip is the conventional fallback. If neither is
- * present we degrade to "unknown" so the in-process IP rate limit
- * collapses all unknown sources to one bucket — conservative.
- */
-function clientIpFromRequest(request: NextRequest): string {
-  const xff = request.headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const xri = request.headers.get("x-real-ip");
-  if (xri) return xri.trim();
-  return "unknown";
 }
