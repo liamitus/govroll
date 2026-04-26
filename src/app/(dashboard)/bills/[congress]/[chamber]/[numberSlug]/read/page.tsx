@@ -1,14 +1,10 @@
-import { after } from "next/server";
 import { notFound, permanentRedirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
 
 import { prisma } from "@/lib/prisma";
 import { parseSectionsFromFullText } from "@/lib/bill-sections";
 import { sectionSlugsForBill, pathFromHeading } from "@/lib/section-slug";
-import { generateSectionCaptions } from "@/lib/section-caption";
 import { maybeFetchBillTextInBackground } from "@/lib/on-demand-bill-text";
-import { AiDisabledError } from "@/lib/ai-gate";
 import {
   billReadHref,
   billIdentifierFor,
@@ -214,33 +210,6 @@ export default async function BillReaderPage({
     depth: pathFromHeading(s.heading).length,
     caption: captionMap.get(slugs[i]) ?? null,
   }));
-
-  // Lazy caption generation. `after()` runs after the response is
-  // sent so the first reader doesn't wait. AiDisabledError is the
-  // expected failure when the monthly budget is exhausted — swallow
-  // it. `revalidatePath` makes the next visit see captions.
-  if (latestVersion && latestVersion.sectionCaptions === null) {
-    const versionIdToCaption = latestVersion.id;
-    const billPathToRevalidate = canonicalReadHref;
-    after(async () => {
-      try {
-        const result = await generateSectionCaptions(versionIdToCaption);
-        if (result.captions.length > 0) {
-          revalidatePath(billPathToRevalidate);
-        }
-      } catch (err) {
-        if (err instanceof AiDisabledError) {
-          // Budget gate closed. Bill renders without captions.
-          return;
-        }
-        console.error(
-          "[reader] caption generation failed for version",
-          versionIdToCaption,
-          err,
-        );
-      }
-    });
-  }
 
   // Build the version meta passed to the shell. If the only text we
   // have is the legacy Bill.fullText, synthesize a minimal version

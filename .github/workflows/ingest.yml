@@ -28,10 +28,7 @@ on:
     - cron: "10 */2 * * *" # backfill-bill-actions      (every 2h)
     - cron: "40 */2 * * *" # backfill-cosponsors        (every 2h)
     - cron: "0 */3 * * *" # fetch-bills                (every 3h)
-    - cron: "20 */4 * * *" # generate-change-summaries  (every 4h, budget-gated)
-    - cron: "25 */4 * * *" # generate-bill-explainers   (every 4h, budget-gated)
     - cron: "30 */6 * * *" # refresh-bill-metadata      (every 6h)
-    - cron: "50 */6 * * *" # generate-section-captions  (every 6h, budget-gated)
     - cron: "0 0 * * *" # evaluate-budget            (daily midnight UTC)
     - cron: "0 10 * * 1" # fetch-representatives      (weekly, Mon 10:00 UTC)
 
@@ -49,10 +46,7 @@ on:
           - backfill-bill-actions
           - backfill-cosponsors
           - fetch-bills
-          - generate-change-summaries
-          - generate-bill-explainers
           - refresh-bill-metadata
-          - generate-section-captions
           - evaluate-budget
           - fetch-representatives
 
@@ -93,10 +87,7 @@ jobs:
             "10 */2 * * *")  echo "endpoint=backfill-bill-actions"     >> "$GITHUB_OUTPUT" ;;
             "40 */2 * * *")  echo "endpoint=backfill-cosponsors"       >> "$GITHUB_OUTPUT" ;;
             "0 */3 * * *")   echo "endpoint=fetch-bills"               >> "$GITHUB_OUTPUT" ;;
-            "20 */4 * * *")  echo "endpoint=generate-change-summaries" >> "$GITHUB_OUTPUT" ;;
-            "25 */4 * * *")  echo "endpoint=generate-bill-explainers"  >> "$GITHUB_OUTPUT" ;;
             "30 */6 * * *")  echo "endpoint=refresh-bill-metadata"     >> "$GITHUB_OUTPUT" ;;
-            "50 */6 * * *")  echo "endpoint=generate-section-captions" >> "$GITHUB_OUTPUT" ;;
             "0 0 * * *")     echo "endpoint=evaluate-budget"           >> "$GITHUB_OUTPUT" ;;
             "0 10 * * 1")    echo "endpoint=fetch-representatives"     >> "$GITHUB_OUTPUT" ;;
             *)

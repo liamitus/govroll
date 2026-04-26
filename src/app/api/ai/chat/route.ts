@@ -25,8 +25,10 @@ import { formatStreamErrorForClient } from "@/lib/ai-chat-stream-errors";
 /** Max characters allowed in a single user message. */
 const MAX_MESSAGE_LENGTH = 2000;
 
-/** Max AI chat requests per user per hour. */
-const MAX_CHAT_PER_USER_PER_HOUR = 20;
+/** Max AI chat requests per user per hour. Kept tight while pre-launch
+ *  — caps a single bad actor's monthly spend at ~$470/account. Loosen
+ *  once there's real traffic data to size against. */
+const MAX_CHAT_PER_USER_PER_HOUR = 5;
 
 /**
  * Fluid Compute lets Hobby reach 300s. Bill chat is typically 5–15s end to
