@@ -59,6 +59,9 @@ const BILL_SELECT = {
   momentumScore: true,
   daysSinceLastAction: true,
   deathReason: true,
+  popularTitle: true,
+  shortTitle: true,
+  displayTitle: true,
   _count: {
     select: { publicVotes: true, comments: true },
   },

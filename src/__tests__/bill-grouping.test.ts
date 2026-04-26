@@ -24,6 +24,9 @@ function bill(overrides: Partial<BillSummary> & { id: number }): BillSummary {
     momentumScore: null,
     daysSinceLastAction: null,
     deathReason: null,
+    popularTitle: null,
+    shortTitle: null,
+    displayTitle: null,
     ...overrides,
   };
 }
