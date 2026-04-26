@@ -34,6 +34,9 @@ export interface BillSummary {
   momentumScore: number | null;
   daysSinceLastAction: number | null;
   deathReason: DeathReason | null;
+  popularTitle: string | null;
+  shortTitle: string | null;
+  displayTitle: string | null;
   publicVoteCount?: number;
   commentCount?: number;
 }

@@ -7,6 +7,7 @@ import type { BillSummary, VoteType } from "@/types";
 import { getTopicForPolicyArea } from "@/lib/topic-mapping";
 import { formatBillNumber } from "@/lib/bill-grouping";
 import { billHref } from "@/lib/bills/url";
+import { pickBillHeadline } from "@/lib/bill-headline";
 import { voteChipStyle } from "./bill-card";
 
 // Swaps the chevron for a spinner while this specific sub-row's Link is
@@ -91,6 +92,7 @@ export function BillGroupCard({
   const leadChip = unanimousDirection
     ? voteChipStyle(unanimousDirection)
     : null;
+  const headline = pickBillHeadline(lead);
 
   return (
     <div className="border-border/50 hover:border-navy/25 relative rounded-lg border bg-white transition-all hover:shadow-[0_2px_12px_rgba(10,31,68,0.1)]">
@@ -113,7 +115,7 @@ export function BillGroupCard({
                 allVoted ? "text-navy/55" : "text-navy"
               }`}
             >
-              {lead.title}
+              {headline.headline}
             </h3>
             {allVoted && (
               <span
@@ -150,6 +152,15 @@ export function BillGroupCard({
             </svg>
           </div>
 
+          {headline.officialTitle && (
+            <p
+              className="text-muted-foreground/70 mt-1 line-clamp-1 text-xs italic"
+              title={headline.officialTitle}
+            >
+              Official title: {headline.officialTitle}
+            </p>
+          )}
+
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span
               className={`text-xs font-bold tracking-wider uppercase ${
@@ -157,6 +168,9 @@ export function BillGroupCard({
               }`}
             >
               {chamberIsHouse ? "House" : "Senate"}
+            </span>
+            <span className="text-foreground/70 font-mono text-xs font-medium">
+              {formatBillNumber(lead.billType, lead.billId)}
             </span>
             {topic && (
               <span

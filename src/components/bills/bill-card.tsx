@@ -5,6 +5,8 @@ import dayjs from "dayjs";
 import type { BillSummary, MomentumTier, DeathReason, VoteType } from "@/types";
 import { getTopicForPolicyArea } from "@/lib/topic-mapping";
 import { billHref } from "@/lib/bills/url";
+import { formatBillNumber } from "@/lib/bill-grouping";
+import { pickBillHeadline } from "@/lib/bill-headline";
 
 // Reddit's visited-link cue, translated to our palette: a muted title + a
 // vote-tinted chip that tells you *how* you voted at a glance.
@@ -180,6 +182,8 @@ export function BillCard({
     bill.deathReason,
   );
   const voteChip = userVote ? voteChipStyle(userVote) : null;
+  const headline = pickBillHeadline(bill);
+  const billNumber = formatBillNumber(bill.billType, bill.billId);
 
   const href = billHref(bill);
 
@@ -212,7 +216,7 @@ export function BillCard({
                   : "text-navy group-hover:text-navy-light"
               }`}
             >
-              {bill.title}
+              {headline.headline}
             </h3>
             {voteChip && (
               <span
@@ -235,9 +239,18 @@ export function BillCard({
             )}
           </div>
 
-          {bill.shortText && (
+          {headline.secondary && (
             <p className="text-muted-foreground mt-1 line-clamp-1 text-sm leading-relaxed">
-              {bill.shortText}
+              {headline.secondary}
+            </p>
+          )}
+
+          {headline.officialTitle && (
+            <p
+              className="text-muted-foreground/70 mt-1 line-clamp-1 text-xs italic"
+              title={headline.officialTitle}
+            >
+              Official title: {headline.officialTitle}
             </p>
           )}
 
@@ -249,6 +262,9 @@ export function BillCard({
                 {chamber.label}
               </span>
             )}
+            <span className="text-foreground/70 font-mono text-xs font-medium">
+              {billNumber}
+            </span>
             {topic && (
               <span
                 className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${topic.color}`}
