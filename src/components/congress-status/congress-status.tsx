@@ -4,7 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
 import { StatusDot } from "./status-dot";
 import { cn } from "@/lib/utils";
-import type { Chamber, StatusCode } from "@/lib/congress-session/types";
+import {
+  resolveOverall,
+  effectiveStatus,
+  labelFor,
+  chamberHintFor,
+  type Resolved,
+} from "./resolve";
 import type {
   CongressStatusResponse,
   ChamberStatusPayload,
@@ -28,10 +34,6 @@ import type {
 
 const POLL_INTERVAL_IDLE_MS = 60_000;
 const POLL_INTERVAL_VOTING_MS = 15_000;
-// GH Actions cron routinely drifts 20-30 min under load, so the old 30 min
-// ceiling fired false "Status unavailable" downgrades. 60 min tolerates up
-// to five missed 10-min runs before we stop trusting the cached status.
-const STALE_THRESHOLD_MS = 20 * 60 * 1000;
 
 export function CongressStatus() {
   const query = useQuery<CongressStatusResponse>({
@@ -175,93 +177,6 @@ function ChamberRow({
       </div>
     </li>
   );
-}
-
-interface Resolved {
-  status: StatusCode;
-  primaryChamber: Chamber | null;
-  nextTransitionLabel: string | null;
-}
-
-/**
- * Pick an overall "Congress" state from the per-chamber rows. Priority:
- *   voting > in_session > pro_forma > adjourned_sine_die > recess > unknown
- * If one chamber is active and the other isn't, show the active one's state.
- */
-function resolveOverall(data: CongressStatusResponse | undefined): Resolved {
-  if (!data) {
-    return {
-      status: "unknown",
-      primaryChamber: null,
-      nextTransitionLabel: null,
-    };
-  }
-  const house = data.chambers.house;
-  const senate = data.chambers.senate;
-  const priority: StatusCode[] = [
-    "voting",
-    "in_session",
-    "pro_forma",
-    "adjourned_sine_die",
-    "recess",
-    "unknown",
-  ];
-  const score = (p: ChamberStatusPayload | null) =>
-    p ? priority.indexOf(effectiveStatus(p)) : priority.length;
-
-  const winner = score(house) <= score(senate) ? house : senate;
-  if (!winner) {
-    return {
-      status: "unknown",
-      primaryChamber: null,
-      nextTransitionLabel: null,
-    };
-  }
-  return {
-    status: effectiveStatus(winner),
-    primaryChamber: winner.chamber,
-    nextTransitionLabel: winner.nextTransitionLabel,
-  };
-}
-
-/**
- * Downgrade to `unknown` when the stored status is older than our staleness
- * threshold. Matches the research recommendation: never lie green on stale
- * data; always prefer honest "Unknown" over confident-but-wrong.
- */
-function effectiveStatus(
-  p: ChamberStatusPayload | null | undefined,
-): StatusCode {
-  if (!p) return "unknown";
-  const last = Date.parse(p.lastCheckedAt);
-  if (!Number.isFinite(last)) return p.status;
-  const age = Date.now() - last;
-  if (age > STALE_THRESHOLD_MS * 3) return "unknown"; // 60 min ceiling
-  return p.status;
-}
-
-function labelFor(status: StatusCode): string {
-  switch (status) {
-    case "voting":
-      return "Voting";
-    case "in_session":
-      return "In Session";
-    case "pro_forma":
-      return "Pro Forma";
-    case "recess":
-      return "Recess";
-    case "adjourned_sine_die":
-      return "Adjourned";
-    case "unknown":
-      return "Status unavailable";
-  }
-}
-
-function chamberHintFor(r: Resolved): string | null {
-  if (r.status === "unknown") return null;
-  if (r.status === "recess") return null; // both chambers usually recess together at this level
-  if (!r.primaryChamber) return null;
-  return r.primaryChamber === "house" ? "House" : "Senate";
 }
 
 function ariaLabelFor(
