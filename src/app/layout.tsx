@@ -23,16 +23,28 @@ const gelasio = Gelasio({
   weight: ["400", "500", "600", "700"],
 });
 
+const SITE_TITLE = "Govroll — See What Your Representatives Are Doing";
+const SITE_DESCRIPTION =
+  "Track bills, see how your elected officials vote, and make your voice heard in the legislative process.";
+const SITE_URL = "https://www.govroll.com";
+
 export const metadata: Metadata = {
-  title: "Govroll — See What Your Representatives Are Doing",
-  description:
-    "Track bills, see how your elected officials vote, and make your voice heard in the legislative process.",
-  metadataBase: new URL("https://www.govroll.com"),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  metadataBase: new URL(SITE_URL),
   alternates: { canonical: "/" },
   openGraph: {
     siteName: "Govroll",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
     locale: "en_US",
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
 };
 

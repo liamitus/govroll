@@ -106,7 +106,8 @@ export function ThankYouClient() {
 
       <p className="text-muted-foreground text-base leading-relaxed">
         Your contribution goes directly to powering Govroll&apos;s AI tools and
-        data infrastructure. A receipt has been sent to your email.
+        data infrastructure — keeping Govroll free for every American, with no
+        ads and no paywalls. We just sent a receipt to your inbox.
       </p>
 
       <div className="space-y-3 pt-2">

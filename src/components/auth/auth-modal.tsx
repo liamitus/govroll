@@ -128,12 +128,13 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
             </DialogHeader>
             <div className="space-y-4 py-2">
               <p className="text-muted-foreground text-base">
-                We sent a confirmation link to{" "}
+                We just sent a link to{" "}
                 <span className="text-foreground font-medium">{email}</span>.
-                Click the link in the email to continue.
+                Click it to continue — it should land in your inbox in under a
+                minute.
               </p>
               <p className="text-muted-foreground text-sm">
-                Didn&apos;t receive it? Check your spam folder or try again.
+                Didn&apos;t see it? Check your spam folder.
               </p>
               <Button
                 variant="outline"
