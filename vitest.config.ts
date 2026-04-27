@@ -13,6 +13,11 @@ export default defineConfig({
       ".next",
       "e2e/**",
       "tests/integration/**",
+      // Nested git worktrees (Claude Code spawns these under .claude/worktrees/).
+      // Without this, vitest discovers and runs each worktree's test suite —
+      // exploding test counts and failing on integration tests that the root
+      // exclude above already filters out.
+      ".claude/**",
     ],
     // Per-file DOM tests can opt in with: // @vitest-environment jsdom
     coverage: {
