@@ -87,7 +87,7 @@ export function mapErrorToState(input: {
     };
   }
 
-  // When the server bubbles up an actionable message (e.g. gateway billing,
+  // When the server bubbles up an actionable message (e.g. provider billing,
   // provider outage) prefer it over the bland generic so the real cause is
   // visible to the user and in screenshots.
   if (serverMessage) {

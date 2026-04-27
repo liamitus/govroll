@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { formatStreamErrorForClient } from "./ai-chat-stream-errors";
 
 describe("formatStreamErrorForClient", () => {
-  it("flags Gateway billing errors so devs see the actionable cause", () => {
+  it("flags provider billing errors so devs see the actionable cause", () => {
     const err = new Error(
-      "AI Gateway requires a valid credit card on file to service requests.",
+      "Your credit card was declined. Update your payment method to continue.",
     );
     expect(formatStreamErrorForClient(err)).toMatch(/billing|credit card/i);
   });

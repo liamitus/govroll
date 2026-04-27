@@ -1,11 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the AI SDK's generateText so the tests don't burn tokens or
-// require a Gateway key. Pattern: `vi.mock` declares the substitution
+// require an Anthropic key. Pattern: `vi.mock` declares the substitution
 // before module evaluation; the import below pulls in the mocked symbol
 // for assertion.
 vi.mock("ai", () => ({
   generateText: vi.fn(),
+}));
+// `anthropic(modelId)` is called inside the lib to wrap the model string.
+// We mock it as identity so the mocked `generateText` above sees the bare
+// model id we expect in assertions, and so test loading doesn't need
+// ANTHROPIC_API_KEY in the environment.
+vi.mock("@ai-sdk/anthropic", () => ({
+  anthropic: (modelId: string) => modelId,
 }));
 
 import { generateText } from "ai";
@@ -131,7 +138,7 @@ describe("generateCaptionsBatch — happy path", () => {
         caption: "Defines who counts as an eligible person.",
       },
     ]);
-    expect(result.usage.model).toBe("anthropic/claude-haiku-4-5");
+    expect(result.usage.model).toBe("claude-haiku-4-5");
     expect(result.usage.inputTokens).toBe(100);
     expect(result.usage.outputTokens).toBe(30);
   });

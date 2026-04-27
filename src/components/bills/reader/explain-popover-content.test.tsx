@@ -70,7 +70,7 @@ describe("<ExplainPopoverContent> — happy path", () => {
       jsonResponse({
         explanation:
           "This passage authorizes new spending on housing assistance.",
-        model: "anthropic/claude-haiku-4-5",
+        model: "claude-haiku-4-5",
         cached: false,
       }),
     );
@@ -98,7 +98,7 @@ describe("<ExplainPopoverContent> — happy path", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         explanation: "A cached explanation.",
-        model: "anthropic/claude-haiku-4-5",
+        model: "claude-haiku-4-5",
         cached: true,
       }),
     );
