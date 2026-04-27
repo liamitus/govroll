@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { BillJourney } from "@/components/bills/bill-journey";
+import { AiSummaryFeedback } from "@/components/bills/ai-summary-feedback";
 import type { JourneyStep } from "@/lib/bill-helpers";
 import type { MomentumTier, DeathReason } from "@/types";
 
 interface BillAboutProps {
+  billId: number;
   title: string;
   /** AI-generated 2–3 sentence plain-language description. Preferred over
    *  `shortText` as the lead summary — written at a grade 8–10 level and
@@ -135,6 +137,7 @@ const BANNER_STYLES: Record<MomentumBanner["tone"], string> = {
 };
 
 export function BillAboutSection({
+  billId,
   title,
   aiShortDescription,
   aiKeyPoints,
@@ -255,6 +258,7 @@ export function BillAboutSection({
               ))}
             </ul>
           )}
+          <AiSummaryFeedback billId={billId} surface="explainer" />
         </div>
       ) : fallbackShortText ? (
         // No AI explainer yet — show the CRS summary without the old

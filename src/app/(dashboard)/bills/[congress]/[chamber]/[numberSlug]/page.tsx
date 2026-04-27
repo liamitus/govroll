@@ -232,6 +232,7 @@ export default async function BillDetailPage({
     <div className="mx-auto max-w-3xl space-y-5 px-6 py-8">
       {/* ── Title + plain-language lead + expandable about section ── */}
       <BillAboutSection
+        billId={bill.id}
         title={bill.title}
         aiShortDescription={bill.aiShortDescription}
         aiKeyPoints={bill.aiKeyPoints}

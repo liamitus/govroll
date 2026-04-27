@@ -86,6 +86,7 @@ model Bill {
   textVersions          BillTextVersion[]
   voteHistory           VoteHistory[]
   cosponsors            BillCosponsor[]
+  aiSummaryFeedback     AiSummaryFeedback[]
   // Partial index on textFetchAttemptedAt (WHERE fullText IS NULL) lives in
   // the 20260418150000 migration — Prisma schema can't express partial
   // indexes, and a full-table index would waste space on the bills that
@@ -407,6 +408,27 @@ model AiUsageEvent {
 
   @@index([createdAt])
   @@index([feature, createdAt])
+}
+
+// Anonymous thumbs-up/-down on AI-generated bill content. Snapshots the
+// model + bill text version that produced the rated output so quality can
+// be analyzed per model/version even after a later regeneration overwrites
+// the columns on Bill.
+model AiSummaryFeedback {
+  id                 String   @id @default(cuid())
+  billId             Int
+  // Which AI surface was rated. v1: "explainer". Future: "change_summary".
+  surface            String
+  aiSummaryVersionId Int?
+  aiSummaryModel     String?
+  // 1 = thumbs up, -1 = thumbs down. Matches CommentVote convention.
+  rating             Int
+  createdAt          DateTime @default(now())
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId, surface, createdAt])
+  @@index([createdAt])
 }
 
 model AiResponseCache {
