@@ -55,7 +55,13 @@ function CollapsibleCard({
   );
 }
 
-export function BillDetailInteractive({ billId }: { billId: number }) {
+export function BillDetailInteractive({
+  billId,
+  aiSuggestedQuestions,
+}: {
+  billId: number;
+  aiSuggestedQuestions?: string[];
+}) {
   const [authOpen, setAuthOpen] = useState(false);
   const openSignUp = () => setAuthOpen(true);
 
@@ -83,7 +89,11 @@ export function BillDetailInteractive({ billId }: { billId: number }) {
         <p className="text-muted-foreground mb-4 text-xs">
           Get plain-language answers with direct quotes from the bill text.
         </p>
-        <AiChatbox billId={billId} onSignUp={openSignUp} />
+        <AiChatbox
+          billId={billId}
+          onSignUp={openSignUp}
+          suggestedQuestions={aiSuggestedQuestions}
+        />
       </section>
 
       {/* Your Representatives */}
