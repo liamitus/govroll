@@ -17,6 +17,12 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "playwright-report/**",
     "test-results/**",
+    // Nested git worktrees (Claude Code spawns these under .claude/worktrees/).
+    // Each one carries its own .next build output that eslint would otherwise
+    // descend into — surfacing tens of thousands of false-positive errors from
+    // compiled webpack/turbopack chunks. Top-level `.next/**` only matches the
+    // root build dir, not these nested ones.
+    ".claude/**",
   ]),
   // The new React-19/React-Compiler rules shipped in eslint-config-next flag
   // a large amount of pre-existing code. Keep them visible as warnings for
