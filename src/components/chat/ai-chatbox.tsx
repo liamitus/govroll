@@ -191,6 +191,10 @@ export function AiChatbox({
   /** Called when the user clicks × on the section chip to clear
    *  the scope. If omitted, the × button is hidden. */
   onClearSectionContext,
+  /** Optional starter prompts shown above the input when there's no chat
+   *  history yet. Click sends the question and opens the full
+   *  conversation. */
+  suggestedQuestions,
 }: {
   billId: number;
   onSignUp?: () => void;
@@ -199,6 +203,7 @@ export function AiChatbox({
   onOpenChange?: (open: boolean) => void;
   sectionContext?: ChatSectionContext | null;
   onClearSectionContext?: () => void;
+  suggestedQuestions?: string[];
 }) {
   const { user } = useAuth();
   const userId = user?.id;
@@ -444,6 +449,25 @@ export function AiChatbox({
       )}
       {!hideInlineTrigger && (
         <div className="space-y-2">
+          {!hasHistory &&
+            suggestedQuestions &&
+            suggestedQuestions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {suggestedQuestions.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => {
+                      setOpen(true);
+                      void sendMessage({ text: q });
+                    }}
+                    className="border-civic-gold/40 text-foreground/80 hover:border-civic-gold hover:bg-civic-cream/60 rounded-full border bg-white px-3 py-1 text-xs font-medium transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
           <div className="flex gap-2">
             <Input
               value={input}

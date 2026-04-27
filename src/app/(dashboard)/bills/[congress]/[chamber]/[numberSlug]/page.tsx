@@ -8,7 +8,8 @@ import {
   getEffectiveStatus,
   buildDynamicJourney,
 } from "@/lib/bill-helpers";
-import { BillAboutSection } from "@/components/bills/bill-about-section";
+import { BillHero } from "@/components/bills/bill-hero";
+import { BillStageSection } from "@/components/bills/bill-stage-section";
 import { BillChangeSummary } from "@/components/bills/bill-change-summary";
 import { SponsorCard } from "@/components/bills/sponsor-card";
 import { BillDetailInteractive } from "./interactive";
@@ -81,6 +82,60 @@ export async function generateMetadata({ params }: { params: RouteParams }) {
       description,
     },
   };
+}
+
+const AMENDMENT_PREFIX = /^to\s+amend\b/i;
+
+/**
+ * Pick 3 starter prompts tuned to the bill's lifecycle stage. These appear
+ * as chips above the AI input on first visit so users don't have to stare
+ * at an empty box wondering what to ask.
+ */
+function suggestedQuestions(
+  effectiveStatus: string,
+  isAmendmentBill: boolean,
+): string[] {
+  const isEnacted = effectiveStatus.startsWith("enacted_");
+  const isFailed =
+    effectiveStatus.startsWith("fail_") ||
+    effectiveStatus.startsWith("vetoed_") ||
+    effectiveStatus.startsWith("prov_kill_");
+
+  if (isEnacted) {
+    return isAmendmentBill
+      ? [
+          "What does this bill change?",
+          "Who would this affect?",
+          "When does this take effect?",
+        ]
+      : [
+          "What does this bill actually do?",
+          "Who would this affect?",
+          "When does this take effect?",
+        ];
+  }
+
+  if (isFailed) {
+    return [
+      "What did this bill propose?",
+      "Why did it fail?",
+      "Has anything similar been reintroduced?",
+    ];
+  }
+
+  if (isAmendmentBill) {
+    return [
+      "What does this bill change?",
+      "Who supports or opposes it?",
+      "What happens next?",
+    ];
+  }
+
+  return [
+    "What does this bill actually do?",
+    "Who supports or opposes it?",
+    "What happens next?",
+  ];
 }
 
 export default async function BillDetailPage({
@@ -218,6 +273,16 @@ export default async function BillDetailPage({
     effectiveStatus.startsWith("vetoed_") ||
     effectiveStatus.startsWith("prov_kill_");
 
+  // "Settled" = no further action expected. Used to drop the "yet" framing
+  // on the sponsor card ("no cosponsors yet" reads as still-gathering for
+  // bills that are actually done).
+  const isSettled = isEnacted || isFailed || bill.momentumTier === "DEAD";
+
+  // Heuristic: title-led detection of pure amendment bills ("To amend the
+  // FISA Amendments Act of 2008 to extend…"). Used to swap in amendment-
+  // specific starter prompts for the AI panel.
+  const isAmendmentBill = AMENDMENT_PREFIX.test(bill.title);
+
   // Latest substantive version, if the bill has been meaningfully amended
   // past the introduced version. When present, the page renders an AI-
   // generated "what changed" card below the about section; the card lazily
@@ -230,29 +295,33 @@ export default async function BillDetailPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-6 py-8">
-      {/* ── Title + plain-language lead + expandable about section ── */}
-      <BillAboutSection
-        billId={bill.id}
+      {/* ── Hero: bill citation, smart headline, lead, badges, actions ── */}
+      <BillHero
+        billDbId={bill.id}
         title={bill.title}
+        popularTitle={bill.popularTitle}
+        shortTitle={bill.shortTitle}
+        displayTitle={bill.displayTitle}
         aiShortDescription={bill.aiShortDescription}
         aiKeyPoints={bill.aiKeyPoints}
         shortText={bill.shortText}
-        introducedDate={dayjs(bill.introducedDate).format("MMM D, YYYY")}
-        lastActionDate={
-          bill.currentStatusDate && bill.currentStatus !== "introduced"
-            ? dayjs(bill.currentStatusDate).format("MMM D, YYYY")
-            : null
-        }
+        billType={bill.billType}
+        billId={bill.billId}
+        congressNumber={bill.congressNumber}
         link={bill.link}
         readerHref={
           textVersions.length > 0
             ? billReadHref({ billId: bill.billId, title: bill.title })
             : null
         }
+        introducedDate={dayjs(bill.introducedDate).format("MMM D, YYYY")}
+        lastActionDate={
+          bill.currentStatusDate && bill.currentStatus !== "introduced"
+            ? dayjs(bill.currentStatusDate).format("MMM D, YYYY")
+            : null
+        }
         typeLabel={typeInfo.label}
-        typeDescription={typeInfo.description}
         statusHeadline={statusExplanation.headline}
-        statusDetail={statusExplanation.detail}
         statusStyle={
           isEnacted
             ? "bg-enacted-soft text-enacted border-0"
@@ -262,15 +331,16 @@ export default async function BillDetailPage({
                 ? "bg-passed-soft text-passed border-0"
                 : "bg-muted text-muted-foreground border-0"
         }
-        chamberStyle={
-          bill.billType.startsWith("house")
-            ? "border-house text-house"
-            : "border-senate text-senate"
-        }
-        journeySteps={journeySteps}
         momentumTier={bill.momentumTier as MomentumTier | null}
         daysSinceLastAction={bill.daysSinceLastAction}
         deathReason={bill.deathReason as DeathReason | null}
+      />
+
+      {/* ── Legislative stage: stepper + status caption (always visible) ── */}
+      <BillStageSection
+        steps={journeySteps}
+        statusHeadline={statusExplanation.headline}
+        statusDetail={statusExplanation.detail}
       />
 
       {/* ── AI-generated change summary (lazy-loaded on demand) ── */}
@@ -298,12 +368,19 @@ export default async function BillDetailPage({
             cosponsors={cosponsors}
             cosponsorCount={bill.cosponsorCount}
             cosponsorPartySplit={bill.cosponsorPartySplit}
+            isSettled={isSettled}
           />
         </section>
       )}
 
-      {/* ── Engagement sections (reps, votes, discussion) ── */}
-      <BillDetailInteractive billId={bill.id} />
+      {/* ── Engagement sections (AI, reps, votes, discussion) ── */}
+      <BillDetailInteractive
+        billId={bill.id}
+        aiSuggestedQuestions={suggestedQuestions(
+          effectiveStatus,
+          isAmendmentBill,
+        )}
+      />
     </div>
   );
 }

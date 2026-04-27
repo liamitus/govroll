@@ -228,6 +228,42 @@ function RepCard({
   );
 }
 
+/**
+ * Single combined notice for the case where BOTH chambers passed the bill
+ * without a recorded roll call. Avoids stacking two near-identical voice-
+ * vote cards (one per chamber) that say the same thing twice.
+ */
+function CombinedVoiceVoteNotice({
+  proceduralRollCallCount,
+}: {
+  proceduralRollCallCount: number;
+}) {
+  return (
+    <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
+      <p className="text-foreground">
+        <span className="font-semibold">
+          Both chambers passed this bill without a recorded roll call.
+        </span>{" "}
+        <span className="text-muted-foreground">
+          Bills often pass by voice vote or unanimous consent when they
+          aren&apos;t controversial — no individual votes are recorded on
+          passage itself.
+          {proceduralRollCallCount > 0
+            ? " Procedural votes during consideration were recorded — those are shown below."
+            : ""}{" "}
+          <Link
+            href="/about/how-congress-votes"
+            className="hover:text-foreground underline underline-offset-2"
+          >
+            Learn more
+          </Link>
+          .
+        </span>
+      </p>
+    </div>
+  );
+}
+
 function ChamberNotice({ passage }: { passage: ChamberPassageInfo }) {
   const chamberName = passage.chamber === "house" ? "House" : "Senate";
 
@@ -366,6 +402,19 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
   const houseReps = reps.filter((r) => repChamberKey(r) === "house");
   const senateReps = reps.filter((r) => repChamberKey(r) === "senate");
 
+  // Both chambers passed by voice / unanimous consent → render a single
+  // combined notice up top instead of two stacked per-chamber notices that
+  // say the same thing.
+  const housePassage = passageByChamber.get("house");
+  const senatePassage = passageByChamber.get("senate");
+  const bothVoiceVote =
+    housePassage?.status === "passed_without_rollcall" &&
+    senatePassage?.status === "passed_without_rollcall";
+  const combinedProceduralCount = bothVoiceVote
+    ? (housePassage?.proceduralRollCallCount ?? 0) +
+      (senatePassage?.proceduralRollCallCount ?? 0)
+    : 0;
+
   const renderChamberGroup = (
     chamber: ChamberName,
     groupReps: RepresentativeWithVote[],
@@ -385,7 +434,9 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
       );
       return (
         <div className="space-y-2">
-          <ChamberNotice passage={passage} />
+          {/* Skip per-chamber notice when the combined-voice-vote notice
+              upstream already covers both chambers. */}
+          {!bothVoiceVote && <ChamberNotice passage={passage} />}
           {repsWithSignal.map((rep) => {
             const hasVote = rep.vote !== NO_VOTE_SENTINEL;
             return (
@@ -500,6 +551,11 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
         </p>
       ) : (
         <div className="space-y-3">
+          {bothVoiceVote && (
+            <CombinedVoiceVoteNotice
+              proceduralRollCallCount={combinedProceduralCount}
+            />
+          )}
           {houseReps.length > 0 && renderChamberGroup("house", houseReps)}
           {senateReps.length > 0 && renderChamberGroup("senate", senateReps)}
         </div>
