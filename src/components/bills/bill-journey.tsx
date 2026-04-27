@@ -46,9 +46,10 @@ function StepIcon({
 }: {
   status: JourneyStep["status"];
   index: number;
-  size: "sm" | "lg";
+  size: "sm" | "md" | "lg";
 }) {
-  const iconClass = size === "lg" ? "h-5 w-5" : "h-4 w-4";
+  const iconClass =
+    size === "lg" ? "h-5 w-5" : size === "md" ? "h-3.5 w-3.5" : "h-4 w-4";
 
   if (status === "completed") {
     return (
@@ -85,7 +86,22 @@ function StepIcon({
   return <span>{index + 1}</span>;
 }
 
-export function BillJourney({ steps }: { steps: JourneyStep[] }) {
+export function BillJourney({
+  steps,
+  compact = false,
+}: {
+  steps: JourneyStep[];
+  /** Smaller circles + tighter spacing. Used as the page-level spine where
+   *  the journey is always visible, vs the original chunkier treatment in
+   *  expanded card contexts. */
+  compact?: boolean;
+}) {
+  const desktopCircle = compact ? "h-7 w-7" : "h-10 w-10";
+  const desktopText = compact ? "text-[11px]" : "text-sm";
+  const labelText = compact ? "text-xs" : "text-sm";
+  const labelMargin = compact ? "mt-1.5" : "mt-2";
+  const connectorOffset = compact ? "mt-3.5" : "mt-5";
+
   return (
     <div className="w-full">
       {/* Desktop: horizontal stepper */}
@@ -98,12 +114,16 @@ export function BillJourney({ steps }: { steps: JourneyStep[] }) {
             {/* Step circle + label */}
             <div className="group relative flex flex-col items-center">
               <div
-                className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-all ${circleClass(step.status)} `}
+                className={`relative flex ${desktopCircle} shrink-0 items-center justify-center rounded-full ${desktopText} font-bold transition-all ${circleClass(step.status)} `}
               >
-                <StepIcon status={step.status} index={i} size="lg" />
+                <StepIcon
+                  status={step.status}
+                  index={i}
+                  size={compact ? "md" : "lg"}
+                />
               </div>
               <span
-                className={`mt-2 max-w-[6rem] text-center text-sm leading-tight font-medium ${labelClass(step.status)}`}
+                className={`${labelMargin} max-w-[6rem] text-center ${labelText} leading-tight font-medium ${labelClass(step.status)}`}
               >
                 {step.label}
               </span>
@@ -122,7 +142,9 @@ export function BillJourney({ steps }: { steps: JourneyStep[] }) {
 
             {/* Connector line */}
             {i < steps.length - 1 && (
-              <div className="mt-5 flex flex-1 items-center px-1">
+              <div
+                className={`${connectorOffset} flex flex-1 items-center px-1`}
+              >
                 <div
                   className={`h-0.5 w-full rounded-full ${connectorClass(step.status)}`}
                 />

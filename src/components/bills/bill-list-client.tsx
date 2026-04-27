@@ -32,6 +32,8 @@ const SORT_OPTIONS = [
   { value: "newest", label: "Newest" },
 ] as const;
 
+const SEARCH_EXAMPLES = ["H.R. 1", "S. 1", "defense"] as const;
+
 const filterParsers = {
   search: parseAsString.withDefault(""),
   chamber: parseAsStringLiteral([
@@ -68,6 +70,7 @@ export function BillListClient() {
 
   const observerRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
   const { user } = useAuth();
 
   const {
@@ -172,8 +175,7 @@ export function BillListClient() {
 
   const activeFilterCount =
     (queryFilters.chamber !== "both" ? 1 : 0) +
-    (queryFilters.status !== "" ? 1 : 0) +
-    (hideVoted ? 1 : 0);
+    (queryFilters.status !== "" ? 1 : 0);
 
   const filterPill = (
     label: string,
@@ -201,8 +203,8 @@ export function BillListClient() {
 
   return (
     <div className="space-y-3">
-      {/* Row 1 — Search + Sort */}
-      <div className="flex items-center gap-3">
+      {/* Row 1 — Search + Sort (stacks on mobile) */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="relative flex-1">
           <svg
             className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
@@ -217,6 +219,8 @@ export function BillListClient() {
             placeholder="Search bills or sponsors..."
             value={queryFilters.search}
             onChange={(e) => setFilters({ search: e.target.value })}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             className="border-border/60 placeholder:text-muted-foreground focus:ring-navy/20 focus:border-navy/20 h-10 w-full rounded-lg border bg-white pr-3 pl-9 text-base focus:ring-2 focus:outline-none"
           />
         </div>
@@ -236,6 +240,23 @@ export function BillListClient() {
           ))}
         </div>
       </div>
+
+      {/* Search examples — appear on focus when input is empty */}
+      {searchFocused && queryFilters.search === "" && (
+        <div className="animate-fade-slide-up flex flex-wrap items-center gap-1.5 px-0.5">
+          <span className="text-muted-foreground/70 text-xs">Try:</span>
+          {SEARCH_EXAMPLES.map((example) => (
+            <button
+              key={example}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setFilters({ search: example })}
+              className="bg-muted/50 text-muted-foreground hover:bg-navy/10 hover:text-navy rounded-full px-2 py-0.5 text-xs transition-colors"
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Row 2 — Topics + Filters toggle */}
       <div className="flex items-center gap-2">
@@ -342,40 +363,6 @@ export function BillListClient() {
             )}
             {filterPill("Failed", "failed", queryFilters.status, "status", "")}
           </div>
-
-          {user && userVotes.size > 0 && (
-            <button
-              onClick={() => setFilters({ hideVoted: !hideVoted })}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${
-                hideVoted
-                  ? "bg-navy border-navy text-white"
-                  : "border-border/50 text-muted-foreground hover:text-navy hover:border-navy/20"
-              }`}
-            >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                {hideVoted ? (
-                  <>
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                    <line x1="1" y1="1" x2="23" y2="23" />
-                  </>
-                ) : (
-                  <>
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </>
-                )}
-              </svg>
-              {hideVoted ? "Voted hidden" : "Hide voted"}
-            </button>
-          )}
         </div>
       )}
 
@@ -409,10 +396,15 @@ export function BillListClient() {
                   (show active only)
                 </button>
               )}
-              {hiddenByVoteCount > 0 && (
-                <span className="text-muted-foreground/70">
-                  · {hiddenByVoteCount} already voted on
-                </span>
+              {user && userVotes.size > 0 && (
+                <button
+                  onClick={() => setFilters({ hideVoted: !hideVoted })}
+                  className="text-muted-foreground/70 hover:text-navy underline decoration-dotted underline-offset-2 transition-colors"
+                >
+                  {hideVoted
+                    ? `(${hiddenByVoteCount} voted hidden)`
+                    : "(hide voted)"}
+                </button>
               )}
             </>
           )}

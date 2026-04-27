@@ -37,6 +37,10 @@ interface SponsorCardProps {
   cosponsorCount: number | null;
   /** Raw "11 D, 10 R" string from `Bill.cosponsorPartySplit`. */
   cosponsorPartySplit: string | null;
+  /** True when the bill is enacted, dead, or hard-failed. Settled bills no
+   *  longer accumulate cosponsors, so the "yet" framing reads as misleading
+   *  ("still gathering support"); we drop it. */
+  isSettled?: boolean;
 }
 
 /** Parse "11 D, 10 R, 1 I" into structured counts for the bar and groupings. */
@@ -70,8 +74,13 @@ function coalitionLine(
   repCount: number,
   otherCount: number,
   sponsorParty: string | null,
+  isSettled: boolean,
 ): string {
-  if (count === 0) return "Introduced solo — no cosponsors yet.";
+  if (count === 0) {
+    return isSettled
+      ? "Introduced solo — no cosponsors joined."
+      : "Introduced solo — no cosponsors yet.";
+  }
 
   const parts: string[] = [];
   if (demCount) parts.push(`${demCount} D`);
@@ -171,6 +180,7 @@ export function SponsorCard({
   cosponsors,
   cosponsorCount,
   cosponsorPartySplit,
+  isSettled = false,
 }: SponsorCardProps) {
   const [expanded, setExpanded] = useState(false);
   const parsed = parseSponsorString(sponsor);
@@ -218,6 +228,7 @@ export function SponsorCard({
     repCount,
     otherCount,
     parsed.party,
+    isSettled,
   );
   // Only show the expander when we actually have rows to reveal; otherwise
   // render the coalition line as static text (matches pre-feature behavior
