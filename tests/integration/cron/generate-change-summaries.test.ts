@@ -48,11 +48,11 @@ describe("GET /api/cron/generate-change-summaries", () => {
     );
   });
 
-  it("falls back gracefully when the AI gateway errors", async () => {
-    // Default MSW handlers 503 the AI gateway — exercises the per-version
-    // error path in generate-change-summaries.ts. The baseline version (ih)
-    // still gets its static "Initial version" summary because that branch
-    // doesn't hit the AI. Non-baseline versions stay null.
+  it("falls back gracefully when the AI provider errors", async () => {
+    // Default MSW handlers 503 Anthropic — exercises the per-version error
+    // path in generate-change-summaries.ts. The baseline version (ih) still
+    // gets its static "Initial version" summary because that branch doesn't
+    // hit the AI. Non-baseline versions stay null.
     const bill = await seedBill({ billId: "house_bill-71-119" });
     await getTestPrisma().billTextVersion.createMany({
       data: [

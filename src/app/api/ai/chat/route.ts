@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-//  POST — streaming chat turn via Vercel AI Gateway
+//  POST — streaming chat turn (Anthropic API via @ai-sdk/anthropic)
 // ─────────────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {

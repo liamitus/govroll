@@ -7,7 +7,7 @@ import { reportError } from "@/lib/error-reporting";
  * GET /api/cron/generate-section-captions
  *
  * Warms AI section captions for hot bills (high momentum + null
- * captions). Uses Claude Haiku via Vercel AI Gateway. Gated by the
+ * captions). Uses Claude Haiku via the Anthropic API. Gated by the
  * monthly budget ledger — if AI is paused the underlying function
  * refuses gracefully and this endpoint reports ok with zero work
  * done.

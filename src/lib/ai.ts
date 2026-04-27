@@ -1,10 +1,10 @@
 /**
- * AI integration layer — wraps Vercel AI Gateway via the AI SDK.
+ * AI integration layer — direct Anthropic API via the AI SDK.
  *
- * All provider calls go through the Gateway using "provider/model" string
- * model IDs. This gives us a single auth surface (AI_GATEWAY_API_KEY locally,
- * OIDC on Vercel), unified observability, and the ability to change providers
- * without touching call sites.
+ * Calls go straight to Anthropic using `@ai-sdk/anthropic`, authenticated
+ * with `ANTHROPIC_API_KEY`. This skips Vercel AI Gateway and its
+ * per-event observability charge; per-call usage is still recorded in the
+ * local spend ledger via `recordSpend`.
  */
 
 import {
@@ -16,6 +16,7 @@ import {
   type UIMessage,
   convertToModelMessages,
 } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
 import type { BillSection } from "./bill-sections";
@@ -30,11 +31,10 @@ export interface AiUsageRecord {
   outputTokens: number;
 }
 
-/** Model IDs routed through Vercel AI Gateway. */
-const SONNET_MODEL = "anthropic/claude-sonnet-4-20250514";
+const SONNET_MODEL = "claude-sonnet-4-20250514";
 /** Cheaper model for bounded, structured tasks like section-picking or
  *  diff summarization where hallucination risk is inherently low. */
-const HAIKU_MODEL = "anthropic/claude-haiku-4-5";
+const HAIKU_MODEL = "claude-haiku-4-5";
 
 /** Above this total section-text size we run a pre-pass to pick sections.
  *  Sonnet 200K-token context ≈ 600K chars; we want the pre-filter to kick
@@ -263,7 +263,7 @@ Return ONLY a JSON array of section references that are relevant to the question
 Return at most ${MAX_FILTERED_SECTIONS} sections. If unsure, include more rather than fewer.`;
 
   const result = await generateText({
-    model: HAIKU_MODEL,
+    model: anthropic(HAIKU_MODEL),
     system,
     messages: [{ role: "user", content: userMessage }],
     maxOutputTokens: 512,
@@ -314,8 +314,8 @@ export interface StreamBillChatParams {
 }
 
 /**
- * Kicks off the main chat generation against Sonnet via Gateway and returns
- * the streamText result. The caller is responsible for piping it to the
+ * Kicks off the main chat generation against Sonnet and returns the
+ * streamText result. The caller is responsible for piping it to the
  * client — typically via `result.toUIMessageStreamResponse(...)`.
  *
  * `onFinish` fires after the full response is generated; record spend, write
@@ -340,7 +340,7 @@ export async function streamBillChatResponse(
   const messages: ModelMessage[] = await convertToModelMessages(uiMessages);
 
   return streamText({
-    model: SONNET_MODEL,
+    model: anthropic(SONNET_MODEL),
     system,
     messages,
     maxOutputTokens: 2048,
@@ -393,7 +393,7 @@ The user has selected this passage:
 In 2–4 sentences of plain English, explain what this passage means and what its practical effect would be. Do not invent facts not present in the passage. Do not editorialize politically. If the passage is purely procedural or definitional, say so plainly. Avoid hedging phrases like "this provision provides" — describe the actual effect.`;
 
   const result = await generateText({
-    model: HAIKU_MODEL,
+    model: anthropic(HAIKU_MODEL),
     system,
     messages: [
       {
@@ -439,7 +439,7 @@ ${currentText.slice(0, CHANGE_SUMMARY_CHARS)}
 Summarize the substantive changes between these two versions.`;
 
   const result = await generateText({
-    model: HAIKU_MODEL,
+    model: anthropic(HAIKU_MODEL),
     system,
     messages: [{ role: "user", content: userPrompt }],
     maxOutputTokens: 1024,
@@ -539,7 +539,7 @@ export async function generateBillExplainer(args: {
   );
 
   const result = await generateObject({
-    model: HAIKU_MODEL,
+    model: anthropic(HAIKU_MODEL),
     system,
     schema: BillExplainerSchema,
     messages: [{ role: "user", content: parts.join("\n") }],
@@ -587,7 +587,7 @@ export async function generateBillChatAnswer(
 
   const system = buildBillChatSystemPrompt(billTitle, sectionsToUse, metadata);
   const result = await generateText({
-    model: SONNET_MODEL,
+    model: anthropic(SONNET_MODEL),
     system,
     messages: [
       ...conversationHistory.map((m) => ({ role: m.role, content: m.content })),

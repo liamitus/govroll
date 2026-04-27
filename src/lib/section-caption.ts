@@ -1,7 +1,7 @@
 /**
  * Section captions — one-sentence plain-English descriptions of each
  * parsed section of a bill. Powers the reader's smart outline. AI is
- * Haiku via Vercel AI Gateway; output is validated and stored on
+ * Haiku via the Anthropic API; output is validated and stored on
  * `BillTextVersion.sectionCaptions`.
  *
  * Two callers:
@@ -16,6 +16,7 @@
  */
 
 import { generateText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
 
 import { prisma } from "./prisma";
 import { parseSectionsFromFullText, type BillSection } from "./bill-sections";
@@ -27,8 +28,8 @@ import { assertAiEnabled } from "./ai-gate";
 //  Configuration
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Anthropic model ID via the Vercel AI Gateway. Cheap; bounded task. */
-const HAIKU_MODEL = "anthropic/claude-haiku-4-5";
+/** Anthropic Haiku model ID. Cheap; bounded task. */
+const HAIKU_MODEL = "claude-haiku-4-5";
 
 /** Max sections per AI call. Each caption is ~25 output tokens; 80
  *  sections × 25 = 2000 output tokens, well inside maxOutputTokens.
@@ -252,7 +253,7 @@ Return ONLY a JSON array, no surrounding prose. Each object: { "id": "<exact id 
 ${sectionsBlock}`;
 
   const result = await generateText({
-    model: HAIKU_MODEL,
+    model: anthropic(HAIKU_MODEL),
     system,
     messages: [{ role: "user", content: userMessage }],
     maxOutputTokens: MAX_OUTPUT_TOKENS,

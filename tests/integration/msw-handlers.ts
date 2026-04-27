@@ -42,53 +42,30 @@ export const defaultHandlers = [
     HttpResponse.json({}, { status: 404 }),
   ),
 
-  // Anthropic
+  // Anthropic — fails closed with a 503 so tests never pay for AI and the
+  // generate-change-summaries path falls through to its AI-error branch
+  // deterministically. A test that wants happy-path AI behavior overrides
+  // this with `server.use(...)`.
   http.post("https://api.anthropic.com/v1/messages", () =>
     HttpResponse.json(
-      {
-        id: "msg_test",
-        type: "message",
-        role: "assistant",
-        model: "claude-haiku-4-5-20251001",
-        content: [{ type: "text", text: "stub summary" }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 10, output_tokens: 5 },
-      },
-      { status: 200 },
+      { error: "anthropic disabled in tests" },
+      { status: 503 },
     ),
   ),
 
-  // OpenAI
-  http.post("https://api.openai.com/v1/chat/completions", () =>
+  // OpenAI moderation — used by src/lib/moderation/layer2.ts. Returns a
+  // not-flagged result so name / comment moderation paths don't blow up on
+  // a missing handler in tests that don't care about moderation.
+  http.post("https://api.openai.com/v1/moderations", () =>
     HttpResponse.json({
-      id: "chatcmpl-test",
-      object: "chat.completion",
-      choices: [
-        {
-          index: 0,
-          message: { role: "assistant", content: "stub" },
-          finish_reason: "stop",
-        },
-      ],
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      id: "modr-test",
+      model: "omni-moderation-latest",
+      results: [{ flagged: false, categories: {}, category_scores: {} }],
     }),
   ),
 
   // Resend (error-reporting.ts) — ensures reportError never leaks
   http.post("https://api.resend.com/emails", () =>
     HttpResponse.json({ id: "test" }),
-  ),
-
-  // Vercel AI Gateway — fails closed with a generic "gateway unavailable"
-  // response so tests never pay for AI and the generate-change-summaries
-  // path falls through to its AI-error branch deterministically.
-  http.post("https://ai-gateway.vercel.sh/*", () =>
-    HttpResponse.json({ error: "gateway disabled in tests" }, { status: 503 }),
-  ),
-  http.post("https://api.vercel.com/*", () =>
-    HttpResponse.json(
-      { error: "vercel api disabled in tests" },
-      { status: 503 },
-    ),
   ),
 ];
