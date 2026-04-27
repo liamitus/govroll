@@ -2,7 +2,7 @@
  * Lightweight error alerting via Resend (free tier: 100 emails/day).
  *
  * Set RESEND_API_KEY and ALERT_EMAIL in your environment.
- * Optionally set ALERT_FROM_EMAIL (requires verified domain on Resend).
+ * Optionally override ALERT_FROM_EMAIL; defaults to alerts@govroll.org.
  *
  * Features:
  *  - Deduplicates identical errors within a 5-minute window
@@ -56,7 +56,7 @@ export async function reportError(
 
   // ── Send alert ───────────────────────────────────────────────
   const from =
-    process.env.ALERT_FROM_EMAIL || "Govroll Alerts <onboarding@resend.dev>";
+    process.env.ALERT_FROM_EMAIL || "Govroll Alerts <alerts@govroll.org>";
 
   try {
     await fetch("https://api.resend.com/emails", {
