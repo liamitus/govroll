@@ -41,6 +41,10 @@ const WORD_FORM_TO_CHAMBER_CODE: Record<string, string> = {
   "senate-resolution": "sres",
 };
 
+const CHAMBER_CODE_TO_WORD_FORM: Record<string, string> = Object.fromEntries(
+  Object.entries(WORD_FORM_TO_CHAMBER_CODE).map(([k, v]) => [v, k]),
+);
+
 const CHAMBER_CODES = new Set<string>(Object.values(BILL_TYPE_TO_CHAMBER_CODE));
 
 /**
@@ -130,6 +134,29 @@ export function billHref(bill: BillForUrl): string {
 export function billReadHref(bill: BillForUrl): string {
   const href = billHref(bill);
   return href === "/bills" ? href : `${href}/read`;
+}
+
+/**
+ * Canonical Congress.gov text URL for a bill.
+ *   `https://www.congress.gov/bill/119th-congress/house-resolution/1156/text`
+ *
+ * The `/text` suffix lands the user on the bill text view rather than
+ * the overview tab — matches the user's intent when clicking a "Source"
+ * link from the reader.
+ */
+export function congressGovBillTextUrl(bill: {
+  billId: string;
+}): string | null {
+  const parsed = parseBillIdentifier(bill.billId);
+  if (!parsed) return null;
+  const chamberCode =
+    BILL_TYPE_TO_CHAMBER_CODE[
+      parsed.billType as keyof typeof BILL_TYPE_TO_CHAMBER_CODE
+    ];
+  if (!chamberCode) return null;
+  const wordForm = CHAMBER_CODE_TO_WORD_FORM[chamberCode];
+  if (!wordForm) return null;
+  return `https://www.congress.gov/bill/${parsed.congress}th-congress/${wordForm}/${parsed.number}/text`;
 }
 
 /**
