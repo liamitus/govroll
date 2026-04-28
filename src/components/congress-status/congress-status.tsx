@@ -183,7 +183,10 @@ function ariaLabelFor(
   r: Resolved,
   data: CongressStatusResponse | undefined,
 ): string {
-  const parts: string[] = ["Congress status", labelFor(r.status).toLowerCase()];
+  const parts: string[] = [
+    "Congress status",
+    (labelFor(r.status) ?? "unknown").toLowerCase(),
+  ];
   if (r.primaryChamber) parts.push(`primary chamber ${r.primaryChamber}`);
   const h = data?.chambers.house?.status;
   const s = data?.chambers.senate?.status;

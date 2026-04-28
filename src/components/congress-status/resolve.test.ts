@@ -311,6 +311,17 @@ describe("labelFor", () => {
     expect(labelFor("pre_session")).toBe("Opening soon");
   });
 
+  it("returns a usable label for an unrecognized future status (defends against API/client version skew)", () => {
+    // Old client bundles cached in browsers won't have a case for status
+    // codes added after they were built. Without a `default`, labelFor
+    // returns undefined and the NavBar's `.toLowerCase()` blows up every
+    // page on the site. Treat the unknown future code as "Status
+    // unavailable" so the pill stays graceful instead of crashing.
+    expect(labelFor("future_code_we_havent_shipped_yet" as StatusCode)).toBe(
+      "Status unavailable",
+    );
+  });
+
   it("covers every StatusCode value (no fall-through)", () => {
     const codes: StatusCode[] = [
       "voting",
