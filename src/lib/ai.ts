@@ -159,9 +159,68 @@ function formatSectionsForPrompt(
  * exact link target. The reader page intercepts these clicks for an
  * in-page jump + highlight; on the detail page (default mode) the
  * shorter human attribution is preferred.
+ *
+ * `opts.repVoteContext` lets the route inject a verified per-rep vote fact
+ * when the user's question names a specific representative. Stops the AI
+ * from claiming "I don't have voting records" (which it has historically
+ * done) and steers the answer toward what *can* be said — what the bill
+ * does, what the rep's vote was, plus an explicit acknowledgment that we
+ * cannot infer the rep's *reasoning* without their public statements.
  */
+export interface RepVoteContext {
+  /** Display name, e.g. "Rep. Alexandria Ocasio-Cortez (D-NY-14)". */
+  displayName: string;
+  /** Normalized vote: "Yes", "No", "Present", "Did not vote". */
+  voteLabel: string;
+  /** ISO date of the roll call, if known. */
+  voteDate: string | null;
+  /** Chamber the vote occurred in, e.g. "House" or "Senate". */
+  chamber: string | null;
+  /** Roll call number for the vote, if known. */
+  rollCallNumber: number | null;
+  /** Whether the user's wording implies they want a rationale ("why did
+   *  X vote nay") — when true, the prompt explicitly tells the model to
+   *  acknowledge that it can't read minds and to suggest contacting the
+   *  rep's office. When false, we just pin the vote fact. */
+  isWhyIntent: boolean;
+}
+
 export interface BillChatPromptOptions {
   readerMode?: boolean;
+  repVoteContext?: RepVoteContext | null;
+}
+
+function formatRepVoteContextBlock(ctx: RepVoteContext | null | undefined) {
+  if (!ctx) return "";
+  const lines: string[] = [];
+  lines.push("Verified roll call fact (confirmed from our database):");
+  const parts = [`${ctx.displayName} voted ${ctx.voteLabel}`];
+  if (ctx.chamber) parts.push(`in the ${ctx.chamber}`);
+  if (ctx.voteDate) parts.push(`on ${ctx.voteDate}`);
+  if (ctx.rollCallNumber != null)
+    parts.push(`(roll call #${ctx.rollCallNumber})`);
+  lines.push(`- ${parts.join(" ")}.`);
+  if (ctx.isWhyIntent) {
+    lines.push("");
+    lines.push(
+      "The user is asking why this representative voted the way they did. You do NOT have access to the representative's public statements, press releases, or floor remarks — only the bill's contents and the verified vote above. Do not claim the voting record is unavailable (it is shown above). Do this in your answer:",
+    );
+    lines.push(
+      '1. State the verified vote up front in plain language (e.g. "Rep. Smith voted No on this bill on March 12, 2026.").',
+    );
+    lines.push(
+      "2. Explain what the bill actually does, drawing only from the bill text or summary above. Note specific provisions a member of that representative's party or constituency might object to or support. Frame these as plausible considerations, not as the representative's stated reasons.",
+    );
+    lines.push(
+      "3. Be explicit about the limit: \"I can't read their reasoning — they haven't put a statement in front of me. The most reliable way to find out is to call their office.\" Do not invent or paraphrase statements you have not been shown.",
+    );
+  } else {
+    lines.push("");
+    lines.push(
+      "When the user references this representative, ground your answer in the verified vote above and the bill's contents. Do not speculate about the representative's personal motivations.",
+    );
+  }
+  return lines.join("\n");
 }
 
 export function buildBillChatSystemPrompt(
@@ -172,6 +231,8 @@ export function buildBillChatSystemPrompt(
 ): string {
   const metadataBlock = formatMetadataForPrompt(metadata);
   const readerMode = opts.readerMode === true;
+  const repVoteBlock = formatRepVoteContextBlock(opts.repVoteContext);
+  const repVoteSuffix = repVoteBlock ? `\n\n${repVoteBlock}` : "";
 
   // No sections — answer from title / CRS summary / metadata only.
   if (!billSections || billSections.length === 0) {
@@ -193,7 +254,7 @@ Your primary source is the nonpartisan Congressional Research Service summary ab
 
 Only say something is not covered if the summary genuinely does not address it. Do not claim you cannot see the bill — you have its official nonpartisan summary. The full bill text may have been amended since introduction; if a user asks about specific provisions, note that the summary describes the introduced version.
 
-Stay factual and neutral.`;
+Stay factual and neutral.${repVoteSuffix}`;
     }
 
     return `You are a helpful, nonpartisan assistant that helps citizens understand U.S. legislation. You answer questions about bills clearly and accessibly, avoiding jargon where possible.
@@ -206,7 +267,7 @@ Factual questions about who introduced the bill, who cosponsored it, its chamber
 
 For questions about specific substantive provisions of the bill (what it actually does section-by-section, dollar amounts, eligibility criteria, effective dates, enforcement mechanisms): note once at the start of your answer that the full text isn't yet in our system, then reason only from the title, policy area, and any action text — don't invent provisions. Point the user to congress.gov for specifics.
 
-Stay factual and neutral. Do not repeat the "text not available" caveat in every paragraph; one upfront mention is enough, and only when the question actually requires the bill text to answer.`;
+Stay factual and neutral. Do not repeat the "text not available" caveat in every paragraph; one upfront mention is enough, and only when the question actually requires the bill text to answer.${repVoteSuffix}`;
   }
 
   const billTextBlock = formatSectionsForPrompt(billSections, {
@@ -222,7 +283,7 @@ ${metadataBlock ? `Bill information:\n${metadataBlock}\n\n` : ""}Here is the tex
 
 ${billTextBlock}
 
-${citationInstructions}`;
+${citationInstructions}${repVoteSuffix}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -306,6 +367,9 @@ export interface StreamBillChatParams {
   /** When true, citations are emitted as `[Section X](?section=…)` links
    *  the reader page can intercept for in-page jumps. */
   readerMode?: boolean;
+  /** Verified per-rep vote fact, when the question names a specific
+   *  representative. Resolved by the route from `mentionedRepBioguideId`. */
+  repVoteContext?: RepVoteContext | null;
   onFinish?: (event: {
     text: string;
     usage: AiUsageRecord;
@@ -330,12 +394,14 @@ export async function streamBillChatResponse(
     metadata,
     uiMessages,
     readerMode,
+    repVoteContext,
     onFinish,
     onError,
   } = params;
 
   const system = buildBillChatSystemPrompt(billTitle, billSections, metadata, {
     readerMode,
+    repVoteContext,
   });
   const messages: ModelMessage[] = await convertToModelMessages(uiMessages);
 

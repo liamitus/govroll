@@ -102,6 +102,45 @@ describe("buildBillChatSystemPrompt", () => {
     expect(prompt).toContain("authoritative");
   });
 
+  it("appends a verified rep vote fact when repVoteContext is provided", () => {
+    const prompt = buildBillChatSystemPrompt("HR 1", null, null, {
+      repVoteContext: {
+        displayName: "Rep. Alexandria Ocasio-Cortez (D-NY-14)",
+        voteLabel: "No",
+        voteDate: "2026-03-12",
+        chamber: "House",
+        rollCallNumber: 245,
+        isWhyIntent: true,
+      },
+    });
+    expect(prompt).toContain("Verified roll call fact");
+    expect(prompt).toContain(
+      "Rep. Alexandria Ocasio-Cortez (D-NY-14) voted No",
+    );
+    expect(prompt).toContain("roll call #245");
+    // Why-intent block tells the model to acknowledge it can't read minds
+    // and to suggest contacting the office, instead of inventing a reason.
+    expect(prompt).toContain("call their office");
+    expect(prompt).toContain("can't read their reasoning");
+  });
+
+  it("uses softer guidance when repVoteContext.isWhyIntent is false", () => {
+    const prompt = buildBillChatSystemPrompt("HR 1", null, null, {
+      repVoteContext: {
+        displayName: "Sen. Bernie Sanders (I-VT)",
+        voteLabel: "Yes",
+        voteDate: "2026-03-12",
+        chamber: "Senate",
+        rollCallNumber: 88,
+        isWhyIntent: false,
+      },
+    });
+    expect(prompt).toContain("Sen. Bernie Sanders (I-VT) voted Yes");
+    // The "you can't read their mind" block is gated on isWhyIntent — it
+    // should NOT appear for bare name mentions.
+    expect(prompt).not.toContain("call their office");
+  });
+
   it("truncates the cosponsor list in the prompt for very long rosters", () => {
     const cosponsors = Array.from(
       { length: 40 },
