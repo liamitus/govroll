@@ -426,7 +426,7 @@ export async function generateChangeSummary(
   currentVersionType: string,
 ): Promise<{ content: string; usage: AiUsageRecord[] }> {
   const system =
-    "You are a nonpartisan legislative analyst. Given two versions of a bill, provide a clear, plain-language summary of what changed. Focus on substantive policy changes — new provisions, removed sections, changed numbers or thresholds, altered scope. Skip procedural or formatting changes. Write 2-4 sentences maximum. Do not use bullet points. Write for a general audience, not lawyers.";
+    'You are a nonpartisan legislative analyst. Compare two versions of a bill and write a 2-3 sentence summary of substantive policy changes — new provisions, removed sections, changed numbers or thresholds, altered scope. Skip procedural and formatting changes. Output plain prose only: no markdown, no headings, no bold, no bullets, and no labels like "Key Changes:". Maximum 70 words. Write for a general audience at an 8th-grade reading level.';
 
   const userPrompt = `Bill: "${billTitle}"
 
@@ -436,13 +436,13 @@ ${previousText.slice(0, CHANGE_SUMMARY_CHARS)}
 Current version (${currentVersionType}):
 ${currentText.slice(0, CHANGE_SUMMARY_CHARS)}
 
-Summarize the substantive changes between these two versions.`;
+Summarize the substantive changes between these two versions in 2-3 plain sentences.`;
 
   const result = await generateText({
     model: anthropic(HAIKU_MODEL),
     system,
     messages: [{ role: "user", content: userPrompt }],
-    maxOutputTokens: 1024,
+    maxOutputTokens: 220,
   });
 
   return {

@@ -2,6 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
+import ReactMarkdown from "react-markdown";
+
+// New summaries land at ~2-3 sentences, but legacy rows in the DB can be much
+// longer (older prompt allowed up to 4 sentences with no markdown ban). We
+// collapse anything over this threshold to a sentence-bounded preview and
+// surface the rest behind a Show more toggle.
+const COLLAPSE_THRESHOLD = 320;
+const COLLAPSE_TARGET = 260;
+
+function truncateAtSentence(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  const slice = text.slice(0, maxLen);
+  const lastEnd = Math.max(
+    slice.lastIndexOf(". "),
+    slice.lastIndexOf("! "),
+    slice.lastIndexOf("? "),
+  );
+  if (lastEnd > maxLen * 0.5) {
+    return slice.slice(0, lastEnd + 1).trim() + "…";
+  }
+  return slice.trim() + "…";
+}
 
 type SummaryState =
   | {
@@ -61,6 +83,7 @@ export function BillChangeSummary({ billId, initialVersion }: Props) {
           startedAt: new Date().toISOString(),
         },
   );
+  const [expanded, setExpanded] = useState(false);
   const pollingRef = useRef(false);
 
   useEffect(() => {
@@ -116,16 +139,76 @@ export function BillChangeSummary({ billId, initialVersion }: Props) {
         What changed in the latest version · AI-generated
       </p>
       <div className="border-civic-gold/30 bg-civic-gold/5 rounded-md border p-3">
-        {state.status === "ready" && (
-          <>
-            <p className="text-foreground/80 text-sm leading-relaxed">
-              {state.summary}
-            </p>
-            <p className="text-muted-foreground mt-2 text-[11px]">
-              {versionLabel(state)}
-            </p>
-          </>
-        )}
+        {state.status === "ready" &&
+          (() => {
+            const isLong = state.summary.length > COLLAPSE_THRESHOLD;
+            const visible =
+              isLong && !expanded
+                ? truncateAtSentence(state.summary, COLLAPSE_TARGET)
+                : state.summary;
+            return (
+              <>
+                <div className="text-foreground/80 text-sm leading-relaxed">
+                  <ReactMarkdown
+                    components={{
+                      h1: ({ children }) => (
+                        <p className="text-foreground/90 mb-1.5 font-semibold">
+                          {children}
+                        </p>
+                      ),
+                      h2: ({ children }) => (
+                        <p className="text-foreground/90 mb-1.5 font-semibold">
+                          {children}
+                        </p>
+                      ),
+                      h3: ({ children }) => (
+                        <p className="text-foreground/90 mb-1.5 font-semibold">
+                          {children}
+                        </p>
+                      ),
+                      p: ({ children }) => (
+                        <p className="mb-1.5 leading-relaxed last:mb-0">
+                          {children}
+                        </p>
+                      ),
+                      strong: ({ children }) => (
+                        <strong className="text-foreground font-semibold">
+                          {children}
+                        </strong>
+                      ),
+                      ul: ({ children }) => (
+                        <ul className="my-1.5 list-disc space-y-0.5 pl-5">
+                          {children}
+                        </ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol className="my-1.5 list-decimal space-y-0.5 pl-5">
+                          {children}
+                        </ol>
+                      ),
+                      li: ({ children }) => (
+                        <li className="leading-relaxed">{children}</li>
+                      ),
+                    }}
+                  >
+                    {visible}
+                  </ReactMarkdown>
+                </div>
+                {isLong && (
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((v) => !v)}
+                    className="text-navy/80 hover:text-navy mt-1 text-xs font-medium underline-offset-2 hover:underline"
+                  >
+                    {expanded ? "Show less" : "Show more"}
+                  </button>
+                )}
+                <p className="text-muted-foreground mt-2 text-[11px]">
+                  {versionLabel(state)}
+                </p>
+              </>
+            );
+          })()}
 
         {state.status === "pending" && (
           <>
