@@ -1,6 +1,6 @@
 # Govroll
 
-Do you ever wonder what congress is actually doing but have no clear way to find out?
+It's Congress, finally readable.
 
 Govroll is a civic transparency platform that makes legislation accessible to everyday people. Track bills, see how your representatives vote, and engage with the legislative process.
 
