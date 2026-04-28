@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
           take: 1,
           select: { sender: true, text: true, createdAt: true },
         },
-        _count: { select: { messages: true } },
+        // Count only user-sent rows: the UI renders this as "N questions",
+        // since AI replies are answers to those questions, not separate units
+        // of user effort.
+        _count: { select: { messages: { where: { sender: "user" } } } },
       },
     }),
     prisma.conversation.count({ where: { userId: user.id } }),
@@ -55,7 +58,7 @@ export async function GET(request: NextRequest) {
         id: c.id,
         bill: c.bill,
         lastMessage: c.messages[0] ?? null,
-        messageCount: c._count.messages,
+        questionCount: c._count.messages,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
       })),
