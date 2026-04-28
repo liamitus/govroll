@@ -26,6 +26,10 @@ export interface ReaderBillMeta {
   billId: string;
   title: string;
   billType: string;
+  /** GovTrack URL from the legacy `Bill.link` column. Null when unset
+   *  on older rows; the reader's "Sources" block hides the link in
+   *  that case. */
+  govtrackUrl: string | null;
 }
 
 export interface ReaderVersionMeta {

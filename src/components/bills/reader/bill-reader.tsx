@@ -1,4 +1,5 @@
 import dayjs from "dayjs";
+import { ExternalLink } from "lucide-react";
 
 import { SectionRenderer } from "./section-renderer";
 import { CollapsibleTopSection } from "./collapsible-top-section";
@@ -9,6 +10,7 @@ import { StickyBreadcrumb } from "./sticky-breadcrumb";
 import { OutlineRail } from "./outline-rail";
 import { SelectionPopover } from "./selection-popover";
 import { ReaderInteractive } from "./reader-interactive";
+import { congressGovBillTextUrl } from "@/lib/bills/url";
 import type {
   ReaderBillMeta,
   ReaderSection,
@@ -51,6 +53,8 @@ export function BillReader({
   const minutes = readingMinutes(sections);
   const groups = groupByTopLevel(sections);
   const autoExpandAll = shouldAutoExpand(sections);
+  const congressGovUrl = congressGovBillTextUrl({ billId: bill.billId });
+  const govtrackUrl = bill.govtrackUrl;
   // If a deep link targets a specific section, the group containing
   // that section must render open on the server — otherwise a brief
   // flash of collapsed content precedes the client-side expansion.
@@ -63,7 +67,12 @@ export function BillReader({
       <DeepLinkScroller initialSlug={initialSlug} />
       <SelectionPopover billId={bill.id} sections={breadcrumbSections} />
 
-      <ReaderInteractive billId={bill.id} outlineEntries={outlineEntries}>
+      <ReaderInteractive
+        billId={bill.id}
+        outlineEntries={outlineEntries}
+        congressGovUrl={congressGovUrl}
+        govtrackUrl={govtrackUrl}
+      >
         <div className="bill-prose-page min-h-screen">
           <StickyBreadcrumb
             bill={{ billId: bill.billId, title: bill.title }}
@@ -71,7 +80,11 @@ export function BillReader({
           />
 
           <div className="mx-auto flex max-w-[1280px] gap-8 px-4 sm:px-6 lg:gap-12">
-            <OutlineRail entries={outlineEntries} />
+            <OutlineRail
+              entries={outlineEntries}
+              congressGovUrl={congressGovUrl}
+              govtrackUrl={govtrackUrl}
+            />
 
             <main
               id="bill-reader-main"
@@ -127,11 +140,69 @@ export function BillReader({
                   );
                 })}
               </article>
+
+              {(congressGovUrl || govtrackUrl) && (
+                <SourceFooter
+                  congressGovUrl={congressGovUrl}
+                  govtrackUrl={govtrackUrl}
+                />
+              )}
             </main>
           </div>
         </div>
       </ReaderInteractive>
     </ScrollSpyProvider>
+  );
+}
+
+/**
+ * End-of-article attribution. The most important "Source" placement —
+ * when a reader finishes the bill text and asks "where did this come
+ * from?", the answer is right there in reading-flow order. The rail
+ * Sources block is the always-visible counterpart for in-flight
+ * verification.
+ */
+function SourceFooter({
+  congressGovUrl,
+  govtrackUrl,
+}: {
+  congressGovUrl: string | null;
+  govtrackUrl: string | null;
+}) {
+  return (
+    <footer
+      aria-label="Bill text source"
+      className="text-muted-foreground/80 bill-prose-meta border-border/40 mt-12 border-t pt-4 text-xs"
+    >
+      <p>
+        {congressGovUrl ? (
+          <>
+            Source:{" "}
+            <SourceFooterLink href={congressGovUrl} label="Congress.gov" />
+          </>
+        ) : null}
+        {congressGovUrl && govtrackUrl ? " · Also on " : null}
+        {!congressGovUrl && govtrackUrl ? "Source: " : null}
+        {govtrackUrl ? (
+          <SourceFooterLink href={govtrackUrl} label="GovTrack" />
+        ) : null}
+      </p>
+    </footer>
+  );
+}
+
+function SourceFooterLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="hover:text-foreground inline-flex items-center gap-1 underline underline-offset-2"
+    >
+      {label}
+      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+      <span className="sr-only">(opens in new tab)</span>
+    </a>
   );
 }
 

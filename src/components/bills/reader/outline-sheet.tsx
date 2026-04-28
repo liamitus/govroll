@@ -7,6 +7,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { OutlineTree, type OutlineEntry } from "./outline-tree";
+import { SourceLinks } from "./source-links";
 
 /**
  * Mobile / tablet outline sheet wrapping `<OutlineTree>`. Opened from
@@ -17,15 +18,23 @@ import { OutlineTree, type OutlineEntry } from "./outline-tree";
  * right-edge slide-over on tablets — both are appropriate for outline
  * browsing. Auto-closes when the user picks a section so the
  * jumped-to heading is visible behind the now-dismissed sheet.
+ *
+ * A "Sources" block sits at the bottom of the sheet (parity with the
+ * desktop rail) so mobile users discover the same attribution surface
+ * via the same affordance.
  */
 export function OutlineSheet({
   open,
   onOpenChange,
   entries,
+  congressGovUrl,
+  govtrackUrl,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   entries: OutlineEntry[];
+  congressGovUrl: string | null;
+  govtrackUrl: string | null;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -33,11 +42,17 @@ export function OutlineSheet({
         <SheetHeader>
           <SheetTitle>Outline</SheetTitle>
         </SheetHeader>
-        <div className="flex-1 overflow-y-auto px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="flex flex-1 flex-col overflow-y-auto px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <OutlineTree
             entries={entries}
             onItemClick={() => onOpenChange(false)}
           />
+          <div className="border-border/40 mt-6 border-t pt-4">
+            <SourceLinks
+              congressGovUrl={congressGovUrl}
+              govtrackUrl={govtrackUrl}
+            />
+          </div>
         </div>
       </SheetContent>
     </Sheet>

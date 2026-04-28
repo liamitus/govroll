@@ -241,6 +241,7 @@ export default async function BillReaderPage({
         billId: bill.billId,
         title: bill.title,
         billType: bill.billType,
+        govtrackUrl: bill.link ?? null,
       }}
       version={versionMeta}
       sections={sections}
