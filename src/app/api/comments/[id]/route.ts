@@ -10,7 +10,10 @@ export async function DELETE(
   if (error) return error;
 
   const { id } = await params;
-  const commentId = parseInt(id);
+  const commentId = Number(id);
+  if (!Number.isInteger(commentId) || commentId <= 0) {
+    return NextResponse.json({ error: "Invalid comment id" }, { status: 400 });
+  }
 
   try {
     const comment = await prisma.comment.findUnique({
