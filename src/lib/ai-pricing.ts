@@ -43,17 +43,63 @@ const UNKNOWN_MODEL_FALLBACK: ModelPricing = {
   outputCentsPerMtok: 7500,
 };
 
+/** Anthropic prompt-cache pricing multipliers, applied against the model's
+ *  base input rate.
+ *
+ *  - 5-minute ephemeral cache writes: 1.25× base input rate
+ *  - 1-hour ephemeral cache writes: 2× base input rate
+ *  - Cache reads (any TTL): 0.1× base input rate
+ *
+ *  We default to the 5-minute tier in the chat builder; the 1-hour multiplier
+ *  is exposed so we can flip it later without touching the cost math. */
+const CACHE_WRITE_MULT_5M = 1.25;
+const CACHE_WRITE_MULT_1H = 2;
+const CACHE_READ_MULT = 0.1;
+
+export interface CacheTokenBreakdown {
+  /** Tokens written to the cache this turn (1.25× input rate). */
+  cacheWriteTokens?: number;
+  /** Tokens read from a previous cache write (0.1× input rate). */
+  cacheReadTokens?: number;
+  /** Whether the write used the 1h TTL tier. Defaults to 5m (1.25×). */
+  cacheTtl?: "5m" | "1h";
+}
+
 /**
  * Compute the cost of a single AI call in integer cents, rounded up so we never
  * undercount the budget. Unknown models fall back to the most expensive tier.
+ *
+ * When `cache` is provided, the cached token counts are billed at Anthropic's
+ * tiered rates (cheaper reads, slightly pricier writes); the remaining
+ * `inputTokens` are billed at the standard rate. The provider gives us the
+ * full `inputTokens` count *plus* a breakdown — passing both keeps the
+ * standalone-cost shape compatible with non-Anthropic models that don't have
+ * the breakdown.
  */
 export function computeCostCents(
   model: string,
   inputTokens: number,
   outputTokens: number,
+  cache?: CacheTokenBreakdown,
 ): number {
   const pricing = MODEL_PRICING[model] ?? UNKNOWN_MODEL_FALLBACK;
-  const inputCost = (inputTokens * pricing.inputCentsPerMtok) / 1_000_000;
+  const cacheReadTokens = cache?.cacheReadTokens ?? 0;
+  const cacheWriteTokens = cache?.cacheWriteTokens ?? 0;
+  const writeMult =
+    cache?.cacheTtl === "1h" ? CACHE_WRITE_MULT_1H : CACHE_WRITE_MULT_5M;
+  // Provider reports the breakdown alongside total inputTokens; subtract so
+  // the same token isn't billed twice.
+  const noCacheTokens = Math.max(
+    0,
+    inputTokens - cacheReadTokens - cacheWriteTokens,
+  );
+
+  const noCacheCost = (noCacheTokens * pricing.inputCentsPerMtok) / 1_000_000;
+  const cacheReadCost =
+    (cacheReadTokens * pricing.inputCentsPerMtok * CACHE_READ_MULT) / 1_000_000;
+  const cacheWriteCost =
+    (cacheWriteTokens * pricing.inputCentsPerMtok * writeMult) / 1_000_000;
   const outputCost = (outputTokens * pricing.outputCentsPerMtok) / 1_000_000;
-  return Math.ceil(inputCost + outputCost);
+
+  return Math.ceil(noCacheCost + cacheReadCost + cacheWriteCost + outputCost);
 }

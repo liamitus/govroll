@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { computeCostCents } from "@/lib/ai-pricing";
+import { computeCostCents, type CacheTokenBreakdown } from "@/lib/ai-pricing";
 
 /**
  * Govroll runs on reader contributions. AI features are the largest variable
@@ -97,8 +97,12 @@ export type UsageInput = {
   userId?: string | null;
   feature: string;
   model: string;
+  /** Total input tokens reported by the provider, including any cache reads
+   *  and writes. The cache breakdown (when present) lets the cost math bill
+   *  cached tokens at Anthropic's discounted/premium rates. */
   inputTokens: number;
   outputTokens: number;
+  cache?: CacheTokenBreakdown;
 };
 
 /**
@@ -110,6 +114,7 @@ export async function recordSpend(event: UsageInput) {
     event.model,
     event.inputTokens,
     event.outputTokens,
+    event.cache,
   );
   const period = currentPeriod();
   await getOrCreateLedger(period);

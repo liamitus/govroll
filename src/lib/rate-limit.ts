@@ -27,6 +27,43 @@ export class RateLimitError extends Error {
 }
 
 /**
+ * Assert that the user hasn't blown a daily cost cap on a given AI feature.
+ * Sums recorded `costCents` from `AiUsageEvent` over the trailing 24 hours
+ * and throws `RateLimitError` once they exceed the cap.
+ *
+ * Distinct from `assertUserRateLimit` (which counts requests): a single
+ * omnibus-bill chat is many times more expensive than a small-bill chat,
+ * so a cents-based cap bounds blast radius better than a request count.
+ * Used as a backstop against an attacker (or a curious power user)
+ * specifically targeting expensive bills.
+ */
+export async function assertUserDailyCostCap(
+  userId: string,
+  feature: string,
+  maxCentsPerDay: number,
+): Promise<void> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const result = await prisma.aiUsageEvent.aggregate({
+    where: {
+      userId,
+      feature,
+      createdAt: { gte: since },
+    },
+    _sum: { costCents: true },
+  });
+  const totalCents = result._sum.costCents ?? 0;
+  if (totalCents >= maxCentsPerDay) {
+    throw new RateLimitError(
+      `${(maxCentsPerDay / 100).toFixed(2)} USD ${feature} cost per day`,
+      // The 24h window slides; the cap effectively unblocks once the oldest
+      // event drops out, but we don't compute that exactly. An hour is a
+      // reasonable hint that they should come back later.
+      3600,
+    );
+  }
+}
+
+/**
  * Assert that the user hasn't exceeded their per-hour request limit for a
  * given AI feature. Throws `RateLimitError` if exceeded.
  */

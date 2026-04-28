@@ -23,12 +23,18 @@ import type { BillSection } from "./bill-sections";
 import { buildSectionIndex, filterSections } from "./bill-sections";
 import { sectionSlugFromHeading } from "./section-slug";
 import type { BillMetadata } from "./congress-api";
+import type { CacheTokenBreakdown } from "./ai-pricing";
 
 /** Canonical usage shape consumed by the spend ledger. */
 export interface AiUsageRecord {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** Optional cache breakdown so the cost calc can apply Anthropic's
+   *  tiered rates (cheaper reads, slightly pricier writes). Absent for
+   *  callers that don't use prompt caching (Haiku filters, change
+   *  summaries, etc.). */
+  cache?: CacheTokenBreakdown;
 }
 
 const SONNET_MODEL = "claude-sonnet-4-20250514";
@@ -60,6 +66,50 @@ const CHANGE_SUMMARY_CHARS = 120_000;
 /** Chars of bill text fed to the explainer model. Kept well below Haiku's
  *  context so the CRS summary + metadata also fit comfortably. */
 const EXPLAINER_TEXT_CHARS = 120_000;
+
+/** Conservative chars-per-token estimate for legislative text. Real ratio
+ *  for English prose is closer to 3.5–4, but bill text leans denser
+ *  (numbers, citations, defined-term capitalization), so we under-estimate
+ *  to leave headroom on Sonnet's 200K-token window. */
+const CHARS_PER_TOKEN_BILL = 3;
+
+/** Total input-token budget for a chat turn. Sonnet 4's window is 200K;
+ *  reserving ~20K for instruction overhead, output (capped at 2048), and
+ *  safety margin gives us 180K to split between bill sections and the
+ *  conversation transcript. */
+const MODEL_INPUT_BUDGET_TOKENS = 180_000;
+
+/** Per-section token cap. Stops a single mega-section (think an omnibus
+ *  appropriations title) from monopolizing the section budget. */
+const PER_SECTION_TOKEN_CAP = 30_000;
+const PER_SECTION_CHAR_CAP = PER_SECTION_TOKEN_CAP * CHARS_PER_TOKEN_BILL;
+
+/** Floor on section-text tokens, regardless of how long the conversation
+ *  gets. A user asking turn-30 questions about a bill still needs the
+ *  bill in context; we'd rather drop the oldest history than blind the
+ *  model to the bill itself. */
+const MIN_SECTION_TOKENS = 50_000;
+
+/** Hard cap on conversation-history tokens. Long sessions on huge bills
+ *  used to compound here — a 30-turn chat could pin 60K+ tokens in
+ *  history alone, leaving no room for the bill text. Anything older than
+ *  this gets dropped before the prompt is built. */
+const MAX_HISTORY_TOKENS = 60_000;
+
+/** Marker appended in place of trimmed bill content. Phrased so the model
+ *  surfaces the elision to the user rather than answering as if the cut
+ *  text never existed. */
+const SECTION_TRUNCATION_NOTICE =
+  "\n\n[…section continues — truncated to fit context window. Ask a follow-up scoped to this section if more detail is needed.]";
+
+/** Anthropic prompt-cache breakpoint applied to the bill-text-bearing
+ *  system message. Multi-turn chats about the same bill within the 5min
+ *  TTL hit a 90%-cheaper cache read instead of paying full input rates
+ *  for the bill on every turn — a typical 5-turn session drops from
+ *  ~$0.95 to ~$0.44 in input cost. */
+const SYSTEM_CACHE_OPTIONS = {
+  anthropic: { cacheControl: { type: "ephemeral" as const } },
+} as const;
 
 // Without this carve-out, "don't invent provisions" suppresses basic background ("what is FISA?") on bills that cite a prior law without defining it.
 const BACKGROUND_KNOWLEDGE_CLAUSE = `For short definitional questions about acronyms, agencies, or prior laws referenced by the bill (e.g. "what is FISA?", "what does the EPA do?"), you may answer briefly from general knowledge. Frame these as background context, not as content of this bill, and don't speculate beyond well-established facts.`;
@@ -314,6 +364,228 @@ export function shouldFilterSections(billSections: BillSection[]): boolean {
   return totalChars > LARGE_BILL_THRESHOLD;
 }
 
+export interface PackSectionsResult {
+  sections: BillSection[];
+  /** True when at least one section was dropped or truncated. */
+  truncated: boolean;
+  /** Number of sections dropped entirely (after the budget ran out). */
+  droppedCount: number;
+  /** Number of sections kept but with trimmed content. */
+  truncatedCount: number;
+  /** Sum of heading + content chars in the original input. */
+  originalChars: number;
+  /** Sum of heading + content chars in the packed output. */
+  packedChars: number;
+  /** Char budget that was applied (so the caller can attribute the cause). */
+  budgetChars: number;
+}
+
+/**
+ * Greedy pack: include sections in order, truncating any single section
+ * that exceeds the per-section cap and stopping entirely once the total
+ * char budget is exhausted. Preserves the original ordering produced by
+ * the parser or relevance filter.
+ *
+ * `budgetTokens` defaults to the section share of the input window when
+ * unspecified; `streamBillChatResponse` passes a smaller value when a
+ * long conversation history is competing for room.
+ *
+ * Returns full diagnostic info; the legacy single-array shape is exposed
+ * via `packSectionsToBudget` for the simple cases that don't care.
+ */
+export function packSectionsToBudgetWithDiagnostics(
+  sections: BillSection[],
+  budgetTokens: number = MODEL_INPUT_BUDGET_TOKENS - MAX_HISTORY_TOKENS,
+): PackSectionsResult {
+  const budgetChars = budgetTokens * CHARS_PER_TOKEN_BILL;
+
+  // Per-section overhead beyond raw content: heading text, "### " prefix,
+  // optional "[slug: …]" line, "\n\n---\n\n" separator. 80 chars is a
+  // comfortable upper bound that still produces a useful budget.
+  const PER_SECTION_OVERHEAD = 80;
+
+  const originalChars = sections.reduce(
+    (sum, s) =>
+      sum + PER_SECTION_OVERHEAD + s.heading.length + s.content.length,
+    0,
+  );
+
+  let totalCost = 0;
+  let needsPacking = false;
+  for (const s of sections) {
+    if (s.content.length > PER_SECTION_CHAR_CAP) {
+      needsPacking = true;
+      break;
+    }
+    totalCost += PER_SECTION_OVERHEAD + s.heading.length + s.content.length;
+    if (totalCost > budgetChars) {
+      needsPacking = true;
+      break;
+    }
+  }
+  if (!needsPacking) {
+    return {
+      sections,
+      truncated: false,
+      droppedCount: 0,
+      truncatedCount: 0,
+      originalChars,
+      packedChars: originalChars,
+      budgetChars,
+    };
+  }
+
+  const packed: BillSection[] = [];
+  let used = 0;
+  let truncatedCount = 0;
+  for (const s of sections) {
+    const headingCost = PER_SECTION_OVERHEAD + s.heading.length;
+    const remaining = budgetChars - used - headingCost;
+    // No point including a section we'd render as headline + a few words.
+    if (remaining < 2_000) break;
+
+    let content = s.content;
+    let wasTrimmed = false;
+    if (content.length > PER_SECTION_CHAR_CAP) {
+      content =
+        content.slice(0, PER_SECTION_CHAR_CAP) + SECTION_TRUNCATION_NOTICE;
+      wasTrimmed = true;
+    }
+    if (content.length > remaining) {
+      content = content.slice(0, remaining) + SECTION_TRUNCATION_NOTICE;
+      wasTrimmed = true;
+    }
+    if (wasTrimmed) truncatedCount++;
+    packed.push({ ...s, content });
+    used += headingCost + content.length;
+  }
+
+  return {
+    sections: packed,
+    truncated: true,
+    droppedCount: sections.length - packed.length,
+    truncatedCount,
+    originalChars,
+    packedChars: used,
+    budgetChars,
+  };
+}
+
+/**
+ * Convenience wrapper preserving the original return shape — most callers
+ * just want the packed sections without diagnostics.
+ */
+export function packSectionsToBudget(
+  sections: BillSection[],
+  budgetTokens?: number,
+): BillSection[] {
+  return packSectionsToBudgetWithDiagnostics(sections, budgetTokens).sections;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Token estimation + budget allocation
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Rough chars-per-token for chat-style English (user questions + AI
+ *  responses, mostly prose). Higher than the bill-text constant because
+ *  prose tokenizes denser than legislative text. */
+const CHARS_PER_TOKEN_CHAT = 4;
+
+function estimateMessageTokens(message: ModelMessage): number {
+  // Each message has fixed framing overhead in the API; ~4 tokens covers
+  // role + delimiter + close.
+  const FRAMING_TOKENS = 4;
+  let chars = 0;
+  const content = message.content;
+  if (typeof content === "string") {
+    chars += content.length;
+  } else if (Array.isArray(content)) {
+    for (const part of content) {
+      if (typeof part === "object" && part !== null && "text" in part) {
+        const t = (part as { text?: unknown }).text;
+        if (typeof t === "string") chars += t.length;
+      }
+    }
+  }
+  return FRAMING_TOKENS + Math.ceil(chars / CHARS_PER_TOKEN_CHAT);
+}
+
+/**
+ * Drop the oldest history turns until the remaining transcript fits the
+ * given token budget. Always preserves the final message (the user's
+ * current question) and never lets the kept transcript start with an
+ * assistant turn — Anthropic rejects assistant-first conversations.
+ */
+export function truncateHistoryToBudget(
+  messages: ModelMessage[],
+  budgetTokens: number,
+): { messages: ModelMessage[]; droppedCount: number; tokens: number } {
+  if (messages.length === 0) {
+    return { messages, droppedCount: 0, tokens: 0 };
+  }
+
+  const last = messages[messages.length - 1];
+  const lastTokens = estimateMessageTokens(last);
+  const kept: ModelMessage[] = [last];
+  let used = lastTokens;
+
+  // Walk backwards, prepending until the budget is reached.
+  for (let i = messages.length - 2; i >= 0; i--) {
+    const t = estimateMessageTokens(messages[i]);
+    if (used + t > budgetTokens) break;
+    kept.unshift(messages[i]);
+    used += t;
+  }
+
+  // Anthropic requires the first non-system message to be `user`. If
+  // truncation left us with [assistant, user, …] at the front, drop the
+  // lead assistant — including its tokens in the dropped count.
+  while (kept.length > 1 && kept[0].role === "assistant") {
+    used -= estimateMessageTokens(kept[0]);
+    kept.shift();
+  }
+
+  return {
+    messages: kept,
+    droppedCount: messages.length - kept.length,
+    tokens: used,
+  };
+}
+
+export interface ChatBudgetAllocation {
+  /** Token budget the section packer should target. */
+  sectionTokens: number;
+  /** Token budget the history truncator should target. */
+  historyTokens: number;
+  /** Estimated history tokens before truncation (for diagnostics). */
+  historyTokensRaw: number;
+}
+
+/**
+ * Decide how to split the model's input budget between bill-text and
+ * conversation history for this turn. History gets priority up to a hard
+ * cap (`MAX_HISTORY_TOKENS`); whatever's left goes to sections, with a
+ * floor (`MIN_SECTION_TOKENS`) so the bill is never starved.
+ */
+export function allocateChatBudget(
+  history: ModelMessage[],
+): ChatBudgetAllocation {
+  const historyRaw = history.reduce(
+    (sum, m) => sum + estimateMessageTokens(m),
+    0,
+  );
+  const historyTokens = Math.min(historyRaw, MAX_HISTORY_TOKENS);
+  const sectionTokens = Math.max(
+    MIN_SECTION_TOKENS,
+    MODEL_INPUT_BUDGET_TOKENS - historyTokens,
+  );
+  return {
+    sectionTokens,
+    historyTokens,
+    historyTokensRaw: historyRaw,
+  };
+}
+
 /**
  * Ask a cheap model which sections are relevant to the user's question.
  * Returns a trimmed section list plus a usage record for the spend ledger.
@@ -374,6 +646,23 @@ Return at most ${MAX_FILTERED_SECTIONS} sections. If unsure, include more rather
 //  Main chat turn (streaming)
 // ─────────────────────────────────────────────────────────────────────────
 
+/** Diagnostics emitted before the stream starts so the route can log when
+ *  a turn was forced to drop bill content or transcript. Used to size the
+ *  follow-up work (1M-context routing, etc.) — the absence of any
+ *  truncation signal across real users means the next phase isn't worth
+ *  building yet. */
+export interface ChatBudgetDiagnostics {
+  sectionsTruncated: boolean;
+  sectionsDropped: number;
+  sectionsContentTruncated: number;
+  sectionsOriginalChars: number;
+  sectionsPackedChars: number;
+  historyDropped: number;
+  historyTokensRaw: number;
+  historyTokensKept: number;
+  sectionTokenBudget: number;
+}
+
 export interface StreamBillChatParams {
   billTitle: string;
   billSections: BillSection[] | null;
@@ -385,6 +674,8 @@ export interface StreamBillChatParams {
   /** Verified per-rep vote fact, when the question names a specific
    *  representative. Resolved by the route from `mentionedRepBioguideId`. */
   repVoteContext?: RepVoteContext | null;
+  /** Fires once budget allocation completes, before the stream starts. */
+  onBudget?: (diagnostics: ChatBudgetDiagnostics) => void;
   onFinish?: (event: {
     text: string;
     usage: AiUsageRecord;
@@ -397,8 +688,20 @@ export interface StreamBillChatParams {
  * streamText result. The caller is responsible for piping it to the
  * client — typically via `result.toUIMessageStreamResponse(...)`.
  *
- * `onFinish` fires after the full response is generated; record spend, write
- * the assistant Message row, and populate the response cache there.
+ * Three things happen before the stream starts:
+ *  1. The conversation transcript is truncated to a token budget so a long
+ *     chat can't crowd out the bill text.
+ *  2. The remaining input budget is given to the section packer, which
+ *     trims sections (per-section cap + total budget) so an omnibus bill
+ *     never overflows Sonnet's 200K window.
+ *  3. The system prompt — bill title, metadata, sections, citation rules
+ *     — is delivered as a `role: "system"` message marked
+ *     `cacheControl: "ephemeral"`. Multi-turn chats about the same bill
+ *     within 5 minutes pay 10% input rates for the cached portion. The
+ *     turn-specific question still goes in at full rate.
+ *
+ * `onFinish` reports the cache-aware token breakdown so the spend ledger
+ * bills cache reads/writes correctly.
  */
 export async function streamBillChatResponse(
   params: StreamBillChatParams,
@@ -410,19 +713,64 @@ export async function streamBillChatResponse(
     uiMessages,
     readerMode,
     repVoteContext,
+    onBudget,
     onFinish,
     onError,
   } = params;
 
-  const system = buildBillChatSystemPrompt(billTitle, billSections, metadata, {
-    readerMode,
-    repVoteContext,
-  });
-  const messages: ModelMessage[] = await convertToModelMessages(uiMessages);
+  const rawHistory: ModelMessage[] = await convertToModelMessages(uiMessages);
+  const allocation = allocateChatBudget(rawHistory);
+  const truncatedHistory = truncateHistoryToBudget(
+    rawHistory,
+    allocation.historyTokens,
+  );
+
+  const packResult = billSections
+    ? packSectionsToBudgetWithDiagnostics(
+        billSections,
+        allocation.sectionTokens,
+      )
+    : null;
+  const packedSections = packResult?.sections ?? null;
+
+  if (onBudget) {
+    onBudget({
+      sectionsTruncated: packResult?.truncated ?? false,
+      sectionsDropped: packResult?.droppedCount ?? 0,
+      sectionsContentTruncated: packResult?.truncatedCount ?? 0,
+      sectionsOriginalChars: packResult?.originalChars ?? 0,
+      sectionsPackedChars: packResult?.packedChars ?? 0,
+      historyDropped: truncatedHistory.droppedCount,
+      historyTokensRaw: allocation.historyTokensRaw,
+      historyTokensKept: truncatedHistory.tokens,
+      sectionTokenBudget: allocation.sectionTokens,
+    });
+  }
+
+  const systemText = buildBillChatSystemPrompt(
+    billTitle,
+    packedSections,
+    metadata,
+    { readerMode, repVoteContext },
+  );
+
+  // Cacheable system message + (already-budgeted) conversation. We pass
+  // everything through `messages` rather than the top-level `system`
+  // field so we can attach `providerOptions.anthropic.cacheControl` to
+  // the bill block. The provider groups consecutive system messages into
+  // a single API system field, so a future split (e.g. caching the bill
+  // separately from per-turn rep-vote context) is an additive change.
+  const messages: ModelMessage[] = [
+    {
+      role: "system",
+      content: systemText,
+      providerOptions: SYSTEM_CACHE_OPTIONS,
+    },
+    ...truncatedHistory.messages,
+  ];
 
   return streamText({
     model: anthropic(SONNET_MODEL),
-    system,
     messages,
     maxOutputTokens: 2048,
     onFinish: onFinish
@@ -433,6 +781,13 @@ export async function streamBillChatResponse(
               model: SONNET_MODEL,
               inputTokens: event.usage?.inputTokens ?? 0,
               outputTokens: event.usage?.outputTokens ?? 0,
+              cache: {
+                cacheReadTokens:
+                  event.usage?.inputTokenDetails?.cacheReadTokens ?? 0,
+                cacheWriteTokens:
+                  event.usage?.inputTokenDetails?.cacheWriteTokens ?? 0,
+                cacheTtl: "5m",
+              },
             },
           });
         }
@@ -666,7 +1021,12 @@ export async function generateBillChatAnswer(
     usage.push(filtered.usage);
   }
 
-  const system = buildBillChatSystemPrompt(billTitle, sectionsToUse, metadata);
+  // Mirror the streaming path: hard-cap section size before prompt build.
+  const packedSections = sectionsToUse
+    ? packSectionsToBudget(sectionsToUse)
+    : null;
+
+  const system = buildBillChatSystemPrompt(billTitle, packedSections, metadata);
   const result = await generateText({
     model: anthropic(SONNET_MODEL),
     system,
