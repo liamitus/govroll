@@ -18,10 +18,11 @@ const prisma = createStandalonePrisma();
  */
 export async function backfillCosponsors(
   targetBillIds?: string[],
-  options?: { limit?: number; onlyMissing?: boolean },
+  options?: { limit?: number; onlyMissing?: boolean; signal?: AbortSignal },
 ) {
   const limit = options?.limit ?? 500;
   const onlyMissing = options?.onlyMissing ?? true;
+  const signal = options?.signal;
 
   const bills = targetBillIds?.length
     ? await prisma.bill.findMany({ where: { billId: { in: targetBillIds } } })
@@ -55,6 +56,7 @@ export async function backfillCosponsors(
         congress,
         apiBillType,
         billNumber,
+        signal,
       );
 
       if (cosponsors.length === 0) {
