@@ -99,7 +99,7 @@ export function BillListClient() {
   const observerRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const {
     data,
@@ -168,10 +168,12 @@ export function BillListClient() {
   );
 
   // If the user signs out, clear the hideVoted toggle — otherwise a signed-
-  // out user sees "Voted hidden" with zero bills filtered.
+  // out user sees "Voted hidden" with zero bills filtered. Wait for auth to
+  // resolve before deciding; otherwise the initial `user=null, loading=true`
+  // window wipes the saved preference on every page load.
   useEffect(() => {
-    if (!user && hideVoted) setHideVoted(false);
-  }, [user, hideVoted, setHideVoted]);
+    if (!authLoading && !user && hideVoted) setHideVoted(false);
+  }, [authLoading, user, hideVoted, setHideVoted]);
 
   const visibleBills = useMemo(
     () => (hideVoted ? bills.filter((b) => !userVotes.has(b.id)) : bills),
