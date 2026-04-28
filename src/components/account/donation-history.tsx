@@ -104,7 +104,7 @@ export function DonationHistory({ userId }: { userId: string }) {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground text-sm">
-                {new Date(d.createdAt).toLocaleDateString()}
+                {new Date(d.createdAt).toLocaleDateString("en-US")}
               </span>
               {d.displayMode !== "ANONYMOUS" && !d.hiddenAt && (
                 <div className="flex gap-1">

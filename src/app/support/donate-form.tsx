@@ -164,7 +164,7 @@ export function DonateForm({
           <p className="text-muted-foreground text-xs">
             Typical contribution: ${(typicalDonationCents / 100).toFixed(0)}
             {donorCount > 0 &&
-              ` from ${donorCount.toLocaleString()} supporters`}
+              ` from ${donorCount.toLocaleString("en-US")} supporters`}
           </p>
         )}
       </div>

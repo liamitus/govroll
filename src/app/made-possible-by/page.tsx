@@ -137,7 +137,7 @@ export default async function MadePossibleByPage() {
         ) : (
           <>
             <h1 className="text-4xl font-bold tracking-tight">
-              {totalCount.toLocaleString()}{" "}
+              {totalCount.toLocaleString("en-US")}{" "}
               {totalCount === 1 ? "citizen keeps" : "citizens keep"} Govroll
               running.
             </h1>
@@ -193,7 +193,7 @@ export default async function MadePossibleByPage() {
       {/* Anonymous aggregate */}
       {anonCount > 0 && (
         <p className="text-muted-foreground text-center text-base font-medium">
-          + {anonCount.toLocaleString()} anonymous citizen
+          + {anonCount.toLocaleString("en-US")} anonymous citizen
           {anonCount !== 1 ? "s" : ""}
         </p>
       )}

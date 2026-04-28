@@ -42,7 +42,7 @@ function Comment({
     <div className="border-border border-l-2 py-2 pl-3">
       <div className="text-muted-foreground flex items-center gap-2 text-sm">
         <span className="text-foreground font-medium">{comment.username}</span>
-        <span>{new Date(comment.date).toLocaleDateString()}</span>
+        <span>{new Date(comment.date).toLocaleDateString("en-US")}</span>
       </div>
 
       <p className="mt-1 text-base">{comment.content}</p>
