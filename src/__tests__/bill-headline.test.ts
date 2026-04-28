@@ -2,13 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   pickBillHeadline,
   extractHeadlineFromSummary,
+  synthesizeAmendmentHeadline,
 } from "@/lib/bill-headline";
 import type { BillSummary } from "@/types";
 
 type HeadlineInput = Pick<
   BillSummary,
   "title" | "popularTitle" | "shortTitle" | "displayTitle" | "shortText"
->;
+> & { aiShortDescription?: string | null };
 
 function input(overrides: Partial<HeadlineInput>): HeadlineInput {
   return {
@@ -17,6 +18,7 @@ function input(overrides: Partial<HeadlineInput>): HeadlineInput {
     shortTitle: null,
     displayTitle: null,
     shortText: null,
+    aiShortDescription: null,
     ...overrides,
   };
 }
@@ -183,11 +185,53 @@ describe("pickBillHeadline", () => {
     expect(out.officialTitle).toBeNull();
   });
 
-  it("falls back to title when no shortText is available, even if title is procedural", () => {
+  it("falls back to aiShortDescription when title is procedural and shortText is missing", () => {
+    const out = pickBillHeadline(
+      input({
+        title:
+          "To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978 through April 30, 2026, and for other purposes.",
+        shortText: null,
+        aiShortDescription:
+          "This bill extends the surveillance authorities under FISA section 702 by one year, until April 30, 2026.",
+      }),
+    );
+    expect(out.headline).toMatch(/^Extends the surveillance authorities/);
+    expect(out.officialTitle).toContain("FISA Amendments Act");
+  });
+
+  it("synthesizes a headline from amendment title structure when nothing else is available", () => {
+    const out = pickBillHeadline(
+      input({
+        title:
+          "To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978 through April 30, 2026, and for other purposes.",
+        shortText: null,
+        aiShortDescription: null,
+      }),
+    );
+    expect(out.headline).toMatch(/^Extend the authorities of title VII/);
+    expect(out.headline).toMatch(/through April 30, 2026/);
+    expect(out.headline).not.toMatch(/and for other purposes/i);
+    expect(out.officialTitle).toContain("FISA Amendments Act");
+  });
+
+  it("prefers shortText over aiShortDescription when both are available", () => {
+    const out = pickBillHeadline(
+      input({
+        title:
+          "To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978 through April 30, 2026, and for other purposes.",
+        shortText: "This bill extends FISA Section 702 by one year.",
+        aiShortDescription: "This bill does something else entirely.",
+      }),
+    );
+    expect(out.headline).toMatch(/^Extends FISA Section 702/);
+  });
+
+  it("falls back to title when title is procedural but no source produces a headline", () => {
     const out = pickBillHeadline(
       input({
         title: "Providing for consideration of H.R. 4690",
         shortText: null,
+        aiShortDescription: null,
       }),
     );
     expect(out.headline).toBe("Providing for consideration of H.R. 4690");
@@ -205,5 +249,57 @@ describe("pickBillHeadline", () => {
     );
     expect(out.headline).toBe("CHIPS Act");
     expect(out.officialTitle).toBeNull();
+  });
+});
+
+describe("synthesizeAmendmentHeadline", () => {
+  it("strips the amendment target and trailing boilerplate", () => {
+    expect(
+      synthesizeAmendmentHeadline(
+        "To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978 through April 30, 2026, and for other purposes.",
+      ),
+    ).toBe(
+      "Extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978 through April 30, 2026",
+    );
+  });
+
+  it("handles a non-extension amendment (require, authorize, etc.)", () => {
+    expect(
+      synthesizeAmendmentHeadline(
+        "To amend title 49, United States Code, to require advanced air mobility safety reporting, and for other purposes.",
+      ),
+    ).toBe("Require advanced air mobility safety reporting");
+  });
+
+  it("works without the trailing boilerplate", () => {
+    expect(
+      synthesizeAmendmentHeadline(
+        "To amend the Public Health Service Act to authorize a pandemic preparedness program",
+      ),
+    ).toBe("Authorize a pandemic preparedness program");
+  });
+
+  it("returns null for non-amendment titles", () => {
+    expect(
+      synthesizeAmendmentHeadline(
+        "Expressing the sense of the House regarding fiscal policy.",
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when the action half is too short", () => {
+    expect(
+      synthesizeAmendmentHeadline(
+        "To amend section 5 of the Tax Code to do X.",
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when the action begins with another 'amend' (avoids nesting)", () => {
+    expect(
+      synthesizeAmendmentHeadline(
+        "To amend the Code of Federal Regulations to amend the existing rule on widget safety.",
+      ),
+    ).toBeNull();
   });
 });

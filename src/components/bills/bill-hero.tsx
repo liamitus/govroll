@@ -50,6 +50,7 @@ export function BillHero(props: BillHeroProps) {
     shortTitle: props.shortTitle,
     displayTitle: props.displayTitle,
     shortText: props.shortText,
+    aiShortDescription: props.aiShortDescription,
   });
 
   const billNumber = formatBillNumber(props.billType, props.billId);
