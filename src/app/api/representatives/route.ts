@@ -194,6 +194,7 @@ export async function POST(request: NextRequest) {
         chamber: official.chamber,
         imageUrl: official.imageUrl,
         link: official.link,
+        phone: official.phone ?? null,
         id: official.id,
         name: official.name,
         vote: latestVote?.vote || "No vote recorded",

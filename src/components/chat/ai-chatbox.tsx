@@ -18,6 +18,7 @@ import {
   isTextUIPart,
   type UIMessage,
 } from "ai";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,6 +29,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/use-auth";
+import { useAddress } from "@/hooks/use-address";
 import { useStickToBottom } from "@/hooks/use-stick-to-bottom";
 import { AiPausedPanel } from "@/components/ai-paused-panel";
 import {
@@ -35,6 +37,13 @@ import {
   mapErrorToState,
   type AiChatErrorState,
 } from "@/components/chat/ai-chat-error";
+import { RepActionCard } from "@/components/chat/rep-action-card";
+import {
+  fetchRepsForBill,
+  repsForBillQueryKey,
+} from "@/lib/queries/representatives-client";
+import { detectRepMention } from "@/lib/rep-mention";
+import type { RepresentativeWithVote } from "@/types";
 
 const MIN_WIDTH = 380;
 const MAX_WIDTH_VW = 0.95;
@@ -207,10 +216,34 @@ export function AiChatbox({
 }) {
   const { user } = useAuth();
   const userId = user?.id;
+  const { address } = useAddress();
+
+  // Reps for this bill — same query key as <RepresentativesVotes>, so when
+  // both are mounted on the bill page the chatbox piggybacks on the existing
+  // cache entry instead of double-fetching.
+  const { data: repsData } = useQuery({
+    queryKey: repsForBillQueryKey(billId, address),
+    queryFn: ({ signal }) => fetchRepsForBill(billId, address, signal),
+    enabled: !!address,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  // Memoized so the array identity is stable across renders that didn't
+  // change reps — keeps the hook deps for `submit` and `promotedMention`
+  // from going stale.
+  const userRepsForBill = useMemo<RepresentativeWithVote[]>(
+    () =>
+      (repsData?.representatives as RepresentativeWithVote[] | undefined) ?? [],
+    [repsData],
+  );
 
   // Latest server-assigned conversation id. Kept in a ref so the transport's
   // body closure always sees the newest value without re-creating the hook.
   const conversationIdRef = useRef<string | null>(null);
+  // Latest detected rep mention for the in-flight user message — read by the
+  // transport's body callback at request time. Kept as a ref so updating it
+  // doesn't tear down the transport.
+  const mentionedRepBioguideRef = useRef<string | null>(null);
 
   const [aiPaused, setAiPaused] = useState<{
     incomeCents: number;
@@ -259,6 +292,7 @@ export function AiChatbox({
       conversationId: conversationIdRef.current,
       sectionContext,
       mode: inReaderMode ? "reader" : undefined,
+      mentionedRepBioguideId: mentionedRepBioguideRef.current,
     }),
     [billId, sectionContext, inReaderMode],
   );
@@ -369,12 +403,26 @@ export function AiChatbox({
       setInput("");
       setErrorState(null);
       clearError();
+      // Detect a rep mention BEFORE the request fires so the transport's
+      // body callback can attach `mentionedRepBioguideId` for prompt
+      // injection. Detection runs over the user's own reps for this bill —
+      // the only set we have rich vote data for client-side.
+      const mention = detectRepMention(text, userRepsForBill);
+      mentionedRepBioguideRef.current = mention?.bioguideId ?? null;
       // User just submitted — force-pin so they see their message + the
       // streaming response, even if they were scrolled up reading history.
       scrollToBottom();
       void sendMessage({ text });
     },
-    [input, user, isBusy, clearError, sendMessage, scrollToBottom],
+    [
+      input,
+      user,
+      isBusy,
+      clearError,
+      sendMessage,
+      scrollToBottom,
+      userRepsForBill,
+    ],
   );
 
   const retryLast = useCallback(() => {
@@ -417,6 +465,38 @@ export function AiChatbox({
     document.body.style.userSelect = "";
     localStorage.setItem(WIDTH_STORAGE_KEY, String(width));
   };
+
+  // Compute the rep promoted by the most recent user message (purely
+  // derived — re-runs on each message change, no extra state). Hooks must
+  // run before the early `!user` return below or they'd be conditional.
+  const lastUserMessageText = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") return messageText(messages[i]);
+    }
+    return "";
+  }, [messages]);
+
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
+  const promotedMention = useMemo(() => {
+    if (!lastUserMessageText) return null;
+    return detectRepMention(lastUserMessageText, userRepsForBill);
+  }, [lastUserMessageText, userRepsForBill]);
+
+  const promotedRep = useMemo(
+    () =>
+      promotedMention != null
+        ? (userRepsForBill.find(
+            (r) => r.bioguideId === promotedMention.bioguideId,
+          ) ?? null)
+        : null,
+    [promotedMention, userRepsForBill],
+  );
 
   if (!user) {
     return (
@@ -610,30 +690,52 @@ export function AiChatbox({
               ) : (
                 <div ref={contentRef} className="space-y-4">
                   {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`text-base ${
-                        msg.role === "user"
-                          ? "flex justify-end"
-                          : "flex justify-start"
-                      }`}
-                    >
+                    <div key={msg.id}>
                       <div
-                        className={`max-w-[88%] rounded-2xl px-4 py-2.5 leading-relaxed ${
+                        className={`text-base ${
                           msg.role === "user"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-foreground"
+                            ? "flex justify-end"
+                            : "flex justify-start"
                         }`}
                       >
-                        {msg.role === "assistant" ? (
-                          <AiMessageContent
-                            text={messageText(msg)}
-                            readerMode={inReaderMode}
-                          />
-                        ) : (
-                          messageText(msg)
-                        )}
+                        <div
+                          className={`max-w-[88%] rounded-2xl px-4 py-2.5 leading-relaxed ${
+                            msg.role === "user"
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-foreground"
+                          }`}
+                        >
+                          {msg.role === "assistant" ? (
+                            <AiMessageContent
+                              text={messageText(msg)}
+                              readerMode={inReaderMode}
+                            />
+                          ) : (
+                            messageText(msg)
+                          )}
+                        </div>
                       </div>
+                      {/* Action card sits below the most recent assistant
+                          message ONLY when we can connect the user's
+                          question to a specific rep. Showing it on every
+                          turn would duplicate the page-level Representatives
+                          section. Earlier turns stay clean. */}
+                      {msg.role === "assistant" &&
+                      msg.id === lastAssistantId &&
+                      !isBusy &&
+                      promotedRep ? (
+                        <div className="flex justify-start">
+                          <div className="max-w-[88%]">
+                            <RepActionCard
+                              promoted={promotedRep}
+                              userReps={userRepsForBill}
+                              isWhyIntent={
+                                promotedMention?.isWhyIntent ?? false
+                              }
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                   {isThinking && (
