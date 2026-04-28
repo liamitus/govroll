@@ -86,7 +86,8 @@ export default async function SupportPage() {
             href="/made-possible-by"
             className="text-primary hover:text-navy underline underline-offset-2"
           >
-            {donorCount.toLocaleString()} citizen{donorCount !== 1 ? "s" : ""}
+            {donorCount.toLocaleString("en-US")} citizen
+            {donorCount !== 1 ? "s" : ""}
           </Link>{" "}
           keeping Govroll running.
         </p>

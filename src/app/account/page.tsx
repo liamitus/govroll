@@ -167,7 +167,7 @@ export default function AccountPage() {
         <p className="text-muted-foreground text-base">
           Member since:{" "}
           <span className="text-foreground">
-            {new Date(user.created_at).toLocaleDateString()}
+            {new Date(user.created_at).toLocaleDateString("en-US")}
           </span>
         </p>
       </Card>
@@ -263,7 +263,7 @@ export default function AccountPage() {
                 )}
               </div>
               <span className="text-muted-foreground ml-2 text-sm whitespace-nowrap">
-                {new Date(comment.date).toLocaleDateString()}
+                {new Date(comment.date).toLocaleDateString("en-US")}
               </span>
             </div>
           </Card>
