@@ -126,6 +126,14 @@ export function labelFor(status: StatusCode): string {
       return "Adjourned";
     case "unknown":
       return "Status unavailable";
+    default:
+      // Unreachable per types, but defends against API/client version skew —
+      // when the server starts returning a new status code (e.g. `pre_session`
+      // shipped in #66), browsers running a pre-deploy bundle have no case
+      // for it and would otherwise return undefined here, crashing the
+      // ariaLabelFor `.toLowerCase()` call site (which is rendered in the
+      // global NavBar — every page goes down).
+      return "Status unavailable";
   }
 }
 
