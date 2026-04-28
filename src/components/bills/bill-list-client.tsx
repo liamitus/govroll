@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryStates, parseAsString, parseAsStringLiteral } from "nuqs";
 import {
   keepPreviousData,
@@ -11,6 +11,7 @@ import { BillCard } from "./bill-card";
 import { BillGroupCard } from "./bill-group-card";
 import { TOPICS } from "@/lib/topic-mapping";
 import { useAuth } from "@/hooks/use-auth";
+import { useUserPref } from "@/hooks/use-user-pref";
 import { groupBills } from "@/lib/bill-grouping";
 import { formatOrdinal } from "@/lib/parse-bill-citation";
 import {
@@ -57,49 +58,37 @@ const filterOptions = {
   throttleMs: 300,
 };
 
-const HIDE_VOTED_STORAGE_KEY = "bills:hide-voted";
-
-function readHideVotedPref(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(HIDE_VOTED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function writeHideVotedPref(value: boolean) {
-  if (typeof window === "undefined") return;
-  try {
-    if (value) {
-      window.localStorage.setItem(HIDE_VOTED_STORAGE_KEY, "true");
-    } else {
-      window.localStorage.removeItem(HIDE_VOTED_STORAGE_KEY);
-    }
-  } catch {
-    // localStorage may be unavailable (private mode, quota exceeded, etc.)
-  }
-}
+// Pre-server-sync we stored hideVoted in localStorage. Migrate any leftover
+// value into the server-backed pref the first time a signed-in user lands
+// here, then clear the key. Idempotent — once cleared it never runs again.
+const LEGACY_HIDE_VOTED_STORAGE_KEY = "bills:hide-voted";
 
 export function BillListClient() {
   const [rawFilters, setFilters] = useQueryStates(filterParsers, filterOptions);
   const queryFilters: BillsFilterState = rawFilters;
 
-  // Hydrate after mount to avoid SSR/CSR mismatch — initial paint shows
-  // unfiltered bills, then localStorage applies the user's saved choice.
-  const [hideVoted, setHideVotedState] = useState(false);
-  useEffect(() => {
-    setHideVotedState(readHideVotedPref());
-  }, []);
-  const setHideVoted = useCallback((value: boolean) => {
-    setHideVotedState(value);
-    writeHideVotedPref(value);
-  }, []);
-
   const observerRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const { user } = useAuth();
+  const { value: hideVoted, setValue: setHideVoted } = useUserPref("hideVoted");
+
+  // One-shot migration of the old localStorage value to the server-backed
+  // pref. Runs only when signed in and the legacy key is set to "true";
+  // clears the key afterward so subsequent loads skip the work.
+  useEffect(() => {
+    if (!user) return;
+    if (typeof window === "undefined") return;
+    try {
+      const legacy = window.localStorage.getItem(LEGACY_HIDE_VOTED_STORAGE_KEY);
+      if (legacy === "true") setHideVoted(true);
+      if (legacy !== null)
+        window.localStorage.removeItem(LEGACY_HIDE_VOTED_STORAGE_KEY);
+    } catch {
+      // localStorage may be unavailable; nothing we can do — the user just
+      // re-toggles once and the new value persists server-side.
+    }
+  }, [user, setHideVoted]);
 
   const {
     data,
@@ -166,12 +155,6 @@ export function BillListClient() {
       ),
     [votedData],
   );
-
-  // If the user signs out, clear the hideVoted toggle — otherwise a signed-
-  // out user sees "Voted hidden" with zero bills filtered.
-  useEffect(() => {
-    if (!user && hideVoted) setHideVoted(false);
-  }, [user, hideVoted, setHideVoted]);
 
   const visibleBills = useMemo(
     () => (hideVoted ? bills.filter((b) => !userVotes.has(b.id)) : bills),
