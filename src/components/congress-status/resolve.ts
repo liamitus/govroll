@@ -28,6 +28,7 @@ const PRIORITY: StatusCode[] = [
   "voting",
   "in_session",
   "pro_forma",
+  "pre_session",
   "adjourned_today",
   "adjourned_sine_die",
   "recess",
@@ -115,6 +116,8 @@ export function labelFor(status: StatusCode): string {
       return "In Session";
     case "pro_forma":
       return "Pro Forma";
+    case "pre_session":
+      return "Opening soon";
     case "adjourned_today":
       return "Adjourned";
     case "recess":

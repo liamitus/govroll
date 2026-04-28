@@ -481,6 +481,7 @@ model CongressChamberStatus {
   lastActionAt        DateTime? // timestamp from the source signal itself
   nextTransitionAt    DateTime? // next scheduled transition start (recess begin / session resume)
   nextTransitionLabel String? // "Memorial Day District Work Period", "Returns Apr 28", etc.
+  scheduledConveneAt  DateTime? // wall-clock convene time on a pre_session day (parsed from PAIL "Convene at …")
   lastCheckedAt       DateTime  @default(now()) // when the cron last ran the waterfall
   updatedAt           DateTime  @updatedAt
 }

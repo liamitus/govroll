@@ -54,6 +54,7 @@ export async function GET(request: Request) {
             lastActionAt: s.lastActionAt,
             nextTransitionAt: s.nextTransitionAt,
             nextTransitionLabel: s.nextTransitionLabel,
+            scheduledConveneAt: s.scheduledConveneAt,
             lastCheckedAt: s.lastCheckedAt,
           },
           update: {
@@ -63,6 +64,7 @@ export async function GET(request: Request) {
             lastActionAt: s.lastActionAt,
             nextTransitionAt: s.nextTransitionAt,
             nextTransitionLabel: s.nextTransitionLabel,
+            scheduledConveneAt: s.scheduledConveneAt,
             lastCheckedAt: s.lastCheckedAt,
           },
         }),

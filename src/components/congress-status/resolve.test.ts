@@ -26,6 +26,7 @@ function makePayload(
     lastActionAt: null,
     nextTransitionAt,
     nextTransitionLabel,
+    scheduledConveneAt: null,
     lastCheckedAt: new Date(NOW - 60_000).toISOString(), // 1 min ago — fresh
     ...overrides,
   };
@@ -221,9 +222,93 @@ describe("resolveOverall — adjourned_today", () => {
   });
 });
 
+describe("resolveOverall — pre_session", () => {
+  it("picks the pre_session chamber over a chamber in multi-day recess (the screenshot bug)", () => {
+    // The motivating case: House is in a multi-week District Work Period
+    // and Senate is scheduled to convene at 10am today. The pill should
+    // surface the imminent Senate convene, not the distant House return —
+    // and the next-transition label should be the convene time, not the
+    // contradictory "Returns Wed, Apr 29" that nextInSessionDate produced
+    // when this state was incorrectly modeled as `recess`.
+    const data = {
+      chambers: {
+        house: makePayload(
+          "house",
+          "recess",
+          "2026-05-04T00:00:00Z",
+          "Returns Mon, May 4",
+        ),
+        senate: makePayload(
+          "senate",
+          "pre_session",
+          "2026-04-28T14:00:00Z", // 10am ET = 14:00 UTC
+          "Convenes at 10:00 a.m. ET",
+        ),
+      },
+    };
+
+    const r = resolveOverall(data, NOW);
+    expect(r.status).toBe("pre_session");
+    expect(r.primaryChamber).toBe("senate");
+    expect(r.nextTransitionLabel).toBe("Convenes at 10:00 a.m. ET");
+  });
+
+  it("picks pre_session over adjourned_today (about-to-start beats already-done)", () => {
+    // House gaveled in earlier today and adjourned; Senate is about to
+    // convene. The actionable signal is the imminent Senate session.
+    const data = {
+      chambers: {
+        house: makePayload(
+          "house",
+          "adjourned_today",
+          "2026-04-29T00:00:00Z",
+          "Returns Wed, Apr 29",
+        ),
+        senate: makePayload(
+          "senate",
+          "pre_session",
+          "2026-04-28T14:00:00Z",
+          "Convenes at 10:00 a.m. ET",
+        ),
+      },
+    };
+
+    const r = resolveOverall(data, NOW);
+    expect(r.status).toBe("pre_session");
+    expect(r.primaryChamber).toBe("senate");
+  });
+
+  it("in_session still outranks pre_session (one chamber actually live trumps the other about to start)", () => {
+    const data = {
+      chambers: {
+        house: makePayload(
+          "house",
+          "in_session",
+          "2026-05-23T00:00:00Z",
+          "Next recess May 23",
+        ),
+        senate: makePayload(
+          "senate",
+          "pre_session",
+          "2026-04-28T14:00:00Z",
+          "Convenes at 10:00 a.m. ET",
+        ),
+      },
+    };
+
+    const r = resolveOverall(data, NOW);
+    expect(r.status).toBe("in_session");
+    expect(r.primaryChamber).toBe("house");
+  });
+});
+
 describe("labelFor", () => {
   it('returns "Adjourned" for adjourned_today (chamber is done for the day, not still in session)', () => {
     expect(labelFor("adjourned_today")).toBe("Adjourned");
+  });
+
+  it('returns "Opening soon" for pre_session', () => {
+    expect(labelFor("pre_session")).toBe("Opening soon");
   });
 
   it("covers every StatusCode value (no fall-through)", () => {
@@ -231,6 +316,7 @@ describe("labelFor", () => {
       "voting",
       "in_session",
       "pro_forma",
+      "pre_session",
       "adjourned_today",
       "adjourned_sine_die",
       "recess",
@@ -250,6 +336,15 @@ describe("chamberHintFor", () => {
       status: "adjourned_today" as StatusCode,
       primaryChamber: "senate" as Chamber,
       nextTransitionLabel: "Returns Tue, Apr 28",
+    };
+    expect(chamberHintFor(r)).toBe("Senate");
+  });
+
+  it("surfaces the chamber for pre_session (citizen wants to know who's opening)", () => {
+    const r = {
+      status: "pre_session" as StatusCode,
+      primaryChamber: "senate" as Chamber,
+      nextTransitionLabel: "Convenes at 10:00 a.m. ET",
     };
     expect(chamberHintFor(r)).toBe("Senate");
   });
