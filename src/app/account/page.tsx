@@ -15,6 +15,7 @@ import {
 } from "@/components/auth/password-strength";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { DonationHistory } from "@/components/account/donation-history";
+import { ConversationHistory } from "@/components/account/conversation-history";
 import { resolveUsername } from "@/lib/citizen-id";
 import Link from "next/link";
 import {
@@ -280,6 +281,10 @@ export default function AccountPage() {
           </Button>
         )}
       </div>
+
+      <Separator />
+
+      <ConversationHistory userId={user.id} />
 
       <Separator />
 
