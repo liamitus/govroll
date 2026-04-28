@@ -14,6 +14,7 @@ export type StatusCode =
   | "voting" // chamber floor active AND recent roll call
   | "in_session" // chamber gaveled in, on floor, no recent vote
   | "pro_forma" // brief procedural meeting with no legislative business
+  | "adjourned_today" // chamber gaveled in earlier today, then gaveled out for the day
   | "recess" // scheduled non-session period
   | "adjourned_sine_die" // formal end of Congress (between sessions)
   | "unknown"; // no signal resolved

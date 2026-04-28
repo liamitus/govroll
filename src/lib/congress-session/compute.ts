@@ -87,6 +87,20 @@ export async function computeChamberStatus(
       now,
     });
   }
+  // Chamber gaveled in earlier today and is done for the day. The most useful
+  // transition is "when do they convene next?" — same shape as recess, not
+  // "next recess" — so pass `nextSession` instead of `nextRecess`.
+  if (liveSignal && liveSignal.status === "adjourned_today") {
+    return shape({
+      chamber,
+      status: "adjourned_today",
+      detail: liveSignal.detail,
+      source: liveSignal.source,
+      lastActionAt: liveSignal.observedAt,
+      nextSession,
+      now,
+    });
+  }
 
   // ── 3. Vote recency standing alone ─────────────────────────────────────
   // No live signal; recent vote within 8h means they were/are in session.
@@ -180,14 +194,17 @@ interface ShapeArgs {
 }
 
 function shape(args: ShapeArgs): ChamberStatus {
-  // When the chamber is currently in recess, the useful transition is
-  // "when do they next convene" — not "when's the next recess," which
-  // reads as a contradiction ("in recess … next recess tomorrow?").
-  // For in-session / voting states, surface the upcoming recess instead.
+  // When the chamber is currently between sessions ("in recess" or "done for
+  // the day"), the useful transition is "when do they next convene" — not
+  // "when's the next recess," which reads as a contradiction ("in recess …
+  // next recess tomorrow?"). For in-session / voting states, surface the
+  // upcoming recess instead.
   let nextTransitionAt: Date | null = null;
   let nextTransitionLabel: string | null = null;
 
-  if (args.status === "recess" && args.nextSession) {
+  const isBetweenSessions =
+    args.status === "recess" || args.status === "adjourned_today";
+  if (isBetweenSessions && args.nextSession) {
     nextTransitionAt = args.nextSession;
     nextTransitionLabel = `Returns ${formatReturns(args.nextSession, true)}`;
   } else if (args.nextRecess) {

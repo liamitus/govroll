@@ -28,6 +28,7 @@ const PRIORITY: StatusCode[] = [
   "voting",
   "in_session",
   "pro_forma",
+  "adjourned_today",
   "adjourned_sine_die",
   "recess",
   "unknown",
@@ -52,7 +53,8 @@ export function effectiveStatus(
 
 /**
  * Pick an overall "Congress" state from the per-chamber rows. Priority:
- *   voting > in_session > pro_forma > adjourned_sine_die > recess > unknown
+ *   voting > in_session > pro_forma > adjourned_today > adjourned_sine_die
+ *   > recess > unknown
  *
  * When chambers tie at the same priority, prefer the one whose
  * `nextTransitionAt` is sooner. For two recessed chambers that's "who
@@ -113,6 +115,8 @@ export function labelFor(status: StatusCode): string {
       return "In Session";
     case "pro_forma":
       return "Pro Forma";
+    case "adjourned_today":
+      return "Adjourned";
     case "recess":
       return "Recess";
     case "adjourned_sine_die":

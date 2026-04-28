@@ -150,10 +150,10 @@ export async function getHouseClerkSignal(
   }
 
   // There were actions today but the last one is old — the chamber
-  // adjourned for the day. Report as in_session-today so the waterfall
-  // can still distinguish this from "no activity at all" via the timestamp.
+  // gaveled in earlier and has gone home for the day. Distinct from
+  // `in_session` (currently on the floor) and `recess` (not active today).
   return {
-    status: "in_session",
+    status: "adjourned_today",
     observedAt: latest.time,
     detail: summarizeAction(latest.text),
     source: "clerk_xml",

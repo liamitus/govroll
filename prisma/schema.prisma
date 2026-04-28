@@ -466,6 +466,7 @@ model AdminUser {
 //   voting              — chamber is on the floor and voted recently
 //   in_session          — chamber gaveled in with floor activity
 //   pro_forma           — brief procedural session with no legislative business
+//   adjourned_today     — gaveled in earlier today, then gaveled out for the day
 //   recess              — scheduled non-session period
 //   adjourned_sine_die  — formal end of session (between Congresses)
 //   unknown             — no signal resolved; render a neutral pill

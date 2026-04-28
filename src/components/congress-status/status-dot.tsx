@@ -14,6 +14,7 @@ import type { StatusCode } from "@/lib/congress-session/types";
  * - voting: filled emerald with motion-safe pulse
  * - in_session: filled emerald, static
  * - pro_forma: half-filled amber (distinct shape)
+ * - adjourned_today: hollow emerald ring (was active today, not right now)
  * - recess: hollow ring in the ambient text color
  * - adjourned_sine_die: same hollow ring
  * - unknown: thin dash in the ambient text color (no dot at all)
@@ -43,6 +44,18 @@ export function StatusDot({
         aria-hidden
         className={cn(
           "relative inline-block size-2 rounded-full border border-current/60",
+          className,
+        )}
+      />
+    );
+  }
+
+  if (status === "adjourned_today") {
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          "relative inline-block size-2 rounded-full border border-emerald-400",
           className,
         )}
       />
