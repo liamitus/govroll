@@ -30,7 +30,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const bill = await prisma.bill.findUnique({ where: { id: billId } });
+    // Existence check only — no fullText (multi-MB per row).
+    const bill = await prisma.bill.findUnique({
+      where: { id: billId },
+      select: { id: true },
+    });
     if (!bill) {
       return NextResponse.json({ error: "Bill not found" }, { status: 404 });
     }

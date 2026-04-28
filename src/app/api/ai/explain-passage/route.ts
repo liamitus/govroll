@@ -107,7 +107,12 @@ export async function POST(request: NextRequest) {
     const [bill, latestVersion] = await Promise.all([
       prisma.bill.findUnique({
         where: { id: billId },
-        select: { id: true, title: true, fullText: true },
+        // Drop fullText from this query — latestVersion below is the
+        // canonical source for renderable text. fetch-bill-text writes
+        // both Bill.fullText and a BillTextVersion row in lockstep, so
+        // pulling Bill.fullText here would just ship the same megabytes
+        // twice through the pooler.
+        select: { id: true, title: true },
       }),
       prisma.billTextVersion.findFirst({
         where: { billId, fullText: { not: null } },
@@ -120,7 +125,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "bill not found" }, { status: 404 });
     }
 
-    const renderableText = latestVersion?.fullText ?? bill.fullText;
+    const renderableText = latestVersion?.fullText ?? null;
     if (!renderableText) {
       return NextResponse.json(
         { error: "bill text not available" },

@@ -34,7 +34,15 @@ import type { SectionCaption } from "@/lib/section-caption";
 // the page body instead of a 308. Cold SSR without a loading skeleton is
 // fast enough here that the UX cost is marginal; keeping the redirects
 // working on the reader route matters more for SEO.
-export const dynamic = "force-dynamic";
+//
+// ISR with a 1-hour revalidate window: bill text rarely changes within
+// an hour (new versions arrive infrequently and via the hourly backfill
+// cron). Caching the rendered page avoids shipping multi-MB fullText
+// rows through the Postgres pooler on every visitor — the dominant
+// source of pre-fix egress. Redirects still work under ISR: a
+// non-canonical URL renders, hits permanentRedirect, and the 308
+// response is what gets cached for that URL.
+export const revalidate = 3600;
 
 type RouteParams = Promise<{
   congress: string;
@@ -124,6 +132,11 @@ export default async function BillReaderPage({
   // text-bearing version for actual rendering, and the version list
   // (for a future version switcher; loaded now so we don't pay a
   // round trip when we add it).
+  //
+  // Bill.fullText is intentionally omitted: fetch-bill-text writes both
+  // Bill.fullText and a BillTextVersion row in lockstep, so latestVersion
+  // is the canonical source. The handful of legacy bills with only
+  // Bill.fullText fall through to the conditional fallback below.
   const [bill, latestVersion, allVersions] = await Promise.all([
     prisma.bill.findUnique({
       where: { billId: billIdKey },
@@ -133,8 +146,12 @@ export default async function BillReaderPage({
         title: true,
         billType: true,
         link: true,
-        fullText: true,
         textFetchAttemptedAt: true,
+        _count: {
+          select: {
+            textVersions: { where: { fullText: { not: null } } },
+          },
+        },
       },
     }),
     prisma.billTextVersion.findFirst({
@@ -175,17 +192,25 @@ export default async function BillReaderPage({
     permanentRedirect(canonicalReadHref);
   }
 
-  // No version with text yet. Try the legacy `Bill.fullText` fallback
-  // (some older bills have text on the parent row but no version row).
-  // If still nothing, kick a background fetch and render the friendly
-  // "fetching" state.
-  const renderableText = latestVersion?.fullText ?? bill.fullText;
+  // Resolve renderable text. Common path: latestVersion has it. Rare
+  // legacy path: no BillTextVersion row but Bill.fullText is populated
+  // (bills ingested before the version model existed). Pay the extra
+  // round trip only on that rare path so common visits stay cheap.
+  let renderableText: string | null = latestVersion?.fullText ?? null;
+  if (!renderableText) {
+    const legacyText = await prisma.bill.findUnique({
+      where: { id: bill.id },
+      select: { fullText: true },
+    });
+    renderableText = legacyText?.fullText ?? null;
+  }
+
   if (!renderableText) {
     maybeFetchBillTextInBackground({
       id: bill.id,
       billId: bill.billId,
       title: bill.title,
-      fullText: bill.fullText,
+      hasFullText: bill._count.textVersions > 0,
       textFetchAttemptedAt: bill.textFetchAttemptedAt,
     });
     return <TextNotAvailable bill={bill} />;

@@ -34,10 +34,10 @@ export function maybeFetchBillTextInBackground(bill: {
   id: number;
   billId: string;
   title: string;
-  fullText: string | null;
+  hasFullText: boolean;
   textFetchAttemptedAt: Date | null;
 }): void {
-  if (bill.fullText != null && bill.fullText.length > 0) return;
+  if (bill.hasFullText) return;
 
   const staleAt = new Date(Date.now() - TRY_AGAIN_AFTER_MS);
   if (
