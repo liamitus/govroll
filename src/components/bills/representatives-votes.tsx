@@ -17,6 +17,7 @@ import {
   fetchRepsForBill,
   repsForBillQueryKey,
 } from "@/lib/queries/representatives-client";
+import { shouldCombineVoiceVoteNotice } from "@/lib/representatives-display";
 
 const NO_VOTE_SENTINEL = "No vote recorded";
 
@@ -230,14 +231,14 @@ function RepCard({
 
 /**
  * Single combined notice for the case where BOTH chambers passed the bill
- * without a recorded roll call. Avoids stacking two near-identical voice-
- * vote cards (one per chamber) that say the same thing twice.
+ * without a recorded roll call AND neither chamber recorded any procedural
+ * votes either. Avoids stacking two near-identical voice-vote cards (one
+ * per chamber) that say the same thing twice.
+ *
+ * Gated by `shouldCombineVoiceVoteNotice` — see the helper for why we
+ * don't combine when procedural votes exist.
  */
-function CombinedVoiceVoteNotice({
-  proceduralRollCallCount,
-}: {
-  proceduralRollCallCount: number;
-}) {
+function CombinedVoiceVoteNotice() {
   return (
     <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
       <p className="text-foreground">
@@ -247,10 +248,7 @@ function CombinedVoiceVoteNotice({
         <span className="text-muted-foreground">
           Bills often pass by voice vote or unanimous consent when they
           aren&apos;t controversial — no individual votes are recorded on
-          passage itself.
-          {proceduralRollCallCount > 0
-            ? " Procedural votes during consideration were recorded — those are shown below."
-            : ""}{" "}
+          passage itself.{" "}
           <Link
             href="/about/how-congress-votes"
             className="hover:text-foreground underline underline-offset-2"
@@ -402,18 +400,17 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
   const houseReps = reps.filter((r) => repChamberKey(r) === "house");
   const senateReps = reps.filter((r) => repChamberKey(r) === "senate");
 
-  // Both chambers passed by voice / unanimous consent → render a single
-  // combined notice up top instead of two stacked per-chamber notices that
-  // say the same thing.
+  // Both chambers passed by voice / unanimous consent with no procedural
+  // roll calls either → render a single combined notice up top instead of
+  // two stacked per-chamber notices that say the same thing. If either
+  // chamber recorded procedural votes, fall back to per-chamber notices
+  // so the procedural caveat attaches to the correct chamber.
   const housePassage = passageByChamber.get("house");
   const senatePassage = passageByChamber.get("senate");
-  const bothVoiceVote =
-    housePassage?.status === "passed_without_rollcall" &&
-    senatePassage?.status === "passed_without_rollcall";
-  const combinedProceduralCount = bothVoiceVote
-    ? (housePassage?.proceduralRollCallCount ?? 0) +
-      (senatePassage?.proceduralRollCallCount ?? 0)
-    : 0;
+  const bothVoiceVote = shouldCombineVoiceVoteNotice(
+    housePassage,
+    senatePassage,
+  );
 
   const renderChamberGroup = (
     chamber: ChamberName,
@@ -551,11 +548,7 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
         </p>
       ) : (
         <div className="space-y-3">
-          {bothVoiceVote && (
-            <CombinedVoiceVoteNotice
-              proceduralRollCallCount={combinedProceduralCount}
-            />
-          )}
+          {bothVoiceVote && <CombinedVoiceVoteNotice />}
           {houseReps.length > 0 && renderChamberGroup("house", houseReps)}
           {senateReps.length > 0 && renderChamberGroup("senate", senateReps)}
         </div>
