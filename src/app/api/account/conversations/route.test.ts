@@ -39,7 +39,7 @@ describe("GET /api/account/conversations", () => {
     expect(findManyMock).not.toHaveBeenCalled();
   });
 
-  it("returns the user's conversations with bill, last message, and count", async () => {
+  it("returns the user's conversations with bill, last message, and question count", async () => {
     getUserMock.mockResolvedValue({ data: { user: { id: "u1" } } });
     findManyMock.mockResolvedValue([
       {
@@ -54,7 +54,7 @@ describe("GET /api/account/conversations", () => {
             createdAt: new Date("2026-04-25T00:00:00Z"),
           },
         ],
-        _count: { messages: 4 },
+        _count: { messages: 2 },
       },
     ]);
     countMock.mockResolvedValue(1);
@@ -69,8 +69,15 @@ describe("GET /api/account/conversations", () => {
       id: "c1",
       bill: { id: 1, billId: "house_bill-1-118", title: "Bill One" },
       lastMessage: { sender: "ai", text: "Some answer" },
-      messageCount: 4,
+      questionCount: 2,
     });
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          _count: { select: { messages: { where: { sender: "user" } } } },
+        }),
+      }),
+    );
   });
 
   it("paginates with skip/take based on the `page` query param", async () => {
@@ -120,6 +127,6 @@ describe("GET /api/account/conversations", () => {
     const res = await GET(getRequest());
     const json = await res.json();
     expect(json.conversations[0].lastMessage).toBeNull();
-    expect(json.conversations[0].messageCount).toBe(0);
+    expect(json.conversations[0].questionCount).toBe(0);
   });
 });
