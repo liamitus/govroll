@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -73,6 +77,33 @@ export default function AccountPage() {
     [commentsData],
   );
   const totalComments = commentsData?.pages[0]?.total ?? 0;
+
+  const queryClient = useQueryClient();
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (commentId: number) => {
+      const res = await fetch(`/api/comments/${commentId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete comment");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: userCommentsQueryKey(user?.id ?? ""),
+      });
+      // The same comment may also be cached under any bill view.
+      queryClient.invalidateQueries({ queryKey: ["bill-comments-page"] });
+    },
+  });
+
+  const handleDeleteComment = async (commentId: number) => {
+    if (deleteCommentMutation.isPending) return;
+    if (!window.confirm("Delete this comment? This cannot be undone.")) return;
+    try {
+      await deleteCommentMutation.mutateAsync(commentId);
+    } catch {
+      showMessage("Failed to delete comment", "error");
+    }
+  };
 
   useEffect(() => {
     if (authState === "signed-out") {
@@ -263,9 +294,18 @@ export default function AccountPage() {
                   </Link>
                 )}
               </div>
-              <span className="text-muted-foreground ml-2 text-sm whitespace-nowrap">
-                {new Date(comment.date).toLocaleDateString("en-US")}
-              </span>
+              <div className="ml-2 flex flex-col items-end gap-1">
+                <span className="text-muted-foreground text-sm whitespace-nowrap">
+                  {new Date(comment.date).toLocaleDateString("en-US")}
+                </span>
+                <button
+                  onClick={() => handleDeleteComment(comment.id)}
+                  disabled={deleteCommentMutation.isPending}
+                  className="text-muted-foreground hover:text-destructive text-sm disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           </Card>
         ))}

@@ -14,7 +14,7 @@ type ConversationRow = {
     text: string;
     createdAt: string;
   } | null;
-  messageCount: number;
+  questionCount: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -98,7 +98,7 @@ export function ConversationHistory({ userId }: { userId: string }) {
                 {previewFor(c.lastMessage)}
               </p>
               <p className="text-muted-foreground/70 mt-1 text-xs">
-                {c.messageCount} message{c.messageCount === 1 ? "" : "s"}
+                {c.questionCount} question{c.questionCount === 1 ? "" : "s"}
               </p>
             </div>
             <span className="text-muted-foreground shrink-0 text-sm whitespace-nowrap">

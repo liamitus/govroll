@@ -70,6 +70,32 @@ describe("buildBillChatSystemPrompt", () => {
     expect(prompt).toContain("Test Bill");
   });
 
+  it("permits brief background-knowledge answers in every prompt variant", () => {
+    const tier3 = buildBillChatSystemPrompt(
+      "Test Bill",
+      [section("Section 1. Heading", "Body content.")],
+      null,
+    );
+    const tier1 = buildBillChatSystemPrompt("Test Bill", null, {
+      sponsor: null,
+      cosponsorCount: null,
+      cosponsorPartySplit: null,
+      policyArea: null,
+      latestActionDate: null,
+      latestActionText: null,
+      shortText: "Some CRS summary text.",
+      popularTitle: null,
+      displayTitle: null,
+      shortTitle: null,
+    });
+    const tier2 = buildBillChatSystemPrompt("Test Bill", null, null);
+
+    for (const prompt of [tier1, tier2, tier3]) {
+      expect(prompt).toContain('"what is FISA?"');
+      expect(prompt).toContain("background context");
+    }
+  });
+
   it("packs extended metadata (type, chamber, dates, status, actions, cosponsors) into the title-only prompt", () => {
     // Tier-3 bills rely entirely on metadata — this test pins the fact that
     // the prompt builder actually surfaces every field we bother to collect.

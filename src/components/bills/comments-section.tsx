@@ -10,15 +10,20 @@ import type { CommentData } from "@/types";
 function Comment({
   comment,
   onReply,
+  onDelete,
   userId,
 }: {
   comment: CommentData;
   onReply: (parentId: number, content: string) => Promise<void>;
+  onDelete: (commentId: number) => Promise<void>;
   userId: string | null;
 }) {
   const [showReply, setShowReply] = useState(false);
   const [replyContent, setReplyContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const isOwner = userId !== null && comment.userId === userId;
 
   const handleVote = async (voteType: number) => {
     if (!userId) return;
@@ -36,6 +41,22 @@ function Comment({
     setReplyContent("");
     setShowReply(false);
     setSubmitting(false);
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    const replyCount = comment.replies?.length ?? 0;
+    const message =
+      replyCount > 0
+        ? `Delete this comment? Its ${replyCount} ${replyCount === 1 ? "reply" : "replies"} will also be removed.`
+        : "Delete this comment? This cannot be undone.";
+    if (!window.confirm(message)) return;
+    setDeleting(true);
+    try {
+      await onDelete(comment.id);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -71,6 +92,15 @@ function Comment({
             Reply
           </button>
         )}
+        {isOwner && (
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="text-muted-foreground hover:text-destructive ml-2 text-sm disabled:opacity-50"
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        )}
       </div>
 
       {showReply && (
@@ -92,6 +122,7 @@ function Comment({
           key={reply.id}
           comment={reply}
           onReply={onReply}
+          onDelete={onDelete}
           userId={userId}
         />
       ))}
@@ -156,6 +187,20 @@ export function CommentsSection({
     },
   });
   const submitting = mutation.isPending;
+
+  const deleteMutation = useMutation({
+    mutationFn: async (commentId: number) => {
+      const res = await fetch(`/api/comments/${commentId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete comment");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["bill-comments-page", billId],
+      });
+    },
+  });
 
   const submitComment = async (parentCommentId?: number, content?: string) => {
     const text = content || newComment;
@@ -231,6 +276,9 @@ export function CommentsSection({
               comment={comment}
               onReply={async (parentId, content) =>
                 submitComment(parentId, content)
+              }
+              onDelete={async (commentId) =>
+                deleteMutation.mutateAsync(commentId)
               }
               userId={user?.id || null}
             />
