@@ -18,7 +18,11 @@ import { parseSectionsFromFullText } from "@/lib/bill-sections";
 import type { BillMetadata } from "@/lib/congress-api";
 import { assertAiEnabled, AiDisabledError } from "@/lib/ai-gate";
 import { recordSpend } from "@/lib/budget";
-import { assertUserRateLimit, RateLimitError } from "@/lib/rate-limit";
+import {
+  assertUserRateLimit,
+  assertUserDailyCostCap,
+  RateLimitError,
+} from "@/lib/rate-limit";
 import { getCachedResponse, setCachedResponse } from "@/lib/ai-cache";
 import { reportError } from "@/lib/error-reporting";
 import { formatStreamErrorForClient } from "@/lib/ai-chat-stream-errors";
@@ -31,6 +35,15 @@ const MAX_MESSAGE_LENGTH = 2000;
  *  — caps a single bad actor's monthly spend at ~$470/account. Loosen
  *  once there's real traffic data to size against. */
 const MAX_CHAT_PER_USER_PER_HOUR = 5;
+
+/** Max AI chat *cost* per user per 24 hours, in cents. The hourly request
+ *  cap alone isn't enough — a single chat turn on a 400-min-read omnibus
+ *  can cost ~$0.20, so 5 turns/hr × 24h = 120 turns × $0.20 = $24/day for
+ *  one motivated user. The cents-based cap is the actual ceiling: 50¢/day
+ *  buys ~25 small-bill turns or ~3-5 omnibus turns, plenty for a real
+ *  user, painfully limiting for an attacker who specifically targets
+ *  expensive bills. Loosen once we see what real engagement looks like. */
+const MAX_CHAT_COST_PER_USER_PER_DAY_CENTS = 50;
 
 /**
  * Fluid Compute lets Hobby reach 300s. Bill chat is typically 5–15s end to
@@ -185,6 +198,11 @@ export async function POST(request: NextRequest) {
   try {
     // ── Pre-stream gates ───────────────────────────────────────────────
     await assertUserRateLimit(userId, "chat", MAX_CHAT_PER_USER_PER_HOUR);
+    await assertUserDailyCostCap(
+      userId,
+      "chat",
+      MAX_CHAT_COST_PER_USER_PER_DAY_CENTS,
+    );
     await assertAiEnabled("chat");
 
     const numericBillId =
@@ -431,6 +449,29 @@ export async function POST(request: NextRequest) {
       uiMessages: aiUiMessages,
       readerMode,
       repVoteContext,
+      onBudget: (diagnostics) => {
+        // Only emit when something was actually trimmed — the common case
+        // is silent. The signal we want is "how often do real users hit
+        // truncation on what bills" so we can decide whether 1M-context
+        // routing is worth building.
+        if (
+          diagnostics.sectionsTruncated ||
+          diagnostics.sectionsDropped > 0 ||
+          diagnostics.sectionsContentTruncated > 0 ||
+          diagnostics.historyDropped > 0
+        ) {
+          console.warn(
+            JSON.stringify({
+              event: "chat_context_truncated",
+              route: "POST /api/ai/chat",
+              userId,
+              billId: numericBillId,
+              billTitle: bill?.title,
+              ...diagnostics,
+            }),
+          );
+        }
+      },
       onFinish: async ({ text, usage }) => {
         await tryRecordSpend({ userId, feature: "chat", usage });
 
@@ -524,6 +565,7 @@ async function tryRecordSpend(args: {
       model: args.usage.model,
       inputTokens: args.usage.inputTokens,
       outputTokens: args.usage.outputTokens,
+      cache: args.usage.cache,
     });
   } catch (err) {
     console.error("Failed to record AI spend:", err);
