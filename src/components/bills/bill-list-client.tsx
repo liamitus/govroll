@@ -406,14 +406,15 @@ export function BillListClient() {
           {!isRefiltering && total > 0 && (
             <>
               <span>
-                {total.toLocaleString()} bill{total !== 1 ? "s" : ""}
+                {total.toLocaleString("en-US")} bill{total !== 1 ? "s" : ""}
               </span>
               {queryFilters.momentum === "live" && hiddenByMomentum > 0 && (
                 <button
                   onClick={() => setFilters({ momentum: "all" })}
                   className="text-muted-foreground/70 hover:text-navy underline decoration-dotted underline-offset-2 transition-colors"
                 >
-                  ({hiddenByMomentum.toLocaleString()} dormant or dead hidden)
+                  ({hiddenByMomentum.toLocaleString("en-US")} dormant or dead
+                  hidden)
                 </button>
               )}
               {queryFilters.momentum === "all" && (

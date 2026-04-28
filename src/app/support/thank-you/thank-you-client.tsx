@@ -91,7 +91,7 @@ export function ThankYouClient() {
             Made Possible By
           </p>
           <p className="font-gelasio text-navy text-3xl font-bold tabular-nums">
-            {displayCount.toLocaleString()}
+            {displayCount.toLocaleString("en-US")}
             <span className="text-muted-foreground ml-2 text-base font-normal">
               {citizenCount === 1 ? "citizen" : "citizens"}
             </span>

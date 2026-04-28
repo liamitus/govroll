@@ -28,7 +28,7 @@ export function RepQuickStats({
         }
       />
       <StatCard
-        value={stats.totalVotes.toLocaleString()}
+        value={stats.totalVotes.toLocaleString("en-US")}
         label="Votes Cast"
         sublabel="on tracked bills"
         color="text-navy"
@@ -40,7 +40,7 @@ export function RepQuickStats({
         color="text-vote-yea"
       />
       <StatCard
-        value={sponsoredBillsCount.toLocaleString()}
+        value={sponsoredBillsCount.toLocaleString("en-US")}
         label="Bills Sponsored"
         sublabel="in our database"
         color="text-navy"
