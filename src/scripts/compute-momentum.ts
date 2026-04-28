@@ -3,10 +3,14 @@ import { createStandalonePrisma } from "../lib/prisma-standalone";
 import {
   computeMomentum,
   getCurrentCongress,
+  isImminentFloorAction,
+  isMajorAction,
   type MomentumTier,
 } from "../lib/momentum";
 
 const prisma = createStandalonePrisma();
+
+const DAY_MS = 86_400_000;
 
 /**
  * Recomputes the momentum signal on Bill. Pulls only the fields needed, so a
@@ -25,7 +29,10 @@ export async function computeMomentumFunction(
   const currentCongress = getCurrentCongress(now);
 
   const staleCutoff = new Date(now.getTime() - 20 * 3600_000);
-  const recentActivityCutoff = new Date(now.getTime() - 7 * 86_400_000);
+  const recentActivityCutoff = new Date(now.getTime() - 7 * DAY_MS);
+  const sevenDaysAgo = recentActivityCutoff;
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * DAY_MS);
+  const oneYearAgo = new Date(now.getTime() - 365 * DAY_MS);
 
   const where =
     mode === "full"
@@ -76,8 +83,73 @@ export async function computeMomentumFunction(
     return { ok: 0, failed: 0 };
   }
 
+  const billDbIds = bills.map((b) => b.id);
+
+  // Bulk-fetch action history for the batch. We classify each row in JS so
+  // the rules stay in one place (momentum.ts) instead of being duplicated as
+  // SQL ILIKE patterns. 365d window matches the LONG_SILENCE override —
+  // anything older won't matter to a live bill.
+  const actions = await prisma.billAction.findMany({
+    where: {
+      billId: { in: billDbIds },
+      actionDate: { gte: oneYearAgo },
+    },
+    select: {
+      billId: true,
+      actionDate: true,
+      text: true,
+      actionType: true,
+    },
+  });
+
+  const latestMajorByBill = new Map<number, Date>();
+  const imminentBills = new Set<number>();
+  for (const a of actions) {
+    if (isMajorAction(a.text, a.actionType)) {
+      const prev = latestMajorByBill.get(a.billId);
+      if (!prev || prev < a.actionDate) {
+        latestMajorByBill.set(a.billId, a.actionDate);
+      }
+    }
+    if (
+      a.actionDate >= fourteenDaysAgo &&
+      isImminentFloorAction(a.text, a.actionType)
+    ) {
+      imminentBills.add(a.billId);
+    }
+  }
+
+  // 7-day civic engagement velocity: publicVotes + comments only. Excludes
+  // representative roll-call votes since those happen on Congress's
+  // schedule and would muddle "user attention just spiked."
+  const [recentVoteRows, recentCommentRows] = await Promise.all([
+    prisma.vote.groupBy({
+      by: ["billId"],
+      where: { billId: { in: billDbIds }, votedAt: { gte: sevenDaysAgo } },
+      _count: { _all: true },
+    }),
+    prisma.comment.groupBy({
+      by: ["billId"],
+      where: { billId: { in: billDbIds }, date: { gte: sevenDaysAgo } },
+      _count: { _all: true },
+    }),
+  ]);
+  const recentEngagementByBill = new Map<number, number>();
+  for (const v of recentVoteRows) {
+    recentEngagementByBill.set(
+      v.billId,
+      (recentEngagementByBill.get(v.billId) ?? 0) + v._count._all,
+    );
+  }
+  for (const c of recentCommentRows) {
+    recentEngagementByBill.set(
+      c.billId,
+      (recentEngagementByBill.get(c.billId) ?? 0) + c._count._all,
+    );
+  }
+
   console.log(
-    `[momentum] computing ${bills.length} bills (mode=${mode}, congress=${currentCongress})`,
+    `[momentum] computing ${bills.length} bills (mode=${mode}, congress=${currentCongress}, ${actions.length} actions, ${imminentBills.size} imminent)`,
   );
 
   // Batch the updates. Prisma doesn't offer a typed bulk-update with per-row
@@ -91,12 +163,17 @@ export async function computeMomentumFunction(
     const chunk = bills.slice(i, i + CHUNK);
     const results = await Promise.allSettled(
       chunk.map(async (bill) => {
+        const latestMajor = latestMajorByBill.get(bill.id) ?? null;
+        const hasImminent = imminentBills.has(bill.id);
+        const recentCivic = recentEngagementByBill.get(bill.id) ?? 0;
+
         const result = computeMomentum(
           {
             billId: bill.billId,
             currentStatus: bill.currentStatus,
             congressNumber: bill.congressNumber,
             latestActionDate: bill.latestActionDate,
+            latestMajorActionDate: latestMajor,
             currentStatusDate: bill.currentStatusDate,
             cosponsorCount: bill.cosponsorCount,
             cosponsorPartySplit: bill.cosponsorPartySplit,
@@ -105,6 +182,8 @@ export async function computeMomentumFunction(
               bill._count.votes +
               bill._count.publicVotes +
               bill._count.comments,
+            recentCivicEngagementCount: recentCivic,
+            hasImminentFloorAction: hasImminent,
           },
           currentCongress,
           now,
@@ -120,6 +199,8 @@ export async function computeMomentumFunction(
             daysSinceLastAction: result.daysSinceLastAction,
             deathReason: result.deathReason,
             momentumComputedAt: now,
+            latestMajorActionDate: latestMajor,
+            hasImminentFloorAction: hasImminent,
           },
         });
       }),

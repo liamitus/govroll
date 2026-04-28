@@ -11,6 +11,14 @@
 //   2. Honest language — DEAD / DORMANT / STALLED / ACTIVE / ADVANCING / ENACTED.
 //   3. Hard overrides first (prior Congress = dead, 365d silence = dead, etc.),
 //      then a graded score for ranking within the "alive" tiers.
+//   4. Recency reflects substantive movement, not procedural noise — committee
+//      sub-referrals and technical actions don't pump the score the way a
+//      markup, vote, or chamber passage does.
+//   5. User engagement is split into baseline (capped low to avoid filter
+//      bubbles) plus a 7d velocity signal — when a bill suddenly catches
+//      attention, the algorithm follows.
+//   6. Imminent floor action gets a small explicit boost so advocates can
+//      find bills before the vote happens, not after.
 
 export type MomentumTier =
   | "DEAD"
@@ -31,12 +39,33 @@ export interface MomentumInputs {
   billId: string;
   currentStatus: string;
   congressNumber: number | null;
+  /** Most recent action of any kind. Used for LONG_SILENCE detection. */
   latestActionDate: Date | null;
+  /**
+   * Most recent action that materially advanced the bill (markup, vote,
+   * chamber passage, conference report, etc. — see isMajorAction). Used
+   * for the recency component of the score and for tier derivation. When
+   * null, falls back to latestActionDate.
+   */
+  latestMajorActionDate?: Date | null;
   currentStatusDate: Date;
   cosponsorCount: number | null;
   cosponsorPartySplit: string | null;
   substantiveVersions: number;
-  engagementCount: number; // votes + publicVotes + comments
+  /** All-time engagement: representative votes + publicVotes + comments. */
+  engagementCount: number;
+  /**
+   * 7-day civic engagement: publicVotes + comments only. Excludes
+   * representative votes since roll calls happen on Congress's schedule
+   * and shouldn't double as a "user interest just spiked" signal.
+   */
+  recentCivicEngagementCount?: number;
+  /**
+   * Whether any action within the last ~14 days matches an
+   * imminent-floor-action pattern (placed on calendar, cloture motion,
+   * rule reported, etc. — see isImminentFloorAction).
+   */
+  hasImminentFloorAction?: boolean;
 }
 
 export interface MomentumResult {
@@ -91,6 +120,85 @@ function isBipartisan(split: string | null): boolean {
   if (!parsed) return false;
   const minority = Math.min(parsed.d, parsed.r);
   return minority >= 3; // ≥3 cosponsors from the minority party
+}
+
+/**
+ * Major actions are ones that materially move a bill: introduction,
+ * committee markup/reporting, chamber passage, conference, presidential
+ * action. Routine actions — sub-referrals, technical corrections, sponsor
+ * additions, "held at the desk" — return false and don't refresh the
+ * recency signal. Pattern matching over `text` because Congress.gov's
+ * `actionType` field is sparse and inconsistent across bill types.
+ */
+export function isMajorAction(
+  text: string,
+  actionType: string | null,
+): boolean {
+  const t = text || "";
+  const ty = (actionType || "").toLowerCase();
+
+  // Trust an explicit actionType when Congress.gov provides one.
+  if (
+    ty === "floor" ||
+    ty === "becamelaw" ||
+    ty === "discharge" ||
+    ty === "calendars" ||
+    ty.startsWith("vote-")
+  ) {
+    return true;
+  }
+
+  // Otherwise classify by text. Patterns kept conservative — false negatives
+  // (missing a major action) just slow recency; false positives inflate it.
+  return (
+    /^Introduced (in|by)\b/i.test(t) ||
+    /\b(Passed|Agreed to)\s+(in\s+)?(the\s+)?(House|Senate)\b/i.test(t) ||
+    /\bFailed\s+(in\s+)?(the\s+)?(House|Senate)\b/i.test(t) ||
+    /\bMotion to (recommit|reconsider)\b/i.test(t) ||
+    /\bOrdered to be reported\b/i.test(t) ||
+    /\bReported (by|to|with|favorably|originally)\b/i.test(t) ||
+    /\bCommittee.{0,30}(Markup|markup held)\b/i.test(t) ||
+    /\bMarkup (held|completed|session)\b/i.test(t) ||
+    /\bHearings? (held|scheduled)\b/i.test(t) ||
+    /\bConference (report|committee)\b/i.test(t) ||
+    /\bConsidered (and|by) (the )?(House|Senate)\b/i.test(t) ||
+    /\bCloture (invoked|motion (presented|filed|agreed))\b/i.test(t) ||
+    /\bDischarged from\b/i.test(t) ||
+    /\bPlaced on (the )?(Senate|House|Union|Calendar of Business|Legislative)/i.test(
+      t,
+    ) ||
+    /\bPresented to (the )?President\b/i.test(t) ||
+    /\bSigned by President\b/i.test(t) ||
+    /\bBecame (Public )?Law\b/i.test(t) ||
+    /\bVetoed by President\b/i.test(t) ||
+    /\bVeto overridden\b/i.test(t) ||
+    /\bRoll (Call )?Vote\b/i.test(t)
+  );
+}
+
+/**
+ * Subset of major actions specifically pointing to an upcoming or in-progress
+ * floor vote — what an advocate would want to act on this week. Sometimes
+ * overlaps with major actions that already happened (passage), but this is
+ * scoped narrower: actions that telegraph a *future* vote.
+ */
+export function isImminentFloorAction(
+  text: string,
+  _actionType: string | null,
+): boolean {
+  const t = text || "";
+  return (
+    /\bPlaced on (the )?(Senate |House |Union )?(Legislative )?Calendar/i.test(
+      t,
+    ) ||
+    /\bCloture motion (presented|filed|invoked)\b/i.test(t) ||
+    /\bMotion to proceed\b/i.test(t) ||
+    /\bRule\b.{0,30}\b(reported|provides|for consideration)\b/i.test(t) ||
+    /\bDischarged from .{0,40}[Cc]ommittee\b/i.test(t) ||
+    /\bScheduled for (consideration|floor)\b/i.test(t) ||
+    /\bConsideration scheduled\b/i.test(t) ||
+    /\bOrdered (to be )?placed on (the )?calendar\b/i.test(t)
+  );
 }
 
 /**
@@ -185,6 +293,8 @@ export function computeMomentum(
   }
 
   // Long silence: no action in 365+ days is effectively dead for a live-Congress bill.
+  // Uses any-action recency, not major-action recency — "no signs of life at all"
+  // is what makes a bill dead, not "no significant progress."
   if (daysSinceLastAction > 365) {
     return {
       score: 0,
@@ -198,8 +308,19 @@ export function computeMomentum(
 
   const floor = statusFloor(inputs.currentStatus);
 
-  // Recency: exponential decay with ~60 day half-life, worth up to 30 points.
-  const recency = 30 * Math.pow(0.5, daysSinceLastAction / 60);
+  // Recency: based on the most recent *major* action so we don't pump the
+  // score on procedural noise (sub-referrals, technical corrections, sponsor
+  // adds). Falls back to any-action recency when no major action is known.
+  const lastMajorTs = (
+    inputs.latestMajorActionDate ??
+    inputs.latestActionDate ??
+    inputs.currentStatusDate
+  ).getTime();
+  const daysSinceLastMajor = Math.max(
+    0,
+    Math.floor((now.getTime() - lastMajorTs) / DAY_MS),
+  );
+  const recency = 30 * Math.pow(0.5, daysSinceLastMajor / 60);
 
   // Text iteration: committees publishing revised versions = real engagement.
   // Worth up to 10 points; cap at 3 substantive versions.
@@ -213,8 +334,21 @@ export function computeMomentum(
     cosponsorBase * (isBipartisan(inputs.cosponsorPartySplit) ? 1.5 : 1.0),
   );
 
-  // Civic engagement on our platform — capped low to avoid circularity.
-  const civicScore = Math.min(5, Math.log1p(inputs.engagementCount));
+  // Civic engagement, split:
+  //   - Baseline (cap 3): all-time. Capped low to avoid filter-bubble loops
+  //     where bills trend because they trended.
+  //   - Velocity (cap 5): last-7-day publicVotes + comments. This is our
+  //     proxy for news-cycle salience — when an event makes a bill suddenly
+  //     relevant, our users react in real time and the score follows.
+  const civicBase = Math.min(3, Math.log1p(inputs.engagementCount));
+  const recentCivic = inputs.recentCivicEngagementCount ?? 0;
+  const civicVelocity = Math.min(5, Math.log1p(recentCivic) * 1.5);
+  const civicScore = civicBase + civicVelocity;
+
+  // Imminent floor action: small flat boost. Helps advocates find bills
+  // before the vote, not after. Bounded so it can re-rank within a tier
+  // but never make a stalled bill look like a passing one.
+  const imminenceBoost = inputs.hasImminentFloorAction ? 6 : 0;
 
   // End-of-Congress penalty: bills that haven't passed either chamber in the
   // last 3 months of a Congress are unlikely to move.
@@ -235,23 +369,27 @@ export function computeMomentum(
     recency +
     textIteration +
     cosponsorScore +
-    civicScore -
+    civicScore +
+    imminenceBoost -
     endPenalty;
   const score = Math.max(0, Math.min(100, Math.round(rawScore)));
 
   // --- Tier derivation ---
   //
-  // Primarily age-based so users can trust the label, with status overrides
-  // promoting bills that have cleared meaningful procedural milestones.
+  // Uses major-action recency so a bill receiving only sub-referrals doesn't
+  // get labeled ACTIVE on procedural noise. Status overrides still promote
+  // bills that have cleared meaningful procedural milestones, and an
+  // imminent floor action floors the tier at ACTIVE so advocates aren't
+  // told a bill scheduled for tomorrow is stalled.
 
   let tier: MomentumTier;
   if (floor >= 28) {
     // Passed at least one chamber — structurally advancing.
     tier = "ADVANCING";
-  } else if (daysSinceLastAction <= 60) {
+  } else if (daysSinceLastMajor <= 60 || inputs.hasImminentFloorAction) {
     // Congress cadence is monthly; 60 days covers a normal markup cycle.
     tier = "ACTIVE";
-  } else if (daysSinceLastAction <= 180) {
+  } else if (daysSinceLastMajor <= 180) {
     tier = "STALLED";
   } else {
     tier = "DORMANT";
