@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { shouldFilterSections, buildBillChatSystemPrompt } from "./ai";
+import {
+  shouldFilterSections,
+  buildBillChatSystemPrompt,
+  packSectionsToBudget,
+  packSectionsToBudgetWithDiagnostics,
+  allocateChatBudget,
+  truncateHistoryToBudget,
+} from "./ai";
 import type { BillSection } from "./bill-sections";
+import type { ModelMessage } from "ai";
 
 function section(heading: string, content: string, ref = heading): BillSection {
   return { heading, content, sectionRef: ref };
@@ -166,5 +174,201 @@ describe("buildBillChatSystemPrompt", () => {
     // And the prompt says it's a partial list so the AI knows not to
     // claim the sample is exhaustive.
     expect(prompt).toMatch(/first \d+ of 40/);
+  });
+});
+
+describe("packSectionsToBudget", () => {
+  it("returns the input unchanged when packing isn't needed", () => {
+    const sections = Array.from({ length: 30 }, (_, i) =>
+      section(`Section ${i + 1}`, "x".repeat(1_000)),
+    );
+    const packed = packSectionsToBudget(sections);
+    expect(packed).toBe(sections);
+  });
+
+  it("truncates a single mega-section that exceeds the per-section cap", () => {
+    // 200K chars in one section is over the per-section cap (~90K chars
+    // at 30K-token cap × 3 chars/token).
+    const sections = [section("Section 1. Mega", "y".repeat(200_000))];
+    const packed = packSectionsToBudget(sections);
+    expect(packed).toHaveLength(1);
+    expect(packed[0].content.length).toBeLessThan(200_000);
+    expect(packed[0].content).toMatch(/section continues/);
+  });
+
+  it("stops adding sections once the total budget is exhausted", () => {
+    // 60 sections × 30K chars each = 1.8M chars — far over the ~420K
+    // section budget. The pack must drop later sections to fit. Reproduces
+    // the HR 7567 (Farm/Food/Defense omnibus) overflow that motivated the
+    // budget enforcement: 60 filtered sections stayed under the count cap
+    // but blew the 200K-token window at 213K input tokens.
+    const sections = Array.from({ length: 60 }, (_, i) =>
+      section(
+        `Section ${i + 1}. Heading ${i + 1}`,
+        "z".repeat(30_000),
+        `Section ${i + 1}`,
+      ),
+    );
+    const packed = packSectionsToBudget(sections);
+    expect(packed.length).toBeLessThan(sections.length);
+    const totalChars = packed.reduce(
+      (s, x) => s + x.heading.length + x.content.length,
+      0,
+    );
+    expect(totalChars).toBeLessThan(140_000 * 3);
+    expect(packed[0].sectionRef).toBe("Section 1");
+  });
+
+  it("preserves section ordering produced by the relevance filter", () => {
+    const sections = [
+      section("Section 5", "a".repeat(80_000), "Section 5"),
+      section("Section 2", "b".repeat(80_000), "Section 2"),
+      section("Section 9", "c".repeat(80_000), "Section 9"),
+    ];
+    const packed = packSectionsToBudget(sections);
+    expect(packed.map((s) => s.sectionRef)).toEqual([
+      "Section 5",
+      "Section 2",
+      "Section 9",
+    ]);
+  });
+
+  it("respects an explicit budget tighter than the default", () => {
+    // Caller passing in a 20K-token budget (chars = 60K) means only the
+    // first ~3 small sections should fit. Confirms the budget arg threads
+    // through correctly when streamBillChatResponse passes a reduced
+    // budget because conversation history is competing for space.
+    const sections = Array.from({ length: 30 }, (_, i) =>
+      section(`Section ${i + 1}`, "x".repeat(20_000), `Section ${i + 1}`),
+    );
+    const packed = packSectionsToBudget(sections, 20_000);
+    expect(packed.length).toBeLessThan(5);
+    const totalChars = packed.reduce(
+      (s, x) => s + x.heading.length + x.content.length,
+      0,
+    );
+    expect(totalChars).toBeLessThan(20_000 * 3);
+  });
+
+  it("reports diagnostics when packing actually trims content", () => {
+    const sections = [
+      section("Section 1. Mega", "y".repeat(200_000)),
+      section("Section 2", "z".repeat(50_000)),
+    ];
+    const result = packSectionsToBudgetWithDiagnostics(sections, 50_000);
+    expect(result.truncated).toBe(true);
+    // First section is over per-section cap → trimmed in place.
+    expect(result.truncatedCount).toBeGreaterThan(0);
+    expect(result.packedChars).toBeLessThan(result.originalChars);
+  });
+
+  it("reports zero truncation when packing isn't needed", () => {
+    const sections = [section("Section 1", "x".repeat(1_000))];
+    const result = packSectionsToBudgetWithDiagnostics(sections);
+    expect(result.truncated).toBe(false);
+    expect(result.droppedCount).toBe(0);
+    expect(result.truncatedCount).toBe(0);
+    expect(result.packedChars).toBe(result.originalChars);
+  });
+});
+
+describe("allocateChatBudget", () => {
+  function userMsg(text: string): ModelMessage {
+    return { role: "user", content: text };
+  }
+  function aiMsg(text: string): ModelMessage {
+    return { role: "assistant", content: text };
+  }
+
+  it("gives the bill text most of the budget on first turn", () => {
+    const allocation = allocateChatBudget([
+      userMsg("Tell me about this bill."),
+    ]);
+    // First turn: history is tiny, sections get ~all of the input budget.
+    expect(allocation.sectionTokens).toBeGreaterThan(170_000);
+    expect(allocation.historyTokens).toBeLessThan(50);
+  });
+
+  it("cedes budget to history as the conversation grows", () => {
+    // Simulate 20 turns of back-and-forth, each ~1500 chars.
+    const longHistory: ModelMessage[] = [];
+    for (let i = 0; i < 20; i++) {
+      longHistory.push(userMsg("a".repeat(1_500)));
+      longHistory.push(aiMsg("b".repeat(1_500)));
+    }
+    const allocation = allocateChatBudget(longHistory);
+    expect(allocation.historyTokens).toBeGreaterThan(10_000);
+    // Sections still get the floor at minimum.
+    expect(allocation.sectionTokens).toBeGreaterThanOrEqual(50_000);
+  });
+
+  it("never lets the section budget drop below the floor", () => {
+    // An adversarially long history would otherwise crowd out the bill.
+    // Cap on history protects sections at MIN_SECTION_TOKENS.
+    const adversarial: ModelMessage[] = Array.from({ length: 200 }, () =>
+      userMsg("x".repeat(2_000)),
+    );
+    const allocation = allocateChatBudget(adversarial);
+    expect(allocation.sectionTokens).toBeGreaterThanOrEqual(50_000);
+  });
+});
+
+describe("truncateHistoryToBudget", () => {
+  function userMsg(text: string): ModelMessage {
+    return { role: "user", content: text };
+  }
+  function aiMsg(text: string): ModelMessage {
+    return { role: "assistant", content: text };
+  }
+
+  it("returns short transcripts untouched", () => {
+    const messages: ModelMessage[] = [
+      userMsg("hi"),
+      aiMsg("hello"),
+      userMsg("question?"),
+    ];
+    const result = truncateHistoryToBudget(messages, 100_000);
+    expect(result.messages).toHaveLength(3);
+    expect(result.droppedCount).toBe(0);
+  });
+
+  it("always preserves the final user message", () => {
+    const messages: ModelMessage[] = [
+      userMsg("a".repeat(10_000)),
+      aiMsg("b".repeat(10_000)),
+      userMsg("current question"),
+    ];
+    const result = truncateHistoryToBudget(messages, 200);
+    expect(result.messages.at(-1)?.content).toBe("current question");
+  });
+
+  it("never leaves the kept transcript starting with an assistant turn", () => {
+    // Anthropic rejects assistant-first conversations. Even when budget
+    // would only fit [assistant, user], we must drop the lead assistant.
+    const messages: ModelMessage[] = [
+      userMsg("a".repeat(20_000)),
+      aiMsg("b".repeat(20_000)),
+      userMsg("current"),
+    ];
+    // Budget for current + one neighbor only — the neighbor is the
+    // assistant turn, which must be dropped.
+    const result = truncateHistoryToBudget(messages, 5_010);
+    expect(result.messages[0].role).toBe("user");
+  });
+
+  it("drops the oldest turns first", () => {
+    const messages: ModelMessage[] = [
+      userMsg("oldest"),
+      aiMsg("oldest reply"),
+      userMsg("middle"),
+      aiMsg("middle reply"),
+      userMsg("newest"),
+    ];
+    // ~6-7 tokens per short message after framing overhead; budget 20
+    // tokens fits ~3 messages from the end.
+    const result = truncateHistoryToBudget(messages, 20);
+    const texts = result.messages.map((m) => m.content);
+    expect(texts).not.toContain("oldest");
+    expect(texts).toContain("newest");
   });
 });
