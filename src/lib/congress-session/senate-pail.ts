@@ -86,7 +86,7 @@ export async function getSenatePailSignal(
       };
     }
     return {
-      status: "in_session",
+      status: "adjourned_today",
       observedAt: adjourned,
       detail: "Senate adjourned for the day",
       source: "senate_pail",

@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { resolveOverall, effectiveStatus, STALE_THRESHOLD_MS } from "./resolve";
+import {
+  resolveOverall,
+  effectiveStatus,
+  labelFor,
+  chamberHintFor,
+  STALE_THRESHOLD_MS,
+} from "./resolve";
 import type { ChamberStatusPayload } from "@/app/api/congress/status/route";
 import type { Chamber, StatusCode } from "@/lib/congress-session/types";
 
@@ -160,6 +166,92 @@ describe("resolveOverall", () => {
     const r = resolveOverall(data, NOW);
     expect(r.status).toBe("recess");
     expect(r.primaryChamber).toBe("house");
+  });
+});
+
+describe("resolveOverall — adjourned_today", () => {
+  it("picks the in-session chamber over an adjourned-today chamber (one is still live)", () => {
+    const data = {
+      chambers: {
+        house: makePayload(
+          "house",
+          "in_session",
+          "2026-05-23T00:00:00Z",
+          "Next recess May 23",
+        ),
+        senate: makePayload(
+          "senate",
+          "adjourned_today",
+          "2026-04-28T00:00:00Z",
+          "Returns Tue, Apr 28",
+        ),
+      },
+    };
+
+    const r = resolveOverall(data, NOW);
+    expect(r.status).toBe("in_session");
+    expect(r.primaryChamber).toBe("house");
+  });
+
+  it("picks the adjourned-today chamber over a chamber in recess (active today beats not-active-today)", () => {
+    // Senate gaveled in earlier today and adjourned for the day; House is in
+    // a multi-week District Work Period. The pill should reflect the chamber
+    // that was actually working today.
+    const data = {
+      chambers: {
+        house: makePayload(
+          "house",
+          "recess",
+          "2026-05-04T00:00:00Z",
+          "Returns Mon, May 4",
+        ),
+        senate: makePayload(
+          "senate",
+          "adjourned_today",
+          "2026-04-28T00:00:00Z",
+          "Returns Tue, Apr 28",
+        ),
+      },
+    };
+
+    const r = resolveOverall(data, NOW);
+    expect(r.status).toBe("adjourned_today");
+    expect(r.primaryChamber).toBe("senate");
+    expect(r.nextTransitionLabel).toBe("Returns Tue, Apr 28");
+  });
+});
+
+describe("labelFor", () => {
+  it('returns "Adjourned" for adjourned_today (chamber is done for the day, not still in session)', () => {
+    expect(labelFor("adjourned_today")).toBe("Adjourned");
+  });
+
+  it("covers every StatusCode value (no fall-through)", () => {
+    const codes: StatusCode[] = [
+      "voting",
+      "in_session",
+      "pro_forma",
+      "adjourned_today",
+      "adjourned_sine_die",
+      "recess",
+      "unknown",
+    ];
+    for (const c of codes) {
+      const label = labelFor(c);
+      expect(label).toBeTruthy();
+      expect(typeof label).toBe("string");
+    }
+  });
+});
+
+describe("chamberHintFor", () => {
+  it("surfaces the chamber for adjourned_today (citizen wants to know which chamber was working)", () => {
+    const r = {
+      status: "adjourned_today" as StatusCode,
+      primaryChamber: "senate" as Chamber,
+      nextTransitionLabel: "Returns Tue, Apr 28",
+    };
+    expect(chamberHintFor(r)).toBe("Senate");
   });
 });
 
