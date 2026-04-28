@@ -339,7 +339,6 @@ export default async function BillDetailPage({
       {/* ── Legislative stage: stepper + status caption (always visible) ── */}
       <BillStageSection
         steps={journeySteps}
-        statusHeadline={statusExplanation.headline}
         statusDetail={statusExplanation.detail}
       />
 
