@@ -18,6 +18,10 @@ export async function withRetry<T>(
     try {
       return await fn();
     } catch (e) {
+      // Cancellations from a caller's AbortSignal must not retry — the signal
+      // is already aborted, every retry would just throw again after eating
+      // delayMs of wall clock. Bail immediately.
+      if (axios.isCancel(e)) throw e;
       if (i === retries) throw e;
       await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
     }
@@ -214,6 +218,7 @@ const MAX_PAGES = 20; // 5,000 rows max per resource — way above anything Cong
 async function fetchAllPages<T>(
   path: string,
   arrayKey: string,
+  signal?: AbortSignal,
 ): Promise<T[] | null> {
   const collected: T[] = [];
   let offset = 0;
@@ -225,6 +230,7 @@ async function fetchAllPages<T>(
       res = await withRetry(() =>
         congressApiClient.get(path, {
           params: { limit: PAGE_LIMIT, offset },
+          signal,
         }),
       );
     } catch (err) {
@@ -428,11 +434,13 @@ export async function fetchBillCosponsors(
   congress: number,
   apiBillType: string,
   billNumber: number,
+  signal?: AbortSignal,
 ): Promise<BillCosponsorRecord[]> {
   try {
     const raw = await fetchAllPages<Record<string, unknown>>(
       `/bill/${congress}/${apiBillType}/${billNumber}/cosponsors`,
       "cosponsors",
+      signal,
     );
     if (raw === null) return [];
     return raw

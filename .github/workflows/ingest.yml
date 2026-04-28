@@ -122,10 +122,13 @@ jobs:
 
           # --fail-with-body so non-2xx responses still print the body,
           # --max-time 65 gives Vercel's 60s function plus 5s of slack.
+          # No --retry: a 504 from Vercel means the function hit its
+          # maxDuration cap, so retrying just burns another 60s budget
+          # for the same outcome. Endpoints are idempotent — let the next
+          # scheduled run pick up where we left off.
           http_code=$(
             curl --silent --show-error --fail-with-body \
               --max-time 65 \
-              --retry 2 --retry-delay 5 --retry-connrefused \
               -H "Authorization: Bearer ${SECRET}" \
               -H "Accept: application/json" \
               -o response.json \

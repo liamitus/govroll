@@ -16,12 +16,14 @@ import { reportError } from "@/lib/error-reporting";
  * queue. Each call is idempotent (upserts) and self-resuming — keep
  * calling until `remaining: 0`.
  *
- * Cost per bill: one /cosponsors API call (~1s) + DB writes. 15 bills
- * per call fits comfortably within the 55s budget (Hobby 60s cap).
+ * Cost per bill: one /cosponsors API call (~1s) + DB writes. We cap each
+ * bill at PER_BILL_TIMEOUT_MS so a single slow Congress.gov page can't eat
+ * the whole 60s budget — that's what was causing 504s in production.
  */
 
 export const maxDuration = 60;
-const TIMEOUT_MS = 55_000;
+const TIMEOUT_MS = 45_000;
+const PER_BILL_TIMEOUT_MS = 8_000;
 
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;
@@ -35,8 +37,8 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const limit = Math.min(
-    30,
-    parseInt(url.searchParams.get("limit") ?? "15", 10),
+    15,
+    parseInt(url.searchParams.get("limit") ?? "8", 10),
   );
   const tiers = (url.searchParams.get("tiers") ?? "ACTIVE,ADVANCING,ENACTED")
     .split(",")
@@ -68,6 +70,7 @@ export async function GET(request: Request) {
 
   let processed = 0;
   let timedOut = false;
+  let perBillTimeouts = 0;
   const errors: Array<{ billId: string; error: string }> = [];
 
   for (const b of batch) {
@@ -75,9 +78,17 @@ export async function GET(request: Request) {
       timedOut = true;
       break;
     }
+    const billSignal = AbortSignal.timeout(PER_BILL_TIMEOUT_MS);
     try {
-      await backfillCosponsors([b.billId]);
-      processed++;
+      await backfillCosponsors([b.billId], { signal: billSignal });
+      // fetchBillCosponsors swallows axios CanceledError and returns [],
+      // so a per-bill timeout doesn't surface as a thrown error here. Check
+      // the signal directly to count it as a soft skip rather than success.
+      if (billSignal.aborted) {
+        perBillTimeouts++;
+      } else {
+        processed++;
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push({ billId: b.billId, error: msg });
@@ -110,6 +121,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     processed,
+    perBillTimeouts,
     errorCount: errors.length,
     errors: errors.slice(0, 5),
     remaining,
