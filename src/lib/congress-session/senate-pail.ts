@@ -1,4 +1,5 @@
 import type { Signal } from "./types";
+import { formatEtTime } from "./format";
 
 /**
  * Senate floor-activity ("PAIL") scraper.
@@ -97,17 +98,30 @@ export async function getSenatePailSignal(
   // the Senate is scheduled to meet but hasn't gaveled in yet. Without this
   // branch we fall through to null → unknown and the pill reads "Status
   // unavailable" every morning before convene.
+  //
+  // We emit `pre_session` (not `recess`) so compute.ts can surface the
+  // scheduled convene time as the next transition — otherwise the popover
+  // reads "Recess · Returns Wed, Apr 29" while detail says "convenes at 10
+  // a.m." today, which contradicts itself.
+  //
+  // Past-due case: if the scheduled time has elapsed but no "convened" line
+  // appeared yet, the Senate is running late. Still pre_session — admit the
+  // slip rather than flip to in_session (the chamber isn't actually live).
   const scheduled = matchTime(
     section,
     /\bconvene\s+at\s+([0-9:apm.\s]+)/i,
     now,
   );
-  if (scheduled && scheduled.getTime() > now.getTime()) {
+  if (scheduled) {
+    const upcoming = scheduled.getTime() > now.getTime();
     return {
-      status: "recess",
+      status: "pre_session",
       observedAt: null,
-      detail: `Senate convenes at ${formatEtTime(scheduled)} ET`,
+      detail: upcoming
+        ? `Senate convenes at ${formatEtTime(scheduled)} ET`
+        : `Was scheduled for ${formatEtTime(scheduled)} ET — awaiting gavel-in`,
       source: "senate_pail",
+      scheduledConveneAt: scheduled,
     };
   }
 
@@ -188,17 +202,6 @@ function parseEtTime(raw: string, reference: Date): Date | null {
 
 function pad(n: number): string {
   return n.toString().padStart(2, "0");
-}
-
-/** "3:00 p.m." — matches the style PAIL itself uses. */
-function formatEtTime(d: Date): string {
-  const raw = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(d);
-  return raw.replace(/\b([AP])M\b/, (_, c: string) => `${c.toLowerCase()}.m.`);
 }
 
 function stripTags(html: string): string {

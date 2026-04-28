@@ -14,6 +14,7 @@ export type StatusCode =
   | "voting" // chamber floor active AND recent roll call
   | "in_session" // chamber gaveled in, on floor, no recent vote
   | "pro_forma" // brief procedural meeting with no legislative business
+  | "pre_session" // scheduled to convene later today, hasn't gaveled in yet
   | "adjourned_today" // chamber gaveled in earlier today, then gaveled out for the day
   | "recess" // scheduled non-session period
   | "adjourned_sine_die" // formal end of Congress (between sessions)
@@ -42,6 +43,13 @@ export interface Signal {
   /** Short human-readable detail — e.g. "Roll call vote 18 min ago". */
   detail: string | null;
   source: SignalSource;
+  /**
+   * Wall-clock time the chamber is scheduled to gavel in today, parsed from a
+   * future-tense "Convene at …" line on the live floor calendar. Only set
+   * for `pre_session` (and may be in the past if the chamber slipped its
+   * scheduled time without gavelling in yet).
+   */
+  scheduledConveneAt?: Date | null;
 }
 
 /**
@@ -56,6 +64,10 @@ export interface ChamberStatus {
   lastActionAt: Date | null;
   nextTransitionAt: Date | null;
   nextTransitionLabel: string | null;
+  /** Mirrors Signal.scheduledConveneAt; persisted so the client can render
+   * a self-consistent "Opening soon · Convenes at 10:00 a.m. ET" without
+   * re-parsing the detail string. Null outside `pre_session`. */
+  scheduledConveneAt: Date | null;
   lastCheckedAt: Date;
 }
 

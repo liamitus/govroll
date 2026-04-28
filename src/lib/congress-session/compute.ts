@@ -8,6 +8,7 @@ import {
   nextInSessionDate,
   type CalendarWindow,
 } from "./calendar";
+import { formatEtTime } from "./format";
 import type { Chamber, ChamberStatus, Signal } from "./types";
 
 /**
@@ -101,6 +102,22 @@ export async function computeChamberStatus(
       now,
     });
   }
+  // Chamber is scheduled to convene later today but hasn't gaveled in yet
+  // (or scheduled time has elapsed and they're running late). The convene
+  // moment IS the next transition — surfacing `nextSession` here would
+  // skip today and read as "Returns tomorrow" while the detail says
+  // "convenes today," which contradicts itself.
+  if (liveSignal && liveSignal.status === "pre_session") {
+    return shape({
+      chamber,
+      status: "pre_session",
+      detail: null,
+      source: liveSignal.source,
+      lastActionAt: null,
+      scheduledConveneAt: liveSignal.scheduledConveneAt ?? null,
+      now,
+    });
+  }
 
   // ── 3. Vote recency standing alone ─────────────────────────────────────
   // No live signal; recent vote within 8h means they were/are in session.
@@ -190,6 +207,7 @@ interface ShapeArgs {
   lastActionAt: Date | null;
   nextRecess?: CalendarWindow | null;
   nextSession?: Date | null;
+  scheduledConveneAt?: Date | null;
   now: Date;
 }
 
@@ -198,13 +216,21 @@ function shape(args: ShapeArgs): ChamberStatus {
   // the day"), the useful transition is "when do they next convene" — not
   // "when's the next recess," which reads as a contradiction ("in recess …
   // next recess tomorrow?"). For in-session / voting states, surface the
-  // upcoming recess instead.
+  // upcoming recess instead. For `pre_session` the convene time itself is
+  // the next transition — bypass nextSession (which always skips today).
   let nextTransitionAt: Date | null = null;
   let nextTransitionLabel: string | null = null;
 
   const isBetweenSessions =
     args.status === "recess" || args.status === "adjourned_today";
-  if (isBetweenSessions && args.nextSession) {
+
+  if (args.status === "pre_session" && args.scheduledConveneAt) {
+    const upcoming = args.scheduledConveneAt.getTime() > args.now.getTime();
+    nextTransitionAt = args.scheduledConveneAt;
+    nextTransitionLabel = upcoming
+      ? `Convenes at ${formatEtTime(args.scheduledConveneAt)} ET`
+      : `Was scheduled for ${formatEtTime(args.scheduledConveneAt)} ET`;
+  } else if (isBetweenSessions && args.nextSession) {
     nextTransitionAt = args.nextSession;
     nextTransitionLabel = `Returns ${formatReturns(args.nextSession, true)}`;
   } else if (args.nextRecess) {
@@ -220,6 +246,7 @@ function shape(args: ShapeArgs): ChamberStatus {
     lastActionAt: args.lastActionAt,
     nextTransitionAt,
     nextTransitionLabel,
+    scheduledConveneAt: args.scheduledConveneAt ?? null,
     lastCheckedAt: args.now,
   };
 }

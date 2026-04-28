@@ -13,6 +13,7 @@ import type { StatusCode } from "@/lib/congress-session/types";
  *
  * - voting: filled emerald with motion-safe pulse
  * - in_session: filled emerald, static
+ * - pre_session: filled amber, static (scheduled to convene later today)
  * - pro_forma: half-filled amber (distinct shape)
  * - adjourned_today: hollow emerald ring (was active today, not right now)
  * - recess: hollow ring in the ambient text color
@@ -76,6 +77,18 @@ export function StatusDot({
           style={{ clipPath: "inset(0 50% 0 0)" }}
         />
       </span>
+    );
+  }
+
+  if (status === "pre_session") {
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          "relative inline-block size-2 rounded-full bg-amber-300",
+          className,
+        )}
+      />
     );
   }
 

@@ -32,6 +32,7 @@ export interface ChamberStatusPayload {
   lastActionAt: string | null;
   nextTransitionAt: string | null;
   nextTransitionLabel: string | null;
+  scheduledConveneAt: string | null;
   lastCheckedAt: string;
 }
 
@@ -60,6 +61,7 @@ export async function GET() {
           lastActionAt: row.lastActionAt?.toISOString() ?? null,
           nextTransitionAt: row.nextTransitionAt?.toISOString() ?? null,
           nextTransitionLabel: row.nextTransitionLabel,
+          scheduledConveneAt: row.scheduledConveneAt?.toISOString() ?? null,
           lastCheckedAt: row.lastCheckedAt.toISOString(),
         }
       : null;
