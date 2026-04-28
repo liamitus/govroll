@@ -25,7 +25,7 @@ import {
 import { billHref } from "@/lib/bills/url";
 
 export default function AccountPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, authState } = useAuth();
   const router = useRouter();
 
   // Settings state
@@ -74,12 +74,12 @@ export default function AccountPage() {
   const totalComments = commentsData?.pages[0]?.total ?? 0;
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (authState === "signed-out") {
       router.push("/");
     }
-  }, [user, authLoading, router]);
+  }, [authState, router]);
 
-  if (authLoading || !user) return null;
+  if (authState !== "signed-in" || !user) return null;
 
   const username = resolveUsername(user);
 

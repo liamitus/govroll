@@ -7,9 +7,23 @@ import { generateCitizenId, resolveUsername } from "@/lib/citizen-id";
 
 const supabase = createSupabaseBrowserClient();
 
+/**
+ * Three discrete states the hook moves through:
+ *  - "loading"    — initial Supabase resolve hasn't completed yet. `user` is
+ *                   null but that is NOT a signed-out state.
+ *  - "signed-in"  — Supabase resolved with a user. `user` is non-null.
+ *  - "signed-out" — Supabase resolved with no user. `user` is null.
+ *
+ * Prefer this over the `!user` shortcut whenever the answer matters during
+ * the loading window — e.g. cleanup effects, conditional fetches, sign-out
+ * banners. `!user` is true during loading too and has been the source of
+ * loading-race bugs (see PR #69 / #75 history).
+ */
+export type AuthState = "loading" | "signed-in" | "signed-out";
+
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authState, setAuthState] = useState<AuthState>("loading");
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -20,10 +34,13 @@ export function useAuth() {
       .getUser()
       .then(({ data }: { data: { user: User | null } }) => {
         setUser(data.user);
-        setLoading(false);
+        setAuthState(data.user ? "signed-in" : "signed-out");
       })
       .catch(() => {
-        setLoading(false);
+        // Treat a failed resolve as "signed-out" so callers can stop showing
+        // skeletons. The next onAuthStateChange tick will correct if a session
+        // does come back.
+        setAuthState("signed-out");
       });
 
     const {
@@ -32,7 +49,7 @@ export function useAuth() {
       async (_event: AuthChangeEvent, session: Session | null) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
-        setLoading(false);
+        setAuthState(currentUser ? "signed-in" : "signed-out");
 
         // Backfill username for existing users who don't have one
         if (currentUser && _event === "SIGNED_IN") {
@@ -77,5 +94,9 @@ export function useAuth() {
     await supabase.auth.signOut();
   }, []);
 
-  return { user, loading, signIn, signUp, signOut };
+  // `loading` is the legacy shape — kept so existing callers compile while
+  // they migrate to authState. Equivalent to `authState === "loading"`.
+  const loading = authState === "loading";
+
+  return { user, loading, authState, signIn, signUp, signOut };
 }
