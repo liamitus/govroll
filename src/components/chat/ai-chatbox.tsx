@@ -467,14 +467,16 @@ export function AiChatbox({
   };
 
   // Compute the rep promoted by the most recent user message (purely
-  // derived — re-runs on each message change, no extra state). Hooks must
-  // run before the early `!user` return below or they'd be conditional.
-  const lastUserMessageText = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") return messageText(messages[i]);
+  // derived — re-runs on each message change, no extra state). React Compiler
+  // handles memoization automatically; manual useMemo here was tripping the
+  // preserve-memoization check.
+  let lastUserMessageText = "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") {
+      lastUserMessageText = messageText(messages[i]);
+      break;
     }
-    return "";
-  }, [messages]);
+  }
 
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {

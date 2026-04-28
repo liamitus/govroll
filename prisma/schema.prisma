@@ -8,11 +8,12 @@ generator client {
 }
 
 model Profile {
-  id        String   @id // Supabase auth user UUID
-  username  String   @default("Anonymous")
-  email     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id // Supabase auth user UUID
+  username    String   @default("Anonymous")
+  email       String?
+  preferences Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   comments      Comment[]
   commentVotes  CommentVote[]
