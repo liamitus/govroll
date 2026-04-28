@@ -102,11 +102,12 @@ export async function computeChamberStatus(
       now,
     });
   }
-  // Chamber is scheduled to convene later today but hasn't gaveled in yet
-  // (or scheduled time has elapsed and they're running late). The convene
-  // moment IS the next transition — surfacing `nextSession` here would
-  // skip today and read as "Returns tomorrow" while the detail says
-  // "convenes today," which contradicts itself.
+  // Chamber is scheduled to convene later today but hasn't gaveled in yet.
+  // (Past-due is handled upstream — the PAIL scraper promotes to in_session
+  // the moment the scheduled time elapses, so pre_session here is always
+  // strictly upcoming.) The convene moment IS the next transition —
+  // surfacing `nextSession` here would skip today and read as "Returns
+  // tomorrow" while the detail says "convenes today," contradicting itself.
   if (liveSignal && liveSignal.status === "pre_session") {
     return shape({
       chamber,
@@ -225,11 +226,11 @@ function shape(args: ShapeArgs): ChamberStatus {
     args.status === "recess" || args.status === "adjourned_today";
 
   if (args.status === "pre_session" && args.scheduledConveneAt) {
-    const upcoming = args.scheduledConveneAt.getTime() > args.now.getTime();
+    // pre_session implies the scheduled time is still in the future (the
+    // PAIL scraper promotes past-due to in_session). No "Was scheduled for"
+    // fallback needed — that label was the bug we just fixed.
     nextTransitionAt = args.scheduledConveneAt;
-    nextTransitionLabel = upcoming
-      ? `Convenes at ${formatEtTime(args.scheduledConveneAt)} ET`
-      : `Was scheduled for ${formatEtTime(args.scheduledConveneAt)} ET`;
+    nextTransitionLabel = `Convenes at ${formatEtTime(args.scheduledConveneAt)} ET`;
   } else if (isBetweenSessions && args.nextSession) {
     nextTransitionAt = args.nextSession;
     nextTransitionLabel = `Returns ${formatReturns(args.nextSession, true)}`;

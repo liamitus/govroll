@@ -104,9 +104,16 @@ export async function getSenatePailSignal(
   // reads "Recess · Returns Wed, Apr 29" while detail says "convenes at 10
   // a.m." today, which contradicts itself.
   //
-  // Past-due case: if the scheduled time has elapsed but no "convened" line
-  // appeared yet, the Senate is running late. Still pre_session — admit the
-  // slip rather than flip to in_session (the chamber isn't actually live).
+  // Past-due case: once the scheduled time has elapsed, treat the chamber as
+  // in_session. The PAIL is hand-maintained — its update from "Convene at"
+  // (future) to "Convened at" (past, with the 'd') lags the actual gavel by
+  // minutes, sometimes tens of minutes. Citizens read "Was scheduled for
+  // 10:00 a.m. ET" past 10:00 as broken or stale, not as legitimate caution.
+  // The Senate convenes essentially every scheduled day; trusting the
+  // schedule + wall clock is the right default. If the chamber actually
+  // doesn't convene (rare), the next PAIL refresh — once it appends
+  // "Adjourned at …" — flips us to `adjourned_today`; if they cancel
+  // outright, the day rolls over and tomorrow's section takes over.
   const scheduled = matchTime(
     section,
     /\bconvene\s+at\s+([0-9:apm.\s]+)/i,
@@ -114,14 +121,20 @@ export async function getSenatePailSignal(
   );
   if (scheduled) {
     const upcoming = scheduled.getTime() > now.getTime();
+    if (upcoming) {
+      return {
+        status: "pre_session",
+        observedAt: null,
+        detail: `Senate convenes at ${formatEtTime(scheduled)} ET`,
+        source: "senate_pail",
+        scheduledConveneAt: scheduled,
+      };
+    }
     return {
-      status: "pre_session",
-      observedAt: null,
-      detail: upcoming
-        ? `Senate convenes at ${formatEtTime(scheduled)} ET`
-        : `Was scheduled for ${formatEtTime(scheduled)} ET — awaiting gavel-in`,
+      status: "in_session",
+      observedAt: scheduled,
+      detail: `Senate convened at ${formatEtTime(scheduled)} ET`,
       source: "senate_pail",
-      scheduledConveneAt: scheduled,
     };
   }
 
