@@ -1,12 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useQueryStates,
-  parseAsString,
-  parseAsStringLiteral,
-  parseAsBoolean,
-} from "nuqs";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryStates, parseAsString, parseAsStringLiteral } from "nuqs";
 import {
   keepPreviousData,
   useInfiniteQuery,
@@ -53,7 +48,6 @@ const filterParsers = {
     "newest",
   ] as const).withDefault("relevant"),
   topic: parseAsString.withDefault(""),
-  hideVoted: parseAsBoolean.withDefault(false),
 };
 
 const filterOptions = {
@@ -63,10 +57,44 @@ const filterOptions = {
   throttleMs: 300,
 };
 
+const HIDE_VOTED_STORAGE_KEY = "bills:hide-voted";
+
+function readHideVotedPref(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(HIDE_VOTED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeHideVotedPref(value: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    if (value) {
+      window.localStorage.setItem(HIDE_VOTED_STORAGE_KEY, "true");
+    } else {
+      window.localStorage.removeItem(HIDE_VOTED_STORAGE_KEY);
+    }
+  } catch {
+    // localStorage may be unavailable (private mode, quota exceeded, etc.)
+  }
+}
+
 export function BillListClient() {
   const [rawFilters, setFilters] = useQueryStates(filterParsers, filterOptions);
-  const { hideVoted, ...filterTuple } = rawFilters;
-  const queryFilters: BillsFilterState = filterTuple;
+  const queryFilters: BillsFilterState = rawFilters;
+
+  // Hydrate after mount to avoid SSR/CSR mismatch — initial paint shows
+  // unfiltered bills, then localStorage applies the user's saved choice.
+  const [hideVoted, setHideVotedState] = useState(false);
+  useEffect(() => {
+    setHideVotedState(readHideVotedPref());
+  }, []);
+  const setHideVoted = useCallback((value: boolean) => {
+    setHideVotedState(value);
+    writeHideVotedPref(value);
+  }, []);
 
   const observerRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -142,8 +170,8 @@ export function BillListClient() {
   // If the user signs out, clear the hideVoted toggle — otherwise a signed-
   // out user sees "Voted hidden" with zero bills filtered.
   useEffect(() => {
-    if (!user && hideVoted) setFilters({ hideVoted: false });
-  }, [user, hideVoted, setFilters]);
+    if (!user && hideVoted) setHideVoted(false);
+  }, [user, hideVoted, setHideVoted]);
 
   const visibleBills = useMemo(
     () => (hideVoted ? bills.filter((b) => !userVotes.has(b.id)) : bills),
@@ -398,7 +426,7 @@ export function BillListClient() {
               )}
               {user && userVotes.size > 0 && (
                 <button
-                  onClick={() => setFilters({ hideVoted: !hideVoted })}
+                  onClick={() => setHideVoted(!hideVoted)}
                   className="text-muted-foreground/70 hover:text-navy underline decoration-dotted underline-offset-2 transition-colors"
                 >
                   {hideVoted
