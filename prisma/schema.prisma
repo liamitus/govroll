@@ -52,6 +52,16 @@ model Bill {
   daysSinceLastAction   Int?
   deathReason           String?
   momentumComputedAt    DateTime?
+  // Most recent action that materially advanced the bill (markup, vote,
+  // chamber passage, etc. — see isMajorAction in momentum.ts). Drives
+  // the recency component of the score so procedural noise (sub-referrals,
+  // technical corrections) doesn't pump the ranking.
+  latestMajorActionDate DateTime?
+  // Set when an action in the last ~14 days matches an imminent-floor-vote
+  // pattern (placed on calendar, cloture motion, rule reported, etc.).
+  // Drives a small score boost and floors the tier at ACTIVE so advocates
+  // can find vote-imminent bills.
+  hasImminentFloorAction Boolean                  @default(false)
   // Set whenever refresh-bill-metadata successfully calls Congress.gov.
   // Used to avoid re-fetching bills whose CRS summary hasn't been
   // published yet — without it the cron loops over ~12k bills forever.
