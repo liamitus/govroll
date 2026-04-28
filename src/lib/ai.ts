@@ -61,13 +61,20 @@ const CHANGE_SUMMARY_CHARS = 120_000;
  *  context so the CRS summary + metadata also fit comfortably. */
 const EXPLAINER_TEXT_CHARS = 120_000;
 
+// Without this carve-out, "don't invent provisions" suppresses basic background ("what is FISA?") on bills that cite a prior law without defining it.
+const BACKGROUND_KNOWLEDGE_CLAUSE = `For short definitional questions about acronyms, agencies, or prior laws referenced by the bill (e.g. "what is FISA?", "what does the EPA do?"), you may answer briefly from general knowledge. Frame these as background context, not as content of this bill, and don't speculate beyond well-established facts.`;
+
 const CITATION_INSTRUCTIONS = `When answering, quote directly from the bill text using markdown blockquotes when it helps. Attribute quotes to the section they came from:
 
 > "exact quote from the bill"
 >
 > — Section 4(a)
 
-If the user asks about something not covered in the bill sections provided, say so plainly. Do not invent provisions. Stay factual and neutral.`;
+If the user asks about something not covered in the bill sections provided, say so plainly. Do not invent provisions.
+
+${BACKGROUND_KNOWLEDGE_CLAUSE}
+
+Stay factual and neutral.`;
 
 /**
  * Reader-mode citations: same blockquote shape, but the attribution
@@ -82,7 +89,11 @@ const CITATION_INSTRUCTIONS_READER = `When answering, quote directly from the bi
 >
 > — [Section 4(a)](?section=sec-4--a)
 
-If the user asks about something not covered in the bill sections provided, say so plainly. Do not invent provisions. Stay factual and neutral.`;
+If the user asks about something not covered in the bill sections provided, say so plainly. Do not invent provisions.
+
+${BACKGROUND_KNOWLEDGE_CLAUSE}
+
+Stay factual and neutral.`;
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Prompt builders
@@ -254,6 +265,8 @@ Your primary source is the nonpartisan Congressional Research Service summary ab
 
 Only say something is not covered if the summary genuinely does not address it. Do not claim you cannot see the bill — you have its official nonpartisan summary. The full bill text may have been amended since introduction; if a user asks about specific provisions, note that the summary describes the introduced version.
 
+${BACKGROUND_KNOWLEDGE_CLAUSE}
+
 Stay factual and neutral.${repVoteSuffix}`;
     }
 
@@ -266,6 +279,8 @@ Full bill text and CRS summary are not yet available in our system — but the m
 Factual questions about who introduced the bill, who cosponsored it, its chamber or bill type, when it was introduced, its policy area, or its legislative history (the action timeline above) are all reliably answerable from this metadata — answer them directly without hedging.
 
 For questions about specific substantive provisions of the bill (what it actually does section-by-section, dollar amounts, eligibility criteria, effective dates, enforcement mechanisms): note once at the start of your answer that the full text isn't yet in our system, then reason only from the title, policy area, and any action text — don't invent provisions. Point the user to congress.gov for specifics.
+
+${BACKGROUND_KNOWLEDGE_CLAUSE}
 
 Stay factual and neutral. Do not repeat the "text not available" caveat in every paragraph; one upfront mention is enough, and only when the question actually requires the bill text to answer.${repVoteSuffix}`;
   }
