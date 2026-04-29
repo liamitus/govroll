@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 
 import { prisma } from "@/lib/prisma";
 import { parseSectionsFromFullText } from "@/lib/bill-sections";
+import { pickBillHeadline } from "@/lib/bill-headline";
 import { sectionSlugsForBill, pathFromHeading } from "@/lib/section-slug";
 import { maybeFetchBillTextInBackground } from "@/lib/on-demand-bill-text";
 import {
@@ -72,17 +73,28 @@ export async function generateMetadata({
 
   const bill = await prisma.bill.findUnique({
     where: { billId: billIdKey },
-    select: { billId: true, title: true, shortText: true },
+    select: {
+      billId: true,
+      title: true,
+      shortText: true,
+      // Title-fallback fields so the browser tab on the reader matches
+      // the headline the user sees, not the raw 600-word title.
+      popularTitle: true,
+      shortTitle: true,
+      displayTitle: true,
+      aiShortDescription: true,
+    },
   });
 
   if (!bill) {
     return { title: "Bill not found — Govroll" };
   }
 
-  const title = `${bill.title} — Full text — Govroll`;
+  const headline = pickBillHeadline(bill).headline;
+  const title = `${headline} — Full text — Govroll`;
   const description =
     bill.shortText?.slice(0, 200) ??
-    `Read the full text of ${bill.title} with plain-English section captions and AI explanations.`;
+    `Read the full text of ${headline} with plain-English section captions and AI explanations.`;
   const canonical = billReadHref({ billId: bill.billId, title: bill.title });
 
   return {
@@ -147,6 +159,14 @@ export default async function BillReaderPage({
         billType: true,
         link: true,
         textFetchAttemptedAt: true,
+        // Title-fallback fields for pickBillHeadline. The reader's H1,
+        // sticky breadcrumb, and "text not yet available" page all use
+        // the resolved headline rather than the raw title.
+        shortText: true,
+        popularTitle: true,
+        shortTitle: true,
+        displayTitle: true,
+        aiShortDescription: true,
         _count: {
           select: {
             textVersions: { where: { fullText: { not: null } } },
@@ -182,6 +202,12 @@ export default async function BillReaderPage({
 
   if (!bill) notFound();
 
+  // Resolve the display headline once — used by the reader header, the
+  // sticky breadcrumb, and the "text not yet available" fallback. All
+  // of these previously rendered the raw title, which for rule
+  // resolutions could run several hundred words.
+  const headline = pickBillHeadline(bill).headline;
+
   // Canonicalize the URL.
   const canonicalReadHref = billReadHref({
     billId: bill.billId,
@@ -213,12 +239,12 @@ export default async function BillReaderPage({
       hasFullText: bill._count.textVersions > 0,
       textFetchAttemptedAt: bill.textFetchAttemptedAt,
     });
-    return <TextNotAvailable bill={bill} />;
+    return <TextNotAvailable bill={{ ...bill, headline }} />;
   }
 
   const parsedSections = parseSectionsFromFullText(renderableText);
   if (parsedSections.length === 0) {
-    return <TextNotAvailable bill={bill} />;
+    return <TextNotAvailable bill={{ ...bill, headline }} />;
   }
 
   const slugs = sectionSlugsForBill(parsedSections);
@@ -265,6 +291,7 @@ export default async function BillReaderPage({
         id: bill.id,
         billId: bill.billId,
         title: bill.title,
+        headline,
         billType: bill.billType,
         govtrackUrl: bill.link ?? null,
       }}

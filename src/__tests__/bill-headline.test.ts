@@ -3,6 +3,7 @@ import {
   pickBillHeadline,
   extractHeadlineFromSummary,
   synthesizeAmendmentHeadline,
+  synthesizeRuleHeadline,
 } from "@/lib/bill-headline";
 import type { BillSummary } from "@/types";
 
@@ -227,15 +228,63 @@ describe("pickBillHeadline", () => {
   });
 
   it("falls back to title when title is procedural but no source produces a headline", () => {
+    // "Providing for" triggers the procedural branch, but the rest of
+    // the chain has nothing to work with: no rule citations, no amend
+    // structure, no summary, no AI explainer. The title is short
+    // enough to render verbatim, so that's where we land.
     const out = pickBillHeadline(
       input({
-        title: "Providing for consideration of H.R. 4690",
+        title: "Providing for the establishment of standards.",
         shortText: null,
         aiShortDescription: null,
       }),
     );
-    expect(out.headline).toBe("Providing for consideration of H.R. 4690");
+    expect(out.headline).toBe("Providing for the establishment of standards.");
     expect(out.officialTitle).toBeNull();
+  });
+
+  it("synthesizes 'Rule for H.R. X' for rule resolutions", () => {
+    const out = pickBillHeadline(
+      input({
+        title:
+          "Providing for consideration of the bill (H.R. 4690) to amend the Energy Conservation and Production Act, and for other purposes.",
+        shortText: null,
+      }),
+    );
+    expect(out.headline).toBe("Rule for H.R. 4690");
+    expect(out.secondary).toBeNull();
+    expect(out.officialTitle).toContain("H.R. 4690");
+  });
+
+  it("synthesizes a multi-bill rule headline with mixed citation types", () => {
+    // Real H.Res. 1189-style title — packages 4 separate measures into
+    // one rule resolution.
+    const out = pickBillHeadline(
+      input({
+        title:
+          "Providing for consideration of the bill (H.R. 4690) to amend the Energy Conservation and Production Act, and for other purposes; providing for consideration of the resolution (H. Res. 1182) expressing support for rural communities; providing for consideration of the bill (H.R. 1897) to amend the Endangered Species Act of 1973; and providing for consideration of the bill (H.R. 5587) to amend the Geothermal Steam Act of 1970.",
+        shortText: null,
+      }),
+    );
+    expect(out.headline).toBe(
+      "Rule for H.R. 4690, H.Res. 1182, H.R. 1897 + 1 more",
+    );
+    expect(out.officialTitle).toContain("Providing for consideration");
+  });
+
+  it("preserves rule synth even when a CRS summary is also available", () => {
+    // Rule resolutions almost never get a useful CRS summary — even
+    // when they do, "Rule for H.R. X" beats a procedural restatement
+    // of the title. Verify the synth tier wins over summary extract.
+    const out = pickBillHeadline(
+      input({
+        title:
+          "Providing for consideration of the bill (H.R. 4690) to amend the Energy Conservation and Production Act, and for other purposes.",
+        shortText:
+          "This resolution provides for consideration of H.R. 4690 under a closed rule.",
+      }),
+    );
+    expect(out.headline).toBe("Rule for H.R. 4690");
   });
 
   it("named-act variants take priority even over a procedural title", () => {
@@ -249,6 +298,82 @@ describe("pickBillHeadline", () => {
     );
     expect(out.headline).toBe("CHIPS Act");
     expect(out.officialTitle).toBeNull();
+  });
+});
+
+describe("synthesizeRuleHeadline", () => {
+  it("returns 'Rule for H.R. X' for a single-bill rule", () => {
+    expect(
+      synthesizeRuleHeadline(
+        "Providing for consideration of the bill (H.R. 4690) to amend the Energy Conservation and Production Act, and for other purposes.",
+      ),
+    ).toBe("Rule for H.R. 4690");
+  });
+
+  it("uses 'and' for two bills", () => {
+    expect(
+      synthesizeRuleHeadline(
+        "Providing for consideration of the bill (H.R. 100) and the bill (H.R. 200).",
+      ),
+    ).toBe("Rule for H.R. 100 and H.R. 200");
+  });
+
+  it("uses Oxford comma for three bills", () => {
+    expect(
+      synthesizeRuleHeadline(
+        "Providing for consideration of bills H.R. 1, H.R. 2, and H.R. 3.",
+      ),
+    ).toBe("Rule for H.R. 1, H.R. 2, and H.R. 3");
+  });
+
+  it("collapses 4+ bills into '+ N more'", () => {
+    expect(
+      synthesizeRuleHeadline(
+        "Providing for consideration of bills H.R. 1, H.R. 2, H.R. 3, H.R. 4, and H.R. 5.",
+      ),
+    ).toBe("Rule for H.R. 1, H.R. 2, H.R. 3 + 2 more");
+  });
+
+  it("handles mixed citation types (H.R., H. Res., H.J. Res.)", () => {
+    expect(
+      synthesizeRuleHeadline(
+        "Providing for consideration of the bill (H.R. 4690), the resolution (H. Res. 1182), and the joint resolution (H.J. Res. 50).",
+      ),
+    ).toBe("Rule for H.R. 4690, H.Res. 1182, and H.J.Res. 50");
+  });
+
+  it("normalizes whitespace inside the abbreviation", () => {
+    // Congress.gov inconsistently emits "H. R." vs "H.R." — both should
+    // collapse to the canonical "H.R." form so the headline reads cleanly.
+    expect(
+      synthesizeRuleHeadline(
+        "Providing for consideration of the bill (H. R. 4690) and the resolution (H. Res. 1182).",
+      ),
+    ).toBe("Rule for H.R. 4690 and H.Res. 1182");
+  });
+
+  it("dedupes when the same bill is cited twice", () => {
+    expect(
+      synthesizeRuleHeadline(
+        "Providing for consideration of the bill (H.R. 4690) to amend the H.R. 4690-related provisions.",
+      ),
+    ).toBe("Rule for H.R. 4690");
+  });
+
+  it("returns null when the title doesn't open with the rule prefix", () => {
+    expect(
+      synthesizeRuleHeadline(
+        "Expressing support for working families and H.R. 4690.",
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when no bill citations are present", () => {
+    expect(
+      synthesizeRuleHeadline(
+        "Providing for consideration of various legislative matters.",
+      ),
+    ).toBeNull();
   });
 });
 

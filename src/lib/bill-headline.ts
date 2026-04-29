@@ -34,6 +34,27 @@ const FOR_OTHER_PURPOSES_TAIL =
 const AMEND_TO_ACTION_PATTERN =
   /^to\s+amend\s+.+?\s+to\s+(.+?)(?:\s*,?\s+and\s+for\s+other\s+purposes\s*\.?)?\s*$/i;
 
+// Marks a House Rules Committee "rule" resolution ("Providing for
+// consideration of the bill (H.R. X)…"). Anchored — we only treat the
+// title as a rule when it opens with this phrase; the inner repetitions
+// of "providing for consideration of" inside the same string don't
+// count as new resolutions.
+const RULE_RESOLUTION_PREFIX = /^Providing for consideration\b/i;
+
+// Bill citations as they appear inside rule resolution titles. The
+// alternation is ordered longest-first so the regex doesn't bail on a
+// shorter prefix (e.g. matching "S." inside "S.J. Res."). Whitespace
+// inside the abbreviation is permissive — Congress.gov inconsistently
+// emits "H. Res." vs "H.Res." vs "H.R." vs "H. R.".
+const BILL_CITATION_PATTERN =
+  /\b(H\.\s*Con\.\s*Res\.|S\.\s*Con\.\s*Res\.|H\.\s*J\.\s*Res\.|S\.\s*J\.\s*Res\.|H\.\s*Res\.|S\.\s*Res\.|H\.\s*R\.|S\.)\s*(\d+)/gi;
+
+function normalizeCitation(prefix: string, number: string): string {
+  // Strip whitespace from inside the abbreviation, preserve the dots,
+  // then re-emit with a single space before the number.
+  return `${prefix.replace(/\s+/g, "")} ${number}`;
+}
+
 function isProceduralTitle(title: string): boolean {
   if (title.length > 100) return true;
   if (PROCEDURAL_PREFIXES.some((p) => p.test(title))) return true;
@@ -86,6 +107,46 @@ function truncateToHeadlineMax(s: string): string {
   const lastSpace = truncated.lastIndexOf(" ");
   const cut = lastSpace > 40 ? lastSpace : HEADLINE_MAX;
   return truncated.slice(0, cut).replace(/[,;:]\s*$/, "") + "…";
+}
+
+/**
+ * Synthesize a compact headline for a House Rules Committee "rule"
+ * resolution — the kind that begins "Providing for consideration of the
+ * bill (H.R. X) to amend…; providing for consideration of the resolution
+ * (H. Res. Y) expressing…; ...". These titles can run 600+ words because
+ * they enumerate every bill the rule covers, with full descriptions
+ * inline.
+ *
+ * Extracts the underlying bill citations and renders "Rule for H.R. X +
+ * N more". Returns null when the title doesn't open with the rule
+ * prefix or when no citations parse out (a defensive guard — if the
+ * regex misses, fall back to whatever the next tier produces rather
+ * than emitting "Rule for ").
+ */
+export function synthesizeRuleHeadline(title: string): string | null {
+  if (!RULE_RESOLUTION_PREFIX.test(title)) return null;
+
+  const matches = [...title.matchAll(BILL_CITATION_PATTERN)];
+  if (matches.length === 0) return null;
+
+  // Dedupe — a rule could in theory cite the same bill twice via the
+  // "providing for consideration of" + "to amend" repetition. Preserve
+  // first-occurrence order so the first-cited bill anchors the headline.
+  const seen = new Set<string>();
+  const citations: string[] = [];
+  for (const m of matches) {
+    const cite = normalizeCitation(m[1], m[2]);
+    if (seen.has(cite)) continue;
+    seen.add(cite);
+    citations.push(cite);
+  }
+
+  if (citations.length === 1) return `Rule for ${citations[0]}`;
+  if (citations.length === 2)
+    return `Rule for ${citations[0]} and ${citations[1]}`;
+  if (citations.length === 3)
+    return `Rule for ${citations[0]}, ${citations[1]}, and ${citations[2]}`;
+  return `Rule for ${citations[0]}, ${citations[1]}, ${citations[2]} + ${citations.length - 3} more`;
 }
 
 /**
@@ -160,6 +221,19 @@ export function pickBillHeadline(bill: HeadlineInput): BillHeadline {
   }
 
   if (isProceduralTitle(bill.title)) {
+    // Rule resolutions ("Providing for consideration of the bill (H.R.
+    // X)…") get a deterministic synth ahead of the summary tier — CRS
+    // doesn't summarize rules, and even when it does the summary is also
+    // procedural. "Rule for H.R. X + N more" is shorter and more
+    // scannable than any natural-language alternative.
+    const fromRule = synthesizeRuleHeadline(bill.title);
+    if (fromRule) {
+      return {
+        headline: fromRule,
+        secondary: null,
+        officialTitle: bill.title,
+      };
+    }
     if (bill.shortText) {
       const fromSummary = extractHeadlineFromSummary(bill.shortText);
       if (fromSummary) {

@@ -38,6 +38,7 @@ interface BillHeroProps {
 
 export function BillHero(props: BillHeroProps) {
   const [crsExpanded, setCrsExpanded] = useState(false);
+  const [titleExpanded, setTitleExpanded] = useState(false);
 
   const isInactive =
     props.momentumTier === "DEAD" ||
@@ -52,6 +53,13 @@ export function BillHero(props: BillHeroProps) {
     shortText: props.shortText,
     aiShortDescription: props.aiShortDescription,
   });
+
+  // House Rules Committee resolutions can run 600+ words because they
+  // enumerate every bill they cover. The synthesized headline already
+  // gives the user a scannable label; this caption preserves the
+  // legal/citable text but collapses it behind a "Show full title"
+  // toggle past ~3 lines worth of content.
+  const officialIsLong = (officialTitle?.length ?? 0) > 240;
 
   const billNumber = formatBillNumber(props.billType, props.billId);
   const congressLabel = props.congressNumber
@@ -100,11 +108,25 @@ export function BillHero(props: BillHeroProps) {
       {/* Demoted official title — only shown when the smart headline came
           from somewhere other than the official title. Keeps the bill
           citable / SEO-searchable without making the long procedural
-          title the visual hero. */}
+          title the visual hero. Long titles (rule resolutions can hit
+          600+ words) collapse behind a "Show full title" toggle so the
+          caption doesn't dominate the hero. */}
       {officialTitle && (
-        <p className="text-muted-foreground text-xs leading-snug italic">
-          Official title: {officialTitle}
-        </p>
+        <div>
+          <p
+            className={`text-muted-foreground text-xs leading-snug italic ${officialIsLong && !titleExpanded ? "line-clamp-3" : ""}`}
+          >
+            Official title: {officialTitle}
+          </p>
+          {officialIsLong && (
+            <button
+              onClick={() => setTitleExpanded((v) => !v)}
+              className="text-muted-foreground/70 hover:text-foreground mt-1 cursor-pointer text-xs underline-offset-2 transition-colors hover:underline"
+            >
+              {titleExpanded ? "Show less" : "Show full title"}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Status badges */}

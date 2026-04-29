@@ -11,7 +11,13 @@ import { billHref } from "@/lib/bills/url";
 export function TextNotAvailable({
   bill,
 }: {
-  bill: { billId: string; title: string; link?: string | null };
+  bill: {
+    billId: string;
+    title: string;
+    /** Display headline. Falls back to `title` when omitted. */
+    headline?: string;
+    link?: string | null;
+  };
 }) {
   return (
     <div className="bg-civic-cream/40 dark:bg-card min-h-screen">
@@ -20,7 +26,7 @@ export function TextNotAvailable({
           Text not yet available
         </p>
         <h1 className="text-foreground mt-3 text-2xl font-semibold sm:text-3xl">
-          {bill.title}
+          {bill.headline ?? bill.title}
         </h1>
         <p className="text-muted-foreground mx-auto mt-6 max-w-lg text-sm leading-relaxed">
           We&apos;re fetching the official bill text from Congress.gov in the
