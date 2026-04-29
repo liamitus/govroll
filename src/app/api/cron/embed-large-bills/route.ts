@@ -64,50 +64,41 @@ export async function GET(request: Request) {
 
   // ── Pick the next bills that need (re-)embedding ──────────────────
   // Two cases:
-  //   1. No embeddings yet for the bill — initial backfill.
-  //   2. Latest text version differs from what's embedded — version
-  //      changed (new substantive amendment), need to re-embed.
-  // We measure "large" on `BillTextVersion.fullText` length, not
-  // `Bill.fullText`, because the latter is denormalized and
-  // sometimes stale.
+  //   1. No completion marker yet — initial backfill.
+  //   2. Latest text version differs from `embeddingsTextVersionId` —
+  //      version changed (new amendment), need to re-embed.
+  //
+  // We use the `Bill.embeddingsTextVersionId` completion marker (set
+  // by `embedBill` after the LAST chunk lands) instead of "any chunk
+  // row exists" so a partial-write failure on a giant bill (multi-tx
+  // persistChunks isn't atomic) doesn't get silently marked done.
+  //
+  // `large` is measured on `BillTextVersion.fullText` length, not
+  // `Bill.fullText` — the latter is denormalized and sometimes stale.
   const candidates = await prisma.bill.findMany({
     select: {
       id: true,
       billId: true,
+      embeddingsTextVersionId: true,
       textVersions: {
         where: { fullText: { not: null } },
         orderBy: { versionDate: "desc" },
         take: 1,
         select: { id: true, fullText: true },
       },
-      embeddingChunks: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { textVersionId: true },
-      },
     },
     orderBy: { id: "asc" },
   });
 
-  const queue = candidates
-    .filter((b) => {
-      const v = b.textVersions[0];
-      if (!v?.fullText) return false;
-      if (!shouldUseRag(v.fullText.length)) return false;
-      const existing = b.embeddingChunks?.[0];
-      // Embed if no chunks exist OR the latest version differs from
-      // what's currently embedded.
-      return !existing || existing.textVersionId !== v.id;
-    })
-    .slice(0, limit);
-
-  const totalRemaining = candidates.filter((b) => {
+  const isUpToDate = (b: (typeof candidates)[number]) => {
     const v = b.textVersions[0];
-    if (!v?.fullText) return false;
-    if (!shouldUseRag(v.fullText.length)) return false;
-    const existing = b.embeddingChunks?.[0];
-    return !existing || existing.textVersionId !== v.id;
-  }).length;
+    if (!v?.fullText) return true; // nothing to embed; treat as "done"
+    if (!shouldUseRag(v.fullText.length)) return true; // below threshold
+    return b.embeddingsTextVersionId === v.id;
+  };
+
+  const queue = candidates.filter((b) => !isUpToDate(b)).slice(0, limit);
+  const totalRemaining = candidates.filter((b) => !isUpToDate(b)).length;
 
   // ── Process sequentially, respecting deadline ─────────────────────
   const results: Array<{

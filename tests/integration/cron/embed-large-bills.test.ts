@@ -114,6 +114,83 @@ describe("GET /api/cron/embed-large-bills", () => {
     expect(body.remaining).toBeGreaterThanOrEqual(1);
   });
 
+  it("treats a partial-write bill (chunks exist, no completion marker) as needing re-embed", async () => {
+    // Pin the multi-tx persistence safety net. After PR 4,
+    // `persistChunks` writes chunks across many independent
+    // transactions; if a run crashes mid-loop, some chunks for the
+    // current textVersion exist but `Bill.embeddingsTextVersionId`
+    // stays null. The candidate filter MUST treat this bill as
+    // needing re-embed — otherwise a partial-write failure on a
+    // giant bill would silently mark it done and never recover.
+    const bill = await seedBill({
+      billId: "partial-119",
+      fullText: "x".repeat(500_000),
+    });
+    const version = await getTestPrisma().billTextVersion.create({
+      data: {
+        billId: bill.id,
+        versionCode: "ih",
+        versionType: "Introduced",
+        versionDate: new Date("2026-02-13"),
+        fullText: "Section 1. Short title\n" + "y".repeat(500_000),
+      },
+    });
+
+    // Simulate a partial write: a few chunks landed, but the
+    // completion marker on Bill is still null.
+    for (let i = 0; i < 3; i++) {
+      const vec = `[${new Array(1024).fill(0.01).join(",")}]`;
+      await getTestPrisma().$executeRawUnsafe(
+        `INSERT INTO "BillEmbeddingChunk" ("billId", "textVersionId", "chunkIndex", "sectionRef", "heading", "content", "contextPrefix", "embedding", "embeddingModel") VALUES ($1, $2, $3, $4, $5, $6, $7, $8::vector, $9)`,
+        bill.id,
+        version.id,
+        i,
+        `Section ${i + 1}`,
+        `Section ${i + 1}. Heading`,
+        "partial content",
+        "",
+        vec,
+        "voyage-3-large",
+      );
+    }
+    // Bill.embeddingsTextVersionId is still null (default).
+
+    const res = await invokeCron(GET, { search: { limit: "0" } });
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    // The partial-state bill must show up in the queue for re-embed.
+    expect(body.remaining).toBeGreaterThanOrEqual(1);
+  });
+
+  it("skips a bill whose completion marker matches the latest text version", async () => {
+    // The happy path: marker set, latest version still matches → skip.
+    const bill = await seedBill({
+      billId: "complete-119",
+      fullText: "x".repeat(500_000),
+    });
+    const version = await getTestPrisma().billTextVersion.create({
+      data: {
+        billId: bill.id,
+        versionCode: "ih",
+        versionType: "Introduced",
+        versionDate: new Date("2026-02-13"),
+        fullText: "Section 1. Short title\n" + "y".repeat(500_000),
+      },
+    });
+    await getTestPrisma().bill.update({
+      where: { id: bill.id },
+      data: {
+        embeddingsTextVersionId: version.id,
+        embeddingsCompletedAt: new Date(),
+      },
+    });
+
+    const res = await invokeCron(GET, { search: { limit: "0" } });
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.remaining).toBe(0);
+  });
+
   it("respects ?limit cap", async () => {
     // Limit cap MAX_LIMIT=10 enforced even when caller passes higher.
     const res = await invokeCron(GET, { search: { limit: "999" } });

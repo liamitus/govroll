@@ -109,19 +109,19 @@ async function main() {
       select: {
         id: true,
         billId: true,
+        // The "fully embedded" marker — set by `embedBill` only after
+        // the last chunk lands. The candidate filter compares this
+        // against the latest version's id; mismatched or null means
+        // (re-)embed. Distinct from "any chunk row exists" so a
+        // partial-write failure on a giant bill doesn't get marked
+        // done by accident.
+        embeddingsTextVersionId: flags.incremental ? true : false,
         textVersions: {
           where: { fullText: { not: null } },
           orderBy: { versionDate: "desc" },
           take: 1,
           select: { id: true, fullText: true, versionDate: true },
         },
-        embeddingChunks: flags.incremental
-          ? {
-              orderBy: { createdAt: "desc" },
-              take: 1,
-              select: { createdAt: true, textVersionId: true },
-            }
-          : false,
       },
       orderBy: { id: "asc" },
     });
@@ -131,10 +131,10 @@ async function main() {
       if (!v?.fullText) return false;
       if (!shouldUseRag(v.fullText.length)) return false;
       if (flags.incremental) {
-        const existing = b.embeddingChunks?.[0];
-        // Embed if no existing rows OR the latest version's id differs
-        // from what's currently embedded.
-        if (existing && existing.textVersionId === v.id) return false;
+        // Skip only when the completion marker matches the latest
+        // version. Null marker = never embedded; mismatched marker =
+        // a newer text version landed since last run.
+        if (b.embeddingsTextVersionId === v.id) return false;
       }
       return true;
     });

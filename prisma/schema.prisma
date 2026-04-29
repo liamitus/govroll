@@ -89,6 +89,14 @@ model Bill {
   aiSummaryModel        String?
   aiSummaryCreatedAt    DateTime?
   aiSummaryVersionId    Int?
+  // Set after `embedBill` finishes writing every chunk for the latest
+  // text version. Null = no embeddings; an Int = which BillTextVersion
+  // is fully embedded right now. The candidate filter in the embedding
+  // pipeline checks this field rather than "any chunk exists" so a
+  // mid-run failure on a giant bill (multi-tx persistChunks doesn't
+  // wrap delete+inserts atomically) doesn't get silently marked done.
+  embeddingsTextVersionId Int?
+  embeddingsCompletedAt   DateTime?
   votes                 RepresentativeVote[]
   publicVotes           Vote[]
   comments              Comment[]
