@@ -41,6 +41,7 @@ interface Flags {
   maxCostCents: number;
   maxBillCostCents: number;
   incremental: boolean;
+  skipContext: boolean;
 }
 
 function parseFlags(argv: string[]): Flags {
@@ -51,11 +52,13 @@ function parseFlags(argv: string[]): Flags {
     maxCostCents: 2_500, // $25 default — covers full corpus + headroom
     maxBillCostCents: 500, // $5 per bill — would catch a runaway omnibus
     incremental: false,
+    skipContext: false,
   };
 
   for (const arg of argv) {
     if (arg === "--dry-run") flags.dryRun = true;
     else if (arg === "--incremental") flags.incremental = true;
+    else if (arg === "--skip-context") flags.skipContext = true;
     else if (arg.startsWith("--bill-id=")) {
       const v = parseInt(arg.split("=")[1], 10);
       if (!Number.isFinite(v)) throw new Error(`Bad --bill-id: ${arg}`);
@@ -173,6 +176,7 @@ async function main() {
       const result = await embedBill(prisma, billId, {
         dryRun: flags.dryRun,
         maxCostCents: flags.maxBillCostCents,
+        skipContext: flags.skipContext,
         onProgress: (msg) => console.log(msg),
       });
       runningCostCents += result.totalCostCents;
