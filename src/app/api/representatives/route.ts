@@ -31,6 +31,10 @@ export async function POST(request: NextRequest) {
 
     const bill = await prisma.bill.findUnique({
       where: { id: parseInt(billId) },
+      // Only billType + currentStatus are read from this row (line 74) —
+      // skip fullText and other large columns so this endpoint doesn't
+      // ship megabytes per request.
+      select: { id: true, billType: true, currentStatus: true },
     });
 
     if (!bill) {
