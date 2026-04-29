@@ -517,12 +517,16 @@ async function persistChunks(
       return replacedExisting;
     },
     {
-      // Default 5s is fine for small bills, but a 5K-section omnibus
-      // pushes ~3MB of vector payload across ~30 batched inserts; that
-      // routinely exceeds 5s on the pooler. 2 minutes is comfortably
-      // generous for any reasonable bill we'd index.
-      timeout: 120_000,
-      maxWait: 10_000,
+      // Default 5s is way too short. 120s fell over on bills with
+      // 6K+ chunks; 300s ALSO fell over on a 6877-chunk bill that
+      // took 303s. Real-world ceiling on the largest legislation we
+      // index (10K+ usable chunks) is ~10 min. 600s is generous
+      // enough for any bill we'd reasonably embed. Locally we just
+      // consume more wall time; the cron path also uses 600s but
+      // its own per-call deadline (TIMEOUT_MS=250_000 in route.ts)
+      // is what actually bounds Vercel function runtime.
+      timeout: 600_000,
+      maxWait: 15_000,
     },
   );
 }
