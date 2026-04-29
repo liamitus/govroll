@@ -8,6 +8,7 @@ import {
   getEffectiveStatus,
   buildDynamicJourney,
 } from "@/lib/bill-helpers";
+import { pickBillHeadline } from "@/lib/bill-headline";
 import { BillHero } from "@/components/bills/bill-hero";
 import { BillStageSection } from "@/components/bills/bill-stage-section";
 import { BillChangeSummary } from "@/components/bills/bill-change-summary";
@@ -48,6 +49,13 @@ async function resolveBill(params: RouteParams) {
       billId: true,
       title: true,
       shortText: true,
+      // Title-fallback fields so generateMetadata renders the same
+      // smart headline the page hero shows. Without these the browser
+      // tab gets the raw 600-word title for rule resolutions.
+      popularTitle: true,
+      shortTitle: true,
+      displayTitle: true,
+      aiShortDescription: true,
     },
   });
 
@@ -57,7 +65,11 @@ async function resolveBill(params: RouteParams) {
 export async function generateMetadata({ params }: { params: RouteParams }) {
   const { bill } = await resolveBill(params);
 
-  const title = bill ? `${bill.title} — Govroll` : "Bill — Govroll";
+  // Use the same headline-resolution chain the page hero does — the
+  // browser tab and OG title should match what the user sees, not the
+  // raw procedural title.
+  const headline = bill ? pickBillHeadline(bill).headline : null;
+  const title = headline ? `${headline} — Govroll` : "Bill — Govroll";
   const description =
     bill?.shortText ??
     "Track this bill, see how your representatives voted, and share your opinion.";

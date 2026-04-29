@@ -76,6 +76,7 @@ export function BillReader({
         <div className="bill-prose-page min-h-screen">
           <StickyBreadcrumb
             bill={{ billId: bill.billId, title: bill.title }}
+            headline={bill.headline}
             sections={breadcrumbSections}
           />
 
@@ -99,7 +100,7 @@ export function BillReader({
                     {dayjs(version.versionDate).format("MMM D, YYYY")}
                   </span>
                 </div>
-                <h1 className="bill-prose-title">{bill.title}</h1>
+                <h1 className="bill-prose-title">{bill.headline}</h1>
                 <div className="text-muted-foreground bill-prose-meta mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                   <span>
                     {sections.length} section
@@ -118,7 +119,7 @@ export function BillReader({
 
               <article
                 className="bill-prose"
-                aria-label={`Full text of ${bill.title}`}
+                aria-label={`Full text of ${bill.headline}`}
               >
                 {groups.map((group) => {
                   if (!group.head) {

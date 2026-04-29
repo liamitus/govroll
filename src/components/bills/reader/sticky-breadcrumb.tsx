@@ -21,9 +21,13 @@ import { useScrollSpy } from "./scroll-spy";
  */
 export function StickyBreadcrumb({
   bill,
+  headline,
   sections,
 }: {
   bill: BillForUrl;
+  /** Display headline from `pickBillHeadline`. Falls back to `bill.title`
+   *  when not provided so callers outside the reader RSC still work. */
+  headline?: string;
   sections: Array<{ slug: string; heading: string }>;
 }) {
   const { activeSlug } = useScrollSpy();
@@ -46,7 +50,7 @@ export function StickyBreadcrumb({
         </Link>
 
         <div className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-          <span className="text-foreground">{bill.title}</span>
+          <span className="text-foreground">{headline ?? bill.title}</span>
           <span className="text-muted-foreground" suppressHydrationWarning>
             {path.length > 0 ? (
               <>

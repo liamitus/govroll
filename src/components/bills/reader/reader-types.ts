@@ -24,7 +24,15 @@ export interface ReaderSection extends BillSection {
 export interface ReaderBillMeta {
   id: number;
   billId: string;
+  /** Verbatim official title from Congress.gov. Used for slug/URL
+   *  generation and as the citable text in `aria-label`. For visible
+   *  display, prefer `headline`. */
   title: string;
+  /** Display headline derived from the full title-resolution chain
+   *  (popularTitle → shortTitle → displayTitle → summary extract → AI
+   *  → rule synth → amendment synth → title). Always renderable;
+   *  for short clean titles it's identical to `title`. */
+  headline: string;
   billType: string;
   /** GovTrack URL from the legacy `Bill.link` column. Null when unset
    *  on older rows; the reader's "Sources" block hides the link in
