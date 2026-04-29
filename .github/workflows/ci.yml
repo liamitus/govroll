@@ -105,7 +105,11 @@ jobs:
       # belt-and-suspenders: if Docker-in-Docker on the runner has an issue,
       # the test harness falls back to TEST_DATABASE_URL pointing here.
       postgres:
-        image: postgres:16-alpine
+        # pgvector image is Postgres 16 with the `vector` extension
+        # preinstalled. The Bill embedding migration runs `CREATE
+        # EXTENSION IF NOT EXISTS vector` and a vanilla `postgres:16`
+        # image fails it (the .control file isn't on disk).
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci

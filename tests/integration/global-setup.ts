@@ -8,8 +8,14 @@ export async function setup() {
   if (process.env.TEST_DATABASE_URL) {
     console.log("[integration] Reusing TEST_DATABASE_URL from environment");
   } else {
-    console.log("[integration] Starting Postgres 16 testcontainer...");
-    container = await new PostgreSqlContainer("postgres:16-alpine")
+    console.log(
+      "[integration] Starting Postgres 16 + pgvector testcontainer...",
+    );
+    // pgvector image bundles Postgres 16 with the `vector` extension
+    // preinstalled. The bill-embedding migration runs `CREATE
+    // EXTENSION IF NOT EXISTS vector` and vanilla postgres:16-alpine
+    // doesn't ship the .control file.
+    container = await new PostgreSqlContainer("pgvector/pgvector:pg16")
       .withDatabase("govroll_test")
       .withUsername("govroll")
       .withPassword("govroll")
