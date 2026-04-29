@@ -15,6 +15,12 @@ import {
   type RepVoteContext,
 } from "@/lib/ai";
 import { parseSectionsFromFullText } from "@/lib/bill-sections";
+import {
+  billHasEmbeddings,
+  retrieveRelevantSections,
+  isRagPathEnabled,
+} from "@/lib/bill-rag-retrieval";
+import { VOYAGE_EMBED_MODEL } from "@/lib/voyage";
 import type { BillMetadata } from "@/lib/congress-api";
 import { assertAiEnabled, AiDisabledError } from "@/lib/ai-gate";
 import { recordSpend } from "@/lib/budget";
@@ -409,20 +415,74 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Large-bill pre-filter (non-streaming) ──────────────────────────
+    // ── Large-bill pre-filter ──────────────────────────────────────────
+    // Three paths, picked in order:
+    //   1. RAG vector retrieval — when the bill has embedded chunks AND
+    //      `AI_CHAT_RAG_ENABLED=true`. Semantic match on Voyage
+    //      embeddings; catches questions like "what does this bill do
+    //      for bayer" where the relevant sections share no keywords
+    //      with the user's words.
+    //   2. Haiku name-filter — fallback when the bill is large but
+    //      hasn't been embedded yet (or RAG is disabled). Same path
+    //      that's been live; brittle but functional.
+    //   3. Pass-through — small bills that fit in context with no
+    //      narrowing needed. Prompt cache stays hot.
     let sectionsToUse = allSections;
+    let retrievalPath: "rag" | "haiku" | "passthrough" = "passthrough";
     if (allSections && shouldFilterSections(allSections)) {
-      const filtered = await selectSectionsForQuestion(
-        bill?.title || "Unknown Bill",
-        allSections,
-        aiUserMessage,
-      );
-      sectionsToUse = filtered.sections;
-      await tryRecordSpend({
-        userId,
-        feature: "chat",
-        usage: filtered.usage,
-      });
+      const useRag =
+        isRagPathEnabled() && (await billHasEmbeddings(prisma, numericBillId));
+
+      if (useRag) {
+        try {
+          const ragResult = await retrieveRelevantSections(
+            prisma,
+            numericBillId,
+            aiUserMessage,
+          );
+          if (ragResult.hadResults) {
+            sectionsToUse = ragResult.sections;
+            retrievalPath = "rag";
+            await tryRecordSpend({
+              userId,
+              feature: "chat",
+              usage: {
+                model: VOYAGE_EMBED_MODEL,
+                inputTokens: ragResult.queryEmbeddingTokens,
+                outputTokens: 0,
+              },
+            });
+          }
+        } catch (err) {
+          // Cosine search or query embedding failed — fall through to
+          // the Haiku name-filter rather than 500-erroring the user.
+          // The error log captures the regression for follow-up.
+          console.error(
+            JSON.stringify({
+              event: "rag_retrieval_failed",
+              route: "POST /api/ai/chat",
+              billId: numericBillId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+          reportError(err, { route: "POST /api/ai/chat rag" });
+        }
+      }
+
+      if (retrievalPath === "passthrough") {
+        const filtered = await selectSectionsForQuestion(
+          bill?.title || "Unknown Bill",
+          allSections,
+          aiUserMessage,
+        );
+        sectionsToUse = filtered.sections;
+        retrievalPath = "haiku";
+        await tryRecordSpend({
+          userId,
+          feature: "chat",
+          usage: filtered.usage,
+        });
+      }
     }
 
     // ── Main streaming call ────────────────────────────────────────────
@@ -452,8 +512,12 @@ export async function POST(request: NextRequest) {
       onBudget: (diagnostics) => {
         // Only emit when something was actually trimmed — the common case
         // is silent. The signal we want is "how often do real users hit
-        // truncation on what bills" so we can decide whether 1M-context
-        // routing is worth building.
+        // truncation on what bills, and which retrieval path were they
+        // on when it happened?" RAG retrieval fundamentally narrows
+        // before the pack runs, so post-RAG truncation is a strong
+        // signal that top-K is undersized for that bill class. Haiku-
+        // path truncation is the failure mode #84 (the budget-tighten
+        // PR) was already designed to catch.
         if (
           diagnostics.sectionsTruncated ||
           diagnostics.sectionsDropped > 0 ||
@@ -467,6 +531,7 @@ export async function POST(request: NextRequest) {
               userId,
               billId: numericBillId,
               billTitle: bill?.title,
+              retrievalPath,
               ...diagnostics,
             }),
           );
