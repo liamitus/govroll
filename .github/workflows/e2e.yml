@@ -28,7 +28,10 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16
+        # pgvector image is Postgres 16 with the `vector` extension
+        # preinstalled. Required by the bill-embedding migration —
+        # vanilla postgres:16 fails `CREATE EXTENSION vector`.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
