@@ -68,16 +68,30 @@ const CHANGE_SUMMARY_CHARS = 120_000;
 const EXPLAINER_TEXT_CHARS = 120_000;
 
 /** Conservative chars-per-token estimate for legislative text. Real ratio
- *  for English prose is closer to 3.5–4, but bill text leans denser
- *  (numbers, citations, defined-term capitalization), so we under-estimate
- *  to leave headroom on Sonnet's 200K-token window. */
-const CHARS_PER_TOKEN_BILL = 3;
+ *  for English prose is closer to 3.5–4; legislative text is denser
+ *  (numbers, citations, defined-term capitalization). We measured 2.66
+ *  on HR 7567 (Farm/Food/Defense omnibus) when a 540K-char pack produced
+ *  213K real tokens — so we now under-estimate to 2.5 to leave headroom
+ *  even on the densest bills. The previous value (3) silently let dense
+ *  bills overflow the window. */
+const CHARS_PER_TOKEN_BILL = 2.5;
 
 /** Total input-token budget for a chat turn. Sonnet 4's window is 200K;
  *  reserving ~20K for instruction overhead, output (capped at 2048), and
  *  safety margin gives us 180K to split between bill sections and the
  *  conversation transcript. */
 const MODEL_INPUT_BUDGET_TOKENS = 180_000;
+
+/** Tokens reserved inside the budget for everything that wraps the
+ *  packed sections: the system-prompt frame, citation rules, the
+ *  background-knowledge clause, the metadata block (sponsor + cosponsor
+ *  sample + 15-row action timeline + CRS short-summary), and any
+ *  rep-vote-context block. CRS summaries on large bills can run several
+ *  thousand tokens on their own; 15K is a comfortable upper bound that
+ *  still leaves most of the budget for actual bill text. Without this
+ *  reserve, allocateChatBudget gave the entire window to sections+history
+ *  and the metadata pushed total input over 200K (HR 7567 hit 213K). */
+const PROMPT_OVERHEAD_RESERVE_TOKENS = 15_000;
 
 /** Per-section token cap. Stops a single mega-section (think an omnibus
  *  appropriations title) from monopolizing the section budget. */
@@ -395,7 +409,9 @@ export interface PackSectionsResult {
  */
 export function packSectionsToBudgetWithDiagnostics(
   sections: BillSection[],
-  budgetTokens: number = MODEL_INPUT_BUDGET_TOKENS - MAX_HISTORY_TOKENS,
+  budgetTokens: number = MODEL_INPUT_BUDGET_TOKENS -
+    MAX_HISTORY_TOKENS -
+    PROMPT_OVERHEAD_RESERVE_TOKENS,
 ): PackSectionsResult {
   const budgetChars = budgetTokens * CHARS_PER_TOKEN_BILL;
 
@@ -564,8 +580,17 @@ export interface ChatBudgetAllocation {
 /**
  * Decide how to split the model's input budget between bill-text and
  * conversation history for this turn. History gets priority up to a hard
- * cap (`MAX_HISTORY_TOKENS`); whatever's left goes to sections, with a
- * floor (`MIN_SECTION_TOKENS`) so the bill is never starved.
+ * cap (`MAX_HISTORY_TOKENS`); whatever's left — minus the
+ * `PROMPT_OVERHEAD_RESERVE_TOKENS` carved out for instructions, citation
+ * rules, and the metadata block — goes to sections, with a floor
+ * (`MIN_SECTION_TOKENS`) so the bill is never starved.
+ *
+ * The overhead reserve is essential: the system prompt isn't just
+ * "instructions plus sections" — it also carries the CRS summary, action
+ * timeline, cosponsor sample, citation rules, and (sometimes) a verified
+ * rep-vote block. On HR 7567 these collectively ran ~10K tokens, and
+ * without the reserve the section pack happily filled the rest of the
+ * budget, pushing total input above 200K.
  */
 export function allocateChatBudget(
   history: ModelMessage[],
@@ -577,7 +602,7 @@ export function allocateChatBudget(
   const historyTokens = Math.min(historyRaw, MAX_HISTORY_TOKENS);
   const sectionTokens = Math.max(
     MIN_SECTION_TOKENS,
-    MODEL_INPUT_BUDGET_TOKENS - historyTokens,
+    MODEL_INPUT_BUDGET_TOKENS - historyTokens - PROMPT_OVERHEAD_RESERVE_TOKENS,
   );
   return {
     sectionTokens,

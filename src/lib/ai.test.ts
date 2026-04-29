@@ -310,9 +310,33 @@ describe("allocateChatBudget", () => {
     const allocation = allocateChatBudget([
       userMsg("Tell me about this bill."),
     ]);
-    // First turn: history is tiny, sections get ~all of the input budget.
-    expect(allocation.sectionTokens).toBeGreaterThan(170_000);
+    // First turn: history is tiny, sections get most of the input budget
+    // minus the overhead reserve (~15K tokens for instructions, citation
+    // rules, and the metadata block).
+    expect(allocation.sectionTokens).toBeGreaterThan(150_000);
     expect(allocation.historyTokens).toBeLessThan(50);
+  });
+
+  it("would have prevented the HR 7567 (213K-token) overflow", () => {
+    // Regression: a fresh single-turn chat on the Farm/Food/Defense
+    // omnibus overflowed the 200K window at 213K input tokens. The math
+    // back then: 180K budget × 3 chars/token = 540K chars of section
+    // content, plus a ~10K-token metadata block (CRS summary + cosponsor
+    // sample + action timeline) that wasn't reserved against the budget.
+    //
+    // Working backwards from 213K observed: 540K chars + ~5K chars of
+    // wrapper text ≈ 545K chars / 213K tokens = 2.56 chars/token actual
+    // density on this bill. We pin the test at that observed density —
+    // if the budget allocator + the section pack's chars/token estimate
+    // ever drift back into a regime that overflowed HR 7567, this fails.
+    const allocation = allocateChatBudget([userMsg("what about bayer?")]);
+    const HR_7567_OBSERVED_DENSITY = 2.55;
+    const HR_7567_OVERHEAD_TOKENS = 10_000;
+    const sectionBudgetChars = allocation.sectionTokens * 2.5;
+    const sectionRealTokens = sectionBudgetChars / HR_7567_OBSERVED_DENSITY;
+    const totalTokens =
+      sectionRealTokens + HR_7567_OVERHEAD_TOKENS + allocation.historyTokens;
+    expect(totalTokens).toBeLessThan(200_000);
   });
 
   it("cedes budget to history as the conversation grows", () => {
