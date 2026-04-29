@@ -31,6 +31,7 @@ on:
     - cron: "30 */6 * * *" # refresh-bill-metadata      (every 6h)
     - cron: "0 0 * * *" # evaluate-budget            (daily midnight UTC)
     - cron: "0 10 * * 1" # fetch-representatives      (weekly, Mon 10:00 UTC)
+    - cron: "20,50 * * * *" # embed-large-bills          (every 30m, offset)
 
   workflow_dispatch:
     inputs:
@@ -49,6 +50,7 @@ on:
           - refresh-bill-metadata
           - evaluate-budget
           - fetch-representatives
+          - embed-large-bills
 
 # The whole workflow doesn't need write scopes — we only call an
 # authenticated HTTP endpoint on govroll.com.
@@ -90,6 +92,7 @@ jobs:
             "30 */6 * * *")  echo "endpoint=refresh-bill-metadata"     >> "$GITHUB_OUTPUT" ;;
             "0 0 * * *")     echo "endpoint=evaluate-budget"           >> "$GITHUB_OUTPUT" ;;
             "0 10 * * 1")    echo "endpoint=fetch-representatives"     >> "$GITHUB_OUTPUT" ;;
+            "20,50 * * * *") echo "endpoint=embed-large-bills"         >> "$GITHUB_OUTPUT" ;;
             *)
               echo "::error::No endpoint mapped for schedule '${SCHEDULE}'"
               exit 1

@@ -362,13 +362,14 @@ export async function embedBill(
   let voyageTokens = 0;
   let voyageCostCents = 0;
   const allEmbeddings: number[][] = [];
-  // Voyage's free tier caps embeddings around 3 requests/minute. Add an
-  // explicit ~2.2s sleep between batches so a 25-batch bill (~5K
-  // chunks) completes inside ~60s wall time without tripping the
-  // rate limit. The withVoyageRetry wrapper has linear-backoff retries
-  // for transient 429s, but those only buy ~9s — not enough when
-  // we're hitting a sustained quota.
-  const VOYAGE_INTER_BATCH_DELAY_MS = 2_200;
+  // Defensive inter-batch sleep. Voyage's paid tier
+  // (voyage-3-large) is 2000 RPM / 6M TPM — way more than we'd ever
+  // generate from a backfill — so the previous 2.2s value was
+  // overshoot from the free-tier era. 100ms is enough to stop
+  // micro-bursts from queuing if a future bug raises concurrency,
+  // while adding negligible wall time even on a corpus-wide
+  // backfill.
+  const VOYAGE_INTER_BATCH_DELAY_MS = 100;
   for (let bi = 0; bi < batches.length; bi++) {
     const batch = batches[bi];
     if (dryRun) {
