@@ -260,9 +260,25 @@ export interface RepVoteContext {
   isWhyIntent: boolean;
 }
 
+/** Tells the prompt builder that the section list is a vector-retrieved
+ *  subset, not the whole bill. Without this, the model sees N
+ *  disconnected fragments and reasonably hedges that it "can't see the
+ *  complete bill text" — even when it found the right answer. With it,
+ *  the framing surfaces that the sections were selected for relevance
+ *  and that the user can rephrase to get different ones, so the model
+ *  stops hedging unhelpfully. */
+export interface RetrievalContext {
+  /** Total parsed sections in the bill (regardless of how many were
+   *  retrieved this turn). */
+  totalSections: number;
+  /** Sections actually included in the prompt this turn. */
+  retrievedCount: number;
+}
+
 export interface BillChatPromptOptions {
   readerMode?: boolean;
   repVoteContext?: RepVoteContext | null;
+  retrievalContext?: RetrievalContext | null;
 }
 
 function formatRepVoteContextBlock(ctx: RepVoteContext | null | undefined) {
@@ -356,13 +372,33 @@ Stay factual and neutral. Do not repeat the "text not available" caveat in every
     ? CITATION_INSTRUCTIONS_READER
     : CITATION_INSTRUCTIONS;
 
+  const retrieval = opts.retrievalContext;
+  // RAG path: tell the model up front that what it sees is a relevance-
+  // ranked subset, not the whole bill. Two effects we want:
+  //   1. The model stops adding "without seeing the complete bill text"
+  //      caveats after answers it actually got right from the
+  //      retrieved sections.
+  //   2. When the user's question genuinely doesn't match the retrieved
+  //      sections well, the model can suggest rephrasing instead of
+  //      apologizing for a gap it can't fix from inside this turn.
+  const sectionsHeader = retrieval
+    ? `Here are the ${retrieval.retrievedCount} sections of "${billTitle}" most semantically relevant to the user's question, retrieved from a corpus of ${retrieval.totalSections} parsed sections in this bill. The bill is too long to include in full; treat what's below as the most likely-relevant subset, not the entire bill.`
+    : `Here is the text of "${billTitle}", organized by section:`;
+
+  // Citation rules need a different "what to do when something isn't
+  // here" clause for RAG vs full-text — full-text means it's not in the
+  // bill, RAG means it might be in a section we didn't retrieve.
+  const retrievalNotePresent = retrieval
+    ? `\n\nIf the user's question doesn't appear to be addressed in the sections above, say so plainly and suggest they rephrase to surface different sections — don't claim the bill is silent unless the question is clearly off-topic for the bill's policy area. Don't add caveats about "not seeing the complete bill" when the retrieved sections actually answer the question.`
+    : "";
+
   return `You are a helpful, nonpartisan assistant that helps citizens understand U.S. legislation. You answer questions clearly and accessibly, prioritizing direct quotes from the bill text.
 
-${metadataBlock ? `Bill information:\n${metadataBlock}\n\n` : ""}Here is the text of "${billTitle}", organized by section:
+${metadataBlock ? `Bill information:\n${metadataBlock}\n\n` : ""}${sectionsHeader}
 
 ${billTextBlock}
 
-${citationInstructions}${repVoteSuffix}`;
+${citationInstructions}${retrievalNotePresent}${repVoteSuffix}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -699,6 +735,12 @@ export interface StreamBillChatParams {
   /** Verified per-rep vote fact, when the question names a specific
    *  representative. Resolved by the route from `mentionedRepBioguideId`. */
   repVoteContext?: RepVoteContext | null;
+  /** When set, the prompt frames `billSections` as a relevance-
+   *  retrieved subset of the bill rather than its full text. Set by
+   *  the chat route on the RAG path; left null on the Haiku/passthrough
+   *  paths so the existing "here is the bill, organized by section"
+   *  framing keeps working. */
+  retrievalContext?: RetrievalContext | null;
   /** Fires once budget allocation completes, before the stream starts. */
   onBudget?: (diagnostics: ChatBudgetDiagnostics) => void;
   onFinish?: (event: {
@@ -738,6 +780,7 @@ export async function streamBillChatResponse(
     uiMessages,
     readerMode,
     repVoteContext,
+    retrievalContext,
     onBudget,
     onFinish,
     onError,
@@ -776,7 +819,7 @@ export async function streamBillChatResponse(
     billTitle,
     packedSections,
     metadata,
-    { readerMode, repVoteContext },
+    { readerMode, repVoteContext, retrievalContext },
   );
 
   // Cacheable system message + (already-budgeted) conversation. We pass

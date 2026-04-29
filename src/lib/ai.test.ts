@@ -201,6 +201,47 @@ describe("buildBillChatSystemPrompt", () => {
     // claim the sample is exhaustive.
     expect(prompt).toMatch(/first \d+ of 40/);
   });
+
+  it("frames sections as a relevance-retrieved subset when retrievalContext is set (RAG path)", () => {
+    // Without this framing, real users got answers like:
+    //   "Without seeing the complete bill text, I cannot definitively
+    //    say whether there are other provisions..."
+    // even on questions the retrieved sections actually answered. The
+    // RAG-aware framing surfaces that the sections were chosen for
+    // relevance, not arbitrarily, so the model stops over-hedging.
+    const sections = [section("Section 5", "Pesticide registration text.")];
+    const prompt = buildBillChatSystemPrompt(
+      "Farm, Food, and National Security Act of 2026",
+      sections,
+      null,
+      {
+        retrievalContext: { totalSections: 3116, retrievedCount: 60 },
+      },
+    );
+
+    // Pin the framing strings — these are what actually steer the
+    // model. If a refactor drops them, the hedging behavior comes back
+    // and this test fails immediately instead of users complaining.
+    expect(prompt).toContain("60 sections");
+    expect(prompt).toContain("3116 parsed sections");
+    expect(prompt).toContain("most semantically relevant");
+    expect(prompt).toContain("not the entire bill");
+    expect(prompt).toContain("rephrase");
+    // And it should explicitly tell the model NOT to add the
+    // "complete bill" caveat.
+    expect(prompt).toContain("complete bill");
+  });
+
+  it("uses the original 'Here is the text of...' framing when no retrievalContext is set (full-text path)", () => {
+    // The Haiku name-filter and small-bill passthrough paths still
+    // send the bill as a single block — the existing framing is
+    // still correct for them.
+    const sections = [section("Section 1", "Bill content.")];
+    const prompt = buildBillChatSystemPrompt("Test Bill", sections, null);
+    expect(prompt).toContain('Here is the text of "Test Bill"');
+    expect(prompt).not.toContain("most semantically relevant");
+    expect(prompt).not.toContain("rephrase");
+  });
 });
 
 describe("packSectionsToBudget", () => {

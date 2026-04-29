@@ -509,6 +509,18 @@ export async function POST(request: NextRequest) {
       uiMessages: aiUiMessages,
       readerMode,
       repVoteContext,
+      // On the RAG path, tell the prompt builder how the section list
+      // was assembled. Without this the model sees N disconnected
+      // fragments and reasonably hedges that it "can't see the
+      // complete bill text" — even when it found the right answer
+      // from the retrieved subset.
+      retrievalContext:
+        retrievalPath === "rag" && allSections
+          ? {
+              totalSections: allSections.length,
+              retrievedCount: sectionsToUse?.length ?? 0,
+            }
+          : null,
       onBudget: (diagnostics) => {
         // Only emit when something was actually trimmed — the common case
         // is silent. The signal we want is "how often do real users hit

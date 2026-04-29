@@ -26,11 +26,17 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import type { BillSection } from "./bill-sections";
 import { voyageEmbedQuery, VOYAGE_EMBED_MODEL } from "./voyage";
 
-/** Default top-K for retrieval. Sized so the section pack still has
- *  room to fit comfortably under the prompt budget — at ~3K tokens
- *  per chunk, K=30 is ~90K tokens of section content, well under the
- *  165K-token section budget left after metadata + history reserves. */
-export const DEFAULT_RAG_TOP_K = 30;
+/** Default top-K for retrieval. The section budget after overhead +
+ *  history reserves is ~165K tokens. Real chunk sizes from the HR
+ *  7567 backfill averaged ~70 tokens (parsed sections include lots
+ *  of small (a)(1)(A)-style sub-enumerators, not just full sections).
+ *  K=60 is ~4-20K tokens depending on the bill's chunk profile —
+ *  comfortably under the section budget while giving the model
+ *  meaningfully more context than K=30, which was sized for an
+ *  imagined 3K-tokens-per-chunk world that doesn't exist in our
+ *  data. The pack acts as the safety ceiling if a particular bill's
+ *  chunks are unusually large. */
+export const DEFAULT_RAG_TOP_K = 60;
 
 /** Whether the chat path should attempt RAG retrieval at all. Toggled
  *  by `AI_CHAT_RAG_ENABLED` env var so we can ship the code dark and
