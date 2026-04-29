@@ -155,7 +155,45 @@ export default async function BillDetailPage({
   if (!billIdKey) notFound();
 
   const [bill, actions, textVersions, cosponsorRows] = await Promise.all([
-    prisma.bill.findUnique({ where: { billId: billIdKey } }),
+    prisma.bill.findUnique({
+      where: { billId: billIdKey },
+      // No fullText — page renders metadata only. Skipping it avoids shipping
+      // megabytes per page view through the Postgres pooler.
+      select: {
+        id: true,
+        billId: true,
+        title: true,
+        billType: true,
+        currentChamber: true,
+        currentStatus: true,
+        currentStatusDate: true,
+        introducedDate: true,
+        link: true,
+        shortText: true,
+        sponsor: true,
+        cosponsorCount: true,
+        cosponsorPartySplit: true,
+        policyArea: true,
+        latestActionText: true,
+        latestActionDate: true,
+        congressNumber: true,
+        momentumTier: true,
+        daysSinceLastAction: true,
+        deathReason: true,
+        popularTitle: true,
+        shortTitle: true,
+        displayTitle: true,
+        aiShortDescription: true,
+        aiKeyPoints: true,
+        textFetchAttemptedAt: true,
+        // Boolean indicator only — never load the actual text on this page.
+        _count: {
+          select: {
+            textVersions: { where: { fullText: { not: null } } },
+          },
+        },
+      },
+    }),
     prisma.billAction.findMany({
       where: { bill: { billId: billIdKey } },
       orderBy: { actionDate: "asc" },
@@ -211,7 +249,7 @@ export default async function BillDetailPage({
     id: bill.id,
     billId: bill.billId,
     title: bill.title,
-    fullText: bill.fullText,
+    hasFullText: bill._count.textVersions > 0,
     textFetchAttemptedAt: bill.textFetchAttemptedAt,
   });
 

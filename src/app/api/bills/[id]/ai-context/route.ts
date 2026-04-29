@@ -24,25 +24,33 @@ export async function GET(
     return NextResponse.json({ error: "Invalid bill id" }, { status: 400 });
   }
 
-  const [bill, latestVersion] = await Promise.all([
-    prisma.bill.findUnique({
-      where: { id: billId },
-      select: { fullText: true, shortText: true },
-    }),
-    prisma.billTextVersion.findFirst({
-      where: { billId, fullText: { not: null } },
-      select: { id: true },
-    }),
-  ]);
+  // Boolean indicators only — never select fullText/shortText itself.
+  // Selecting fullText would ship megabytes per request when uncached at
+  // the edge. Each count() below is a fast indexed PK lookup returning a
+  // single integer.
+  const [bill, billHasFullText, billHasShortText, versionHasFullText] =
+    await Promise.all([
+      prisma.bill.findUnique({
+        where: { id: billId },
+        select: { id: true },
+      }),
+      prisma.bill.count({
+        where: { id: billId, fullText: { not: null } },
+      }),
+      prisma.bill.count({
+        where: { id: billId, shortText: { not: null } },
+      }),
+      prisma.billTextVersion.count({
+        where: { billId, fullText: { not: null } },
+      }),
+    ]);
 
   if (!bill) {
     return NextResponse.json({ error: "Bill not found" }, { status: 404 });
   }
 
-  const hasFullText =
-    (bill.fullText != null && bill.fullText.length > 0) ||
-    latestVersion != null;
-  const hasShortText = bill.shortText != null && bill.shortText.length > 0;
+  const hasFullText = billHasFullText > 0 || versionHasFullText > 0;
+  const hasShortText = billHasShortText > 0;
 
   const tier: "full" | "summary" | "title-only" = hasFullText
     ? "full"

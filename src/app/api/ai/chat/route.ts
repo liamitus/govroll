@@ -256,15 +256,51 @@ export async function POST(request: NextRequest) {
     const [bill, latestVersion] = await Promise.all([
       prisma.bill.findUnique({
         where: { id: numericBillId },
-        include: {
+        // Omit fullText — the latestVersion query below is the canonical
+        // source of bill text. fetch-bill-text writes both Bill.fullText
+        // and a BillTextVersion row, so latestVersion covers every bill
+        // we've successfully fetched. Pulling Bill.fullText here would
+        // ship megabytes per chat turn through the Postgres pooler.
+        select: {
+          id: true,
+          title: true,
+          billType: true,
+          currentChamber: true,
+          currentStatus: true,
+          introducedDate: true,
+          shortText: true,
+          sponsor: true,
+          cosponsorCount: true,
+          cosponsorPartySplit: true,
+          policyArea: true,
+          latestActionText: true,
+          latestActionDate: true,
+          popularTitle: true,
+          shortTitle: true,
+          displayTitle: true,
           actions: {
             orderBy: { actionDate: "desc" },
             take: ACTION_HISTORY_LIMIT,
+            select: {
+              actionDate: true,
+              text: true,
+            },
           },
           cosponsors: {
             orderBy: { sponsoredAt: "asc" },
             take: COSPONSOR_ROSTER_LIMIT,
-            include: { representative: true },
+            select: {
+              representative: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  party: true,
+                  state: true,
+                  district: true,
+                  chamber: true,
+                },
+              },
+            },
           },
         },
       }),
@@ -275,7 +311,7 @@ export async function POST(request: NextRequest) {
       }),
     ]);
 
-    const rawText = latestVersion?.fullText || bill?.fullText || null;
+    const rawText = latestVersion?.fullText || null;
     const allSections = rawText ? parseSectionsFromFullText(rawText) : null;
     const metadata: BillMetadata | null = bill
       ? {
