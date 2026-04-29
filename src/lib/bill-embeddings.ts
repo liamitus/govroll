@@ -161,6 +161,18 @@ export interface EmbedBillOptions {
    *  running total exceeds this. Set generously by default; backfill
    *  script overrides per-bill. */
   maxCostCents?: number;
+  /** When true, skip the Haiku contextual-retrieval prefix and embed
+   *  just `heading + content`. Voyage's voyage-3-large over plain
+   *  chunk text is still strong; the prefix gives ~30% recall lift on
+   *  legal corpora per Anthropic's benchmark, but generating it
+   *  requires one Haiku call per chunk and Anthropic's tier-1
+   *  organizations cap Haiku at 50 RPM — meaning a 3000-section
+   *  omnibus takes an hour minimum even ignoring per-chunk latency.
+   *
+   *  Default true so the V1 backfill is fast and cheap. Re-run with
+   *  this set to false once the org tier supports the throughput, or
+   *  via Anthropic's batch API for the corpus pass. */
+  skipContext?: boolean;
   /** Hook for progress logs from the script. */
   onProgress?: (msg: string) => void;
 }
@@ -178,7 +190,12 @@ export async function embedBill(
   billId: number,
   options: EmbedBillOptions = {},
 ): Promise<EmbedBillResult> {
-  const { dryRun = false, maxCostCents, onProgress } = options;
+  const {
+    dryRun = false,
+    maxCostCents,
+    skipContext = false,
+    onProgress,
+  } = options;
   const log = onProgress ?? (() => {});
 
   // ── Resolve bill + latest substantive version ─────────────────────
@@ -258,66 +275,84 @@ export async function embedBill(
     currentStatus: bill.currentStatus,
   };
 
-  // ── Stage 1: contextual prefixes (sequential, bounded concurrency) ─
-  // Anthropic accepts moderate concurrency, but cron-time runs are not
-  // latency-sensitive — sequential keeps us nicely under their TPS
-  // budget and produces predictable cost numbers in dry-run.
+  // ── Stage 1: contextual prefixes ──────────────────────────────────
+  // Generates a 1-line context summary per chunk (Anthropic's
+  // contextual-retrieval pattern) so the embedding can disambiguate
+  // chunks that look similar in isolation.
+  //
+  // `skipContext` short-circuits this stage and writes empty prefixes
+  // — used when the org's Haiku rate limit (50 RPM on tier 1) would
+  // make the per-chunk approach take hours on a 3000-section omnibus.
+  // V1 backfill defaults to skip; once tier 2+ throughput is
+  // available, re-run without `--skip-context` to populate the
+  // prefixes (the pipeline is idempotent on (billId, textVersionId)).
   let haikuInputTokens = 0;
   let haikuOutputTokens = 0;
   const contexts: string[] = [];
-  const CONCURRENCY = 4;
-  for (let i = 0; i < usable.length; i += CONCURRENCY) {
-    const batch = usable.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(
-      batch.map((s) =>
-        dryRun
-          ? Promise.resolve({
-              context: `(dry-run) ${s.sectionRef} ${s.heading.slice(0, 50)}`,
-              usage: {
-                // Estimate: ~50 input tokens metadata + chars/3 for content,
-                // capped at CHUNK_CHARS_FOR_CONTEXT chars.
-                inputTokens:
-                  50 +
-                  Math.ceil(
-                    Math.min(s.content.length, CHUNK_CHARS_FOR_CONTEXT) / 3,
-                  ),
-                outputTokens: 30,
-              },
-            })
-          : generateChunkContext(metadata, {
-              sectionRef: s.sectionRef,
-              heading: s.heading,
-              content: s.content,
-            }),
-      ),
-    );
-    for (const r of results) {
-      contexts.push(r.context);
-      haikuInputTokens += r.usage.inputTokens;
-      haikuOutputTokens += r.usage.outputTokens;
-    }
-    if (i % (CONCURRENCY * 10) === 0) {
-      log(
-        `[embed]   contexts: ${Math.min(i + CONCURRENCY, usable.length)}/${usable.length}`,
-      );
-    }
 
-    // Cost guard inside the loop so we abort early on runaway bills.
-    const haikuCostSoFar = Math.ceil(
-      (haikuInputTokens * HAIKU_INPUT_CENTS_PER_MTOK) / 1_000_000 +
-        (haikuOutputTokens * HAIKU_OUTPUT_CENTS_PER_MTOK) / 1_000_000,
+  if (skipContext) {
+    log(
+      `[embed]   skipContext=true — writing empty prefixes (Voyage embeds heading + content directly)`,
     );
-    if (maxCostCents != null && haikuCostSoFar > maxCostCents) {
-      throw new Error(
-        `Bill ${bill.billId} exceeded maxCostCents (${maxCostCents}) at the contextual-retrieval stage. Aborting.`,
+    for (let i = 0; i < usable.length; i++) contexts.push("");
+  } else {
+    const CONCURRENCY = 4;
+    for (let i = 0; i < usable.length; i += CONCURRENCY) {
+      const batch = usable.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map((s) =>
+          dryRun
+            ? Promise.resolve({
+                context: `(dry-run) ${s.sectionRef} ${s.heading.slice(0, 50)}`,
+                usage: {
+                  // Estimate: ~50 input tokens metadata + chars/3 for content,
+                  // capped at CHUNK_CHARS_FOR_CONTEXT chars.
+                  inputTokens:
+                    50 +
+                    Math.ceil(
+                      Math.min(s.content.length, CHUNK_CHARS_FOR_CONTEXT) / 3,
+                    ),
+                  outputTokens: 30,
+                },
+              })
+            : generateChunkContext(metadata, {
+                sectionRef: s.sectionRef,
+                heading: s.heading,
+                content: s.content,
+              }),
+        ),
       );
+      for (const r of results) {
+        contexts.push(r.context);
+        haikuInputTokens += r.usage.inputTokens;
+        haikuOutputTokens += r.usage.outputTokens;
+      }
+      if (i % (CONCURRENCY * 10) === 0) {
+        log(
+          `[embed]   contexts: ${Math.min(i + CONCURRENCY, usable.length)}/${usable.length}`,
+        );
+      }
+
+      // Cost guard inside the loop so we abort early on runaway bills.
+      const haikuCostSoFar = Math.ceil(
+        (haikuInputTokens * HAIKU_INPUT_CENTS_PER_MTOK) / 1_000_000 +
+          (haikuOutputTokens * HAIKU_OUTPUT_CENTS_PER_MTOK) / 1_000_000,
+      );
+      if (maxCostCents != null && haikuCostSoFar > maxCostCents) {
+        throw new Error(
+          `Bill ${bill.billId} exceeded maxCostCents (${maxCostCents}) at the contextual-retrieval stage. Aborting.`,
+        );
+      }
     }
   }
 
   // ── Stage 2: embeddings (batched) ─────────────────────────────────
   const inputsForVoyage = usable.map((s, i) => {
     const prefix = contexts[i];
-    return `${prefix}\n\n${s.heading}\n\n${s.content}`;
+    // Empty prefix (skipContext path) — embed just heading + content.
+    return prefix
+      ? `${prefix}\n\n${s.heading}\n\n${s.content}`
+      : `${s.heading}\n\n${s.content}`;
   });
   const batches = batchTextsForVoyage(inputsForVoyage);
   log(
@@ -327,6 +362,13 @@ export async function embedBill(
   let voyageTokens = 0;
   let voyageCostCents = 0;
   const allEmbeddings: number[][] = [];
+  // Voyage's free tier caps embeddings around 3 requests/minute. Add an
+  // explicit ~2.2s sleep between batches so a 25-batch bill (~5K
+  // chunks) completes inside ~60s wall time without tripping the
+  // rate limit. The withVoyageRetry wrapper has linear-backoff retries
+  // for transient 429s, but those only buy ~9s — not enough when
+  // we're hitting a sustained quota.
+  const VOYAGE_INTER_BATCH_DELAY_MS = 2_200;
   for (let bi = 0; bi < batches.length; bi++) {
     const batch = batches[bi];
     if (dryRun) {
@@ -343,6 +385,9 @@ export async function embedBill(
       voyageTokens += result.totalTokens;
       voyageCostCents += result.costCents;
       allEmbeddings.push(...result.embeddings);
+      if (bi < batches.length - 1) {
+        await new Promise((r) => setTimeout(r, VOYAGE_INTER_BATCH_DELAY_MS));
+      }
     }
 
     const totalSoFar =
@@ -424,51 +469,61 @@ async function persistChunks(
 ): Promise<boolean> {
   const INSERT_BATCH = 100;
 
-  return prisma.$transaction(async (tx) => {
-    const existing = await tx.billEmbeddingChunk.deleteMany({
-      where: { billId, textVersionId },
-    });
-    const replacedExisting = existing.count > 0;
+  return prisma.$transaction(
+    async (tx) => {
+      const existing = await tx.billEmbeddingChunk.deleteMany({
+        where: { billId, textVersionId },
+      });
+      const replacedExisting = existing.count > 0;
 
-    for (let i = 0; i < sections.length; i += INSERT_BATCH) {
-      const batchSections = sections.slice(i, i + INSERT_BATCH);
-      const batchContexts = contexts.slice(i, i + INSERT_BATCH);
-      const batchEmbeddings = embeddings.slice(i, i + INSERT_BATCH);
+      for (let i = 0; i < sections.length; i += INSERT_BATCH) {
+        const batchSections = sections.slice(i, i + INSERT_BATCH);
+        const batchContexts = contexts.slice(i, i + INSERT_BATCH);
+        const batchEmbeddings = embeddings.slice(i, i + INSERT_BATCH);
 
-      const values: string[] = [];
-      const params: (string | number)[] = [];
-      for (let j = 0; j < batchSections.length; j++) {
-        const idx = i + j;
-        const section = batchSections[j];
-        const context = batchContexts[j];
-        const embedding = batchEmbeddings[j];
-        const vectorLiteral = `[${embedding.join(",")}]`;
+        const values: string[] = [];
+        const params: (string | number)[] = [];
+        for (let j = 0; j < batchSections.length; j++) {
+          const idx = i + j;
+          const section = batchSections[j];
+          const context = batchContexts[j];
+          const embedding = batchEmbeddings[j];
+          const vectorLiteral = `[${embedding.join(",")}]`;
 
-        const base = params.length;
-        // Order matches the column list below. Vector goes through as a
-        // text literal cast to vector — pg-style $N::vector.
-        params.push(
-          billId,
-          textVersionId,
-          idx,
-          section.sectionRef,
-          section.heading,
-          section.content,
-          context,
-          vectorLiteral,
-          VOYAGE_EMBED_MODEL,
-        );
-        values.push(
-          `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}::vector, $${base + 9})`,
-        );
+          const base = params.length;
+          // Order matches the column list below. Vector goes through as a
+          // text literal cast to vector — pg-style $N::vector.
+          params.push(
+            billId,
+            textVersionId,
+            idx,
+            section.sectionRef,
+            section.heading,
+            section.content,
+            context,
+            vectorLiteral,
+            VOYAGE_EMBED_MODEL,
+          );
+          values.push(
+            `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}::vector, $${base + 9})`,
+          );
+        }
+
+        const sql = `INSERT INTO "BillEmbeddingChunk" ("billId", "textVersionId", "chunkIndex", "sectionRef", "heading", "content", "contextPrefix", "embedding", "embeddingModel") VALUES ${values.join(", ")}`;
+        await tx.$executeRawUnsafe(sql, ...params);
       }
 
-      const sql = `INSERT INTO "BillEmbeddingChunk" ("billId", "textVersionId", "chunkIndex", "sectionRef", "heading", "content", "contextPrefix", "embedding", "embeddingModel") VALUES ${values.join(", ")}`;
-      await tx.$executeRawUnsafe(sql, ...params);
-    }
-
-    return replacedExisting;
-  });
+      return replacedExisting;
+    },
+    {
+      // Default 5s is fine for small bills, but a 5K-section omnibus
+      // pushes ~3MB of vector payload across ~30 batched inserts; that
+      // routinely exceeds 5s on the pooler. 2 minutes is comfortably
+      // generous for any reasonable bill we'd index.
+      timeout: 120_000,
+      maxWait: 10_000,
+    },
+  );
 }
 
 /**
