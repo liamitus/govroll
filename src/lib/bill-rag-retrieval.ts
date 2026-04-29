@@ -36,11 +36,18 @@ export const DEFAULT_RAG_TOP_K = 30;
  *  by `AI_CHAT_RAG_ENABLED` env var so we can ship the code dark and
  *  flip it on per-bill or globally once HR 7567 quality is proven.
  *
+ *  Trimmed before comparison — a real outage was caused by a piped
+ *  `echo true | vercel env add` storing the value as "true\n", which
+ *  silently failed the strict equality and kept RAG dark for hours.
+ *  We still hard-string-equal "true" (case-sensitive) so accidental
+ *  truthy values like "1"/"yes"/"on" don't enable the path; we just
+ *  no longer trip over whitespace.
+ *
  *  Read at call time (not module load) so the env can be flipped
  *  without redeploying — the chat route picks up the new value on the
  *  next request. */
 export function isRagPathEnabled(): boolean {
-  return process.env.AI_CHAT_RAG_ENABLED === "true";
+  return (process.env.AI_CHAT_RAG_ENABLED ?? "").trim() === "true";
 }
 
 /** Cheap existence probe — does this bill have any embedded chunks?
