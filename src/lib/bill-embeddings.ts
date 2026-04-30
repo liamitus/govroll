@@ -435,6 +435,20 @@ export async function embedBill(
     allEmbeddings,
   );
 
+  // Set the completion marker AFTER all chunks land. If `persistChunks`
+  // crashed mid-loop, we never reach this line, the column stays at
+  // its previous value, and the next run's candidate filter (which
+  // checks `embeddingsTextVersionId !== latest.id`) re-runs the bill
+  // — `persistChunks` starts with a `deleteMany` that cleans the
+  // partial-state chunks before inserting fresh ones.
+  await prisma.bill.update({
+    where: { id: billId },
+    data: {
+      embeddingsTextVersionId: version.id,
+      embeddingsCompletedAt: new Date(),
+    },
+  });
+
   log(
     `[embed]   wrote ${usable.length} rows (replacedExisting=${replacedExisting}). Cost: ${(totalCostCents / 100).toFixed(2)} USD`,
   );
@@ -453,12 +467,37 @@ export async function embedBill(
 }
 
 /**
- * Delete + insert in a single transaction. Prisma has no native pgvector
- * write helper, so we issue parameterized raw SQL — the `vector(1024)`
- * column expects a literal in the form `'[0.1,0.2,...]'::vector`.
+ * Delete the existing chunks for `(billId, textVersionId)`, then insert
+ * the new ones in many small per-statement transactions.
  *
- * Batched into multi-row INSERTs (~100 rows per call) so a 5000-section
- * omnibus doesn't issue 5000 round trips.
+ * Why not one big transaction:
+ *   The previous version wrapped delete + all-inserts in a single
+ *   Prisma `$transaction`. That's clean atomically, but on the very
+ *   largest legislation we index (NDAA-class, 10K-12K chunks) the
+ *   pgvector HNSW index update gets nonlinearly slow as the index
+ *   grows. Even a 600s transaction timeout isn't enough — and bumping
+ *   it further fights against Postgres's own statement_timeout (set
+ *   by the Supabase pooler, also not configurable via the connection
+ *   URL on Pro tier).
+ *
+ * Why this is safe:
+ *   The atomicity story is "the bill is fully embedded only after the
+ *   caller (`embedBill`) sets `Bill.embeddingsTextVersionId` AT THE
+ *   END of a successful run." That column — not the presence of any
+ *   chunk row — is what the candidate filter checks to decide whether
+ *   a bill needs (re-)embedding. If we crash mid-INSERT loop, some
+ *   chunks for `textVersionId` exist but the column stays at its old
+ *   value (or null), so the next run re-runs `persistChunks` from
+ *   scratch. The `deleteMany` at the start cleans up the partial
+ *   state. The unique constraint on `(billId, textVersionId,
+ *   chunkIndex)` is the safety net against double-writes.
+ *
+ * Small-batch trade-off:
+ *   25 rows per INSERT (down from 100) keeps any single statement
+ *   well under the pooler's per-statement timeout — even on bills
+ *   where individual statements were getting cancelled at 100/batch.
+ *   Total round-trips go up, but each is fast and there's no
+ *   transaction-wide ceiling we can blow past.
  */
 async function persistChunks(
   prisma: PrismaClient,
@@ -468,67 +507,55 @@ async function persistChunks(
   contexts: string[],
   embeddings: number[][],
 ): Promise<boolean> {
-  const INSERT_BATCH = 100;
+  const INSERT_BATCH = 25;
 
-  return prisma.$transaction(
-    async (tx) => {
-      const existing = await tx.billEmbeddingChunk.deleteMany({
-        where: { billId, textVersionId },
-      });
-      const replacedExisting = existing.count > 0;
+  // Implicit per-statement transaction. `deleteMany` is fast (FK
+  // index, then row-by-row) and well within any timeout.
+  const existing = await prisma.billEmbeddingChunk.deleteMany({
+    where: { billId, textVersionId },
+  });
+  const replacedExisting = existing.count > 0;
 
-      for (let i = 0; i < sections.length; i += INSERT_BATCH) {
-        const batchSections = sections.slice(i, i + INSERT_BATCH);
-        const batchContexts = contexts.slice(i, i + INSERT_BATCH);
-        const batchEmbeddings = embeddings.slice(i, i + INSERT_BATCH);
+  for (let i = 0; i < sections.length; i += INSERT_BATCH) {
+    const batchSections = sections.slice(i, i + INSERT_BATCH);
+    const batchContexts = contexts.slice(i, i + INSERT_BATCH);
+    const batchEmbeddings = embeddings.slice(i, i + INSERT_BATCH);
 
-        const values: string[] = [];
-        const params: (string | number)[] = [];
-        for (let j = 0; j < batchSections.length; j++) {
-          const idx = i + j;
-          const section = batchSections[j];
-          const context = batchContexts[j];
-          const embedding = batchEmbeddings[j];
-          const vectorLiteral = `[${embedding.join(",")}]`;
+    const values: string[] = [];
+    const params: (string | number)[] = [];
+    for (let j = 0; j < batchSections.length; j++) {
+      const idx = i + j;
+      const section = batchSections[j];
+      const context = batchContexts[j];
+      const embedding = batchEmbeddings[j];
+      const vectorLiteral = `[${embedding.join(",")}]`;
 
-          const base = params.length;
-          // Order matches the column list below. Vector goes through as a
-          // text literal cast to vector — pg-style $N::vector.
-          params.push(
-            billId,
-            textVersionId,
-            idx,
-            section.sectionRef,
-            section.heading,
-            section.content,
-            context,
-            vectorLiteral,
-            VOYAGE_EMBED_MODEL,
-          );
-          values.push(
-            `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}::vector, $${base + 9})`,
-          );
-        }
+      const base = params.length;
+      params.push(
+        billId,
+        textVersionId,
+        idx,
+        section.sectionRef,
+        section.heading,
+        section.content,
+        context,
+        vectorLiteral,
+        VOYAGE_EMBED_MODEL,
+      );
+      values.push(
+        `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}::vector, $${base + 9})`,
+      );
+    }
 
-        const sql = `INSERT INTO "BillEmbeddingChunk" ("billId", "textVersionId", "chunkIndex", "sectionRef", "heading", "content", "contextPrefix", "embedding", "embeddingModel") VALUES ${values.join(", ")}`;
-        await tx.$executeRawUnsafe(sql, ...params);
-      }
+    const sql = `INSERT INTO "BillEmbeddingChunk" ("billId", "textVersionId", "chunkIndex", "sectionRef", "heading", "content", "contextPrefix", "embedding", "embeddingModel") VALUES ${values.join(", ")}`;
+    // Each call is its own implicit transaction — durable on success,
+    // independent on failure. The caller (`embedBill`) sets the
+    // `embeddingsTextVersionId` completion marker on Bill only after
+    // this loop finishes without throwing.
+    await prisma.$executeRawUnsafe(sql, ...params);
+  }
 
-      return replacedExisting;
-    },
-    {
-      // Default 5s is way too short. 120s fell over on bills with
-      // 6K+ chunks; 300s ALSO fell over on a 6877-chunk bill that
-      // took 303s. Real-world ceiling on the largest legislation we
-      // index (10K+ usable chunks) is ~10 min. 600s is generous
-      // enough for any bill we'd reasonably embed. Locally we just
-      // consume more wall time; the cron path also uses 600s but
-      // its own per-call deadline (TIMEOUT_MS=250_000 in route.ts)
-      // is what actually bounds Vercel function runtime.
-      timeout: 600_000,
-      maxWait: 15_000,
-    },
-  );
+  return replacedExisting;
 }
 
 /**
