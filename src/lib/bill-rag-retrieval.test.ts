@@ -59,6 +59,17 @@ describe("isRagPathEnabled", () => {
       expect(isRagPathEnabled()).toBe(false);
     }
   });
+
+  it("tolerates whitespace around 'true' (the echo-piped-newline bug)", () => {
+    // `echo true | vercel env add` stored the value as "true\n", which
+    // silently failed === "true" and kept RAG dark in production for
+    // hours. Pin that the trim path now treats common whitespace as
+    // equivalent — without loosening the literal-string check.
+    for (const value of ["true\n", " true", "true ", "\ttrue\n"]) {
+      process.env.AI_CHAT_RAG_ENABLED = value;
+      expect(isRagPathEnabled()).toBe(true);
+    }
+  });
 });
 
 describe("billHasEmbeddings", () => {

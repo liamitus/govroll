@@ -362,13 +362,14 @@ export async function embedBill(
   let voyageTokens = 0;
   let voyageCostCents = 0;
   const allEmbeddings: number[][] = [];
-  // Voyage's free tier caps embeddings around 3 requests/minute. Add an
-  // explicit ~2.2s sleep between batches so a 25-batch bill (~5K
-  // chunks) completes inside ~60s wall time without tripping the
-  // rate limit. The withVoyageRetry wrapper has linear-backoff retries
-  // for transient 429s, but those only buy ~9s — not enough when
-  // we're hitting a sustained quota.
-  const VOYAGE_INTER_BATCH_DELAY_MS = 2_200;
+  // Defensive inter-batch sleep. Voyage's paid tier
+  // (voyage-3-large) is 2000 RPM / 6M TPM — way more than we'd ever
+  // generate from a backfill — so the previous 2.2s value was
+  // overshoot from the free-tier era. 100ms is enough to stop
+  // micro-bursts from queuing if a future bug raises concurrency,
+  // while adding negligible wall time even on a corpus-wide
+  // backfill.
+  const VOYAGE_INTER_BATCH_DELAY_MS = 100;
   for (let bi = 0; bi < batches.length; bi++) {
     const batch = batches[bi];
     if (dryRun) {
@@ -516,12 +517,16 @@ async function persistChunks(
       return replacedExisting;
     },
     {
-      // Default 5s is fine for small bills, but a 5K-section omnibus
-      // pushes ~3MB of vector payload across ~30 batched inserts; that
-      // routinely exceeds 5s on the pooler. 2 minutes is comfortably
-      // generous for any reasonable bill we'd index.
-      timeout: 120_000,
-      maxWait: 10_000,
+      // Default 5s is way too short. 120s fell over on bills with
+      // 6K+ chunks; 300s ALSO fell over on a 6877-chunk bill that
+      // took 303s. Real-world ceiling on the largest legislation we
+      // index (10K+ usable chunks) is ~10 min. 600s is generous
+      // enough for any bill we'd reasonably embed. Locally we just
+      // consume more wall time; the cron path also uses 600s but
+      // its own per-call deadline (TIMEOUT_MS=250_000 in route.ts)
+      // is what actually bounds Vercel function runtime.
+      timeout: 600_000,
+      maxWait: 15_000,
     },
   );
 }
