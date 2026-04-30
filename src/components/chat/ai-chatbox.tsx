@@ -253,6 +253,15 @@ export function AiChatbox({
   const [textTier, setTextTier] = useState<
     "full" | "summary" | "title-only" | null
   >(null);
+  // When a suggestion pill is clicked we open the drawer AND fire the
+  // message in the same handler. Between those two state updates and the
+  // moment useChat's optimistic user-message lands, there can be a frame
+  // where `messages.length === 0 && !isBusy` is briefly true and the
+  // drawer flashes its empty state with a different set of suggestions —
+  // which reads as "nothing happened, the click didn't work." This flag
+  // suppresses the empty state across that gap and is cleared the moment
+  // there's real content to show (or the drawer is closed).
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
   // Open state — either controlled by the parent (reader use case)
   // or owned internally (detail page use case). The Sheet's
@@ -345,6 +354,17 @@ export function AiChatbox({
     }
   }, [status]);
 
+  // Drop the pending-prompt flag the moment the drawer has real content
+  // to render (or the user closed the drawer). Covers all exit paths so
+  // the flag can never get stuck blocking the empty state forever.
+  const isBusy = status === "submitted" || status === "streaming";
+  useEffect(() => {
+    if (!pendingPrompt) return;
+    if (messages.length > 0 || isBusy || errorState || !open) {
+      setPendingPrompt(null);
+    }
+  }, [pendingPrompt, messages.length, isBusy, errorState, open]);
+
   // Hydrate the most recent conversation for this bill on mount.
   useEffect(() => {
     if (!userId) return;
@@ -393,8 +413,6 @@ export function AiChatbox({
       return () => clearTimeout(t);
     }
   }, [open]);
-
-  const isBusy = status === "submitted" || status === "streaming";
 
   const submit = useCallback(
     (overrideText?: string) => {
@@ -540,8 +558,14 @@ export function AiChatbox({
                     key={q}
                     type="button"
                     onClick={() => {
+                      // Open the drawer + fire the question in one motion.
+                      // pendingPrompt suppresses the drawer empty state so
+                      // the user never sees a flash of "different pills"
+                      // between the drawer animation and the optimistic
+                      // user message landing.
+                      setPendingPrompt(q);
                       setOpen(true);
-                      void sendMessage({ text: q });
+                      submit(q);
                     }}
                     className="border-civic-gold/40 text-foreground/80 hover:border-civic-gold hover:bg-civic-cream/60 rounded-full border bg-white px-3 py-1 text-xs font-medium transition-colors"
                   >
@@ -645,20 +669,26 @@ export function AiChatbox({
                     spendCents={aiPaused.spendCents}
                   />
                 </div>
-              ) : messages.length === 0 && !isBusy && !errorState ? (
+              ) : messages.length === 0 &&
+                !isBusy &&
+                !errorState &&
+                !pendingPrompt ? (
                 <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                  <p className="text-foreground mb-1 text-base font-medium">
+                  <p className="text-foreground mb-3 text-base font-medium">
                     Ask anything about this bill
                   </p>
-                  <p className="text-muted-foreground max-w-sm text-sm">
-                    Try{" "}
-                    {(() => {
-                      // Tier-3 bills have no text or CRS summary, so the
-                      // high-value answerable questions are about metadata —
-                      // who introduced it, where it is in the process — not
-                      // "what does it do" which would just get hedged.
-                      const suggestions =
-                        textTier === "title-only"
+                  {(() => {
+                    // Prefer the same starter prompts the inline card
+                    // showed (status-aware, picked by the page). Falling
+                    // back to a tier-based pair keeps reader-mode and
+                    // other callers that don't pass `suggestedQuestions`
+                    // working — Tier-3 bills have no full text or CRS
+                    // summary, so metadata questions answer better than
+                    // "what does it do" which just gets hedged.
+                    const drawerSuggestions =
+                      suggestedQuestions && suggestedQuestions.length > 0
+                        ? suggestedQuestions
+                        : textTier === "title-only"
                           ? [
                               "Who introduced this bill?",
                               "What's happened on this bill so far?",
@@ -667,27 +697,21 @@ export function AiChatbox({
                               "What does this bill actually do?",
                               "Who is most affected?",
                             ];
-                      return (
-                        <>
+                    return (
+                      <div className="flex max-w-sm flex-wrap justify-center gap-1.5">
+                        {drawerSuggestions.map((q) => (
                           <button
+                            key={q}
                             type="button"
-                            onClick={() => submit(suggestions[0])}
-                            className="hover:text-foreground underline"
+                            onClick={() => submit(q)}
+                            className="border-civic-gold/40 text-foreground/80 hover:border-civic-gold hover:bg-civic-cream/60 rounded-full border bg-white px-3 py-1 text-xs font-medium transition-colors"
                           >
-                            {suggestions[0]}
-                          </button>{" "}
-                          or{" "}
-                          <button
-                            type="button"
-                            onClick={() => submit(suggestions[1])}
-                            className="hover:text-foreground underline"
-                          >
-                            {suggestions[1]}
+                            {q}
                           </button>
-                        </>
-                      );
-                    })()}
-                  </p>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div ref={contentRef} className="space-y-4">
