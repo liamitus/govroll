@@ -39,6 +39,11 @@ model Bill {
   shortText             String?
   fullText              String?
   sponsor               String?
+  // bioguideId of the sponsor — populated alongside `sponsor` text when the
+  // Congress.gov bill detail endpoint returns one. Lets the rep card surface
+  // "Sponsored this bill" when the user's senator/representative is the
+  // sponsor instead of falsely reading as "no engagement."
+  sponsorBioguideId     String?
   cosponsorCount        Int?
   cosponsorPartySplit   String?
   policyArea            String?

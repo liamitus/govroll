@@ -31,10 +31,16 @@ export async function POST(request: NextRequest) {
 
     const bill = await prisma.bill.findUnique({
       where: { id: parseInt(billId) },
-      // Only billType + currentStatus are read from this row (line 74) —
-      // skip fullText and other large columns so this endpoint doesn't
-      // ship megabytes per request.
-      select: { id: true, billType: true, currentStatus: true },
+      // Only billType, currentStatus, sponsorBioguideId are read from this
+      // row — skip fullText and other large columns so this endpoint
+      // doesn't ship megabytes per request.
+      select: {
+        id: true,
+        billType: true,
+        currentStatus: true,
+        sponsorBioguideId: true,
+        introducedDate: true,
+      },
     });
 
     if (!bill) {
@@ -231,6 +237,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       representatives: filteredReps,
       chamberPassage,
+      sponsorBioguideId: bill.sponsorBioguideId,
+      introducedDate: bill.introducedDate?.toISOString() ?? null,
     });
   } catch (error) {
     console.error("Error fetching representatives:", error);
