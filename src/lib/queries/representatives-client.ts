@@ -46,6 +46,13 @@ export function repsForBillQueryKey(billId: number, address: string) {
 export interface RepsForBillResult {
   representatives: unknown[];
   chamberPassage: unknown[];
+  /** bioguideId of the sponsor when known. Lets the rep card label the
+   * sponsor's row "Sponsored this bill" instead of treating the sponsor
+   * like any other rep with no roll-call vote. */
+  sponsorBioguideId: string | null;
+  /** ISO date the bill was introduced — used to date the sponsorship
+   * caption on the matching rep card. */
+  introducedDate: string | null;
 }
 
 export async function fetchRepsForBill(
@@ -66,5 +73,7 @@ export async function fetchRepsForBill(
   return {
     representatives: data.representatives ?? [],
     chamberPassage: data.chamberPassage ?? [],
+    sponsorBioguideId: data.sponsorBioguideId ?? null,
+    introducedDate: data.introducedDate ?? null,
   };
 }

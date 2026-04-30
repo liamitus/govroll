@@ -298,6 +298,10 @@ export async function fetchOfficialBillTitle(
  */
 export interface BillMetadata {
   sponsor: string | null; // "Sen. Rick Scott (R-FL)"
+  /** bioguideId of the sponsor when Congress.gov provides one. Used to
+   * link the sponsor to a specific Representative row so the rep card
+   * can surface "Sponsored this bill". */
+  sponsorBioguideId: string | null;
   cosponsorCount: number | null;
   cosponsorPartySplit: string | null; // "5 D, 3 R"
   policyArea: string | null;
@@ -542,6 +546,35 @@ async function fetchBillSummary(
   }
 }
 
+/**
+ * Lean fetch — returns just the sponsor's bioguideId from Congress.gov
+ * by hitting the `/bill/{congress}/{type}/{number}` endpoint exactly
+ * once. Used by the sponsorBioguideId backfill, which doesn't want to
+ * pay the cost (or risk overwriting fresher fields) of a full
+ * `fetchBillMetadata` call.
+ *
+ * Returns:
+ * - the bioguideId string when Congress.gov has a sponsor with one,
+ * - `null` when the bill exists but has no sponsor / no bioguideId,
+ * - throws on network errors so the caller can retry / log.
+ */
+export async function fetchBillSponsorBioguideId(
+  congress: number,
+  apiBillType: string,
+  billNumber: number,
+): Promise<string | null> {
+  const res = await withRetry(() =>
+    congressApiClient.get(`/bill/${congress}/${apiBillType}/${billNumber}`),
+  );
+  const sponsorItem = Array.isArray(res.data?.bill?.sponsors)
+    ? res.data.bill.sponsors[0]
+    : null;
+  if (!sponsorItem) return null;
+  return typeof sponsorItem.bioguideId === "string"
+    ? sponsorItem.bioguideId
+    : null;
+}
+
 export async function fetchBillMetadata(
   congress: number,
   apiBillType: string,
@@ -570,6 +603,10 @@ export async function fetchBillMetadata(
     const sponsor = sponsorItem
       ? `${sponsorItem.fullName ?? ""}`.trim() || null
       : null;
+    const sponsorBioguideId =
+      sponsorItem && typeof sponsorItem.bioguideId === "string"
+        ? sponsorItem.bioguideId
+        : null;
 
     const safeCosponsorList = cosponsorList ?? [];
     let partySplit: string | null = null;
@@ -587,6 +624,7 @@ export async function fetchBillMetadata(
 
     return {
       sponsor,
+      sponsorBioguideId,
       cosponsorCount:
         bill.cosponsors?.count ?? safeCosponsorList.length ?? null,
       cosponsorPartySplit: partySplit,

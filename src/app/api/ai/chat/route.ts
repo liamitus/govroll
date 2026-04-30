@@ -276,6 +276,7 @@ export async function POST(request: NextRequest) {
           introducedDate: true,
           shortText: true,
           sponsor: true,
+          sponsorBioguideId: true,
           cosponsorCount: true,
           cosponsorPartySplit: true,
           policyArea: true,
@@ -322,6 +323,7 @@ export async function POST(request: NextRequest) {
     const metadata: BillMetadata | null = bill
       ? {
           sponsor: bill.sponsor,
+          sponsorBioguideId: bill.sponsorBioguideId,
           cosponsorCount: bill.cosponsorCount,
           cosponsorPartySplit: bill.cosponsorPartySplit,
           policyArea: bill.policyArea,

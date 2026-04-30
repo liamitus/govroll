@@ -78,6 +78,23 @@ function cosponsorLabel(
 }
 
 /**
+ * Strongest engagement caption we can render under a rep's name. Sponsor
+ * beats cosponsor — a rep who introduced the bill shouldn't read as
+ * just one of many cosponsors.
+ */
+function repSignalCaption(
+  rep: RepresentativeWithVote,
+  isSponsor: boolean,
+  introducedDate: string | null,
+): string | null {
+  if (isSponsor) {
+    const date = formatMonthDay(introducedDate);
+    return date ? `Sponsored this bill · ${date}` : "Sponsored this bill";
+  }
+  return cosponsorLabel(rep.cosponsorship);
+}
+
+/**
  * When the best vote we have for a rep is NOT a passage vote, label it
  * with context so a "Yes" badge on a procedural motion isn't mistaken
  * for a "Yes" on the bill itself. GovTrack only gives us a coarse
@@ -109,14 +126,18 @@ function RepCard({
   rep,
   displayVote,
   muted = false,
+  isSponsor = false,
+  introducedDate = null,
 }: {
   rep: RepresentativeWithVote;
   displayVote: string;
   muted?: boolean;
+  isSponsor?: boolean;
+  introducedDate?: string | null;
 }) {
   const [showHistory, setShowHistory] = useState(false);
   const hasHistory = rep.voteHistory && rep.voteHistory.length > 1;
-  const cosponsorText = cosponsorLabel(rep.cosponsorship);
+  const signalText = repSignalCaption(rep, isSponsor, introducedDate);
   const voteContext =
     rep.vote !== NO_VOTE_SENTINEL ? voteContextLabel(rep.voteCategory) : null;
 
@@ -150,9 +171,9 @@ function RepCard({
               {rep.party.replace("Democratic", "Democrat")} · {rep.state}
               {rep.district ? `-${rep.district}` : ""}
             </p>
-            {cosponsorText && (
+            {signalText && (
               <p className="text-civic-gold mt-0.5 truncate text-xs">
-                {cosponsorText}
+                {signalText}
               </p>
             )}
           </div>
@@ -243,12 +264,13 @@ function CombinedVoiceVoteNotice() {
     <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
       <p className="text-foreground">
         <span className="font-semibold">
-          Both chambers passed this bill without a recorded roll call.
+          Both chambers agreed to this bill, but there&rsquo;s no per-member
+          vote to show.
         </span>{" "}
         <span className="text-muted-foreground">
-          Bills often pass by voice vote or unanimous consent when they
-          aren&apos;t controversial — no individual votes are recorded on
-          passage itself.{" "}
+          Voice votes and unanimous consent don&rsquo;t produce individual
+          records — the chamber acts as a body. We can&rsquo;t tell you how each
+          member voted because that data doesn&rsquo;t exist.{" "}
           <Link
             href="/about/how-congress-votes"
             className="hover:text-foreground underline underline-offset-2"
@@ -262,8 +284,81 @@ function CombinedVoiceVoteNotice() {
   );
 }
 
+function RejectionNotice({ passage }: { passage: ChamberPassageInfo }) {
+  const chamberName = passage.chamber === "house" ? "House" : "Senate";
+  const reason = passage.rejectionReason ?? "passage";
+
+  if (reason === "cloture") {
+    return (
+      <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
+        <p className="text-foreground">
+          <span className="font-semibold">
+            The Senate couldn&rsquo;t end debate on this bill.
+          </span>{" "}
+          <span className="text-muted-foreground">
+            A cloture motion needs 60 votes to cut off debate and force a final
+            vote. Without it, the bill is filibustered and stuck — though
+            cloture can be tried again later. The cloture vote below is where
+            each senator stood.{" "}
+            <Link
+              href="/about/how-congress-votes#procedural"
+              className="hover:text-foreground underline underline-offset-2"
+            >
+              Learn more
+            </Link>
+            .
+          </span>
+        </p>
+      </div>
+    );
+  }
+
+  if (reason === "suspension") {
+    return (
+      <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
+        <p className="text-foreground">
+          <span className="font-semibold">
+            The House voted on this bill under suspension of the rules and it
+            didn&rsquo;t pass.
+          </span>{" "}
+          <span className="text-muted-foreground">
+            Suspension is a fast-track procedure that requires a 2/3 majority.
+            The bill could come back under regular order, where it would only
+            need a simple majority. The suspension vote below is where each
+            member stood.{" "}
+            <Link
+              href="/about/how-congress-votes#procedural"
+              className="hover:text-foreground underline underline-offset-2"
+            >
+              Learn more
+            </Link>
+            .
+          </span>
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
+      <p className="text-foreground">
+        <span className="font-semibold">
+          The {chamberName} voted on this bill and rejected it.
+        </span>{" "}
+        <span className="text-muted-foreground">
+          The vote below is where each member stood.
+        </span>
+      </p>
+    </div>
+  );
+}
+
 function ChamberNotice({ passage }: { passage: ChamberPassageInfo }) {
   const chamberName = passage.chamber === "house" ? "House" : "Senate";
+
+  if (passage.status === "rejected") {
+    return <RejectionNotice passage={passage} />;
+  }
 
   if (passage.status === "pending") {
     // Pending + procedural votes recorded → reps have taken a
@@ -308,12 +403,13 @@ function ChamberNotice({ passage }: { passage: ChamberPassageInfo }) {
       <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
         <p className="text-foreground">
           <span className="font-semibold">
-            The {chamberName} passed this bill without a recorded roll call.
+            The {chamberName} agreed to this bill, but there&rsquo;s no
+            per-member vote to show.
           </span>{" "}
           <span className="text-muted-foreground">
-            Bills often pass by voice vote or unanimous consent when they
-            aren&apos;t controversial — no individual votes are recorded on
-            passage itself.
+            Voice votes and unanimous consent don&rsquo;t produce individual
+            records — the chamber acts as a body. We can&rsquo;t tell you how
+            each member voted because that data doesn&rsquo;t exist.
             {hasProcedural
               ? " Procedural votes during consideration were recorded — those are shown below."
               : ""}{" "}
@@ -348,6 +444,8 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
     (data?.representatives as RepresentativeWithVote[] | undefined) ?? [];
   const chamberPassage: ChamberPassageInfo[] =
     (data?.chamberPassage as ChamberPassageInfo[] | undefined) ?? [];
+  const sponsorBioguideId = data?.sponsorBioguideId ?? null;
+  const introducedDate = data?.introducedDate ?? null;
   const loading = isFetching && reps.length === 0;
 
   const handleSubmitAddress = () => {
@@ -412,6 +510,11 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
     senatePassage,
   );
 
+  // Sponsorship is the strongest engagement signal a rep can have on a
+  // bill — it should never be muted away by "no recorded vote" framing.
+  const repIsSponsor = (rep: RepresentativeWithVote): boolean =>
+    sponsorBioguideId !== null && rep.bioguideId === sponsorBioguideId;
+
   const renderChamberGroup = (
     chamber: ChamberName,
     groupReps: RepresentativeWithVote[],
@@ -421,13 +524,14 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
 
     // When the chamber passed without a recorded passage roll call, the
     // chamber notice replaces the vote column. We still surface per-rep
-    // cards when there's a signal worth showing: the rep cosponsored the
-    // bill, or the rep has a procedural vote (motion to suspend, motion
-    // to recommit, cloture) on this bill. Both are accountability data
-    // even when final passage wasn't recorded.
+    // cards when there's a signal worth showing: the rep sponsored or
+    // cosponsored the bill, or the rep has a procedural vote (motion to
+    // suspend, motion to recommit, cloture) on this bill. All three are
+    // accountability data even when final passage wasn't recorded.
     if (passage.status === "passed_without_rollcall") {
       const repsWithSignal = groupReps.filter(
-        (r) => r.cosponsorship || r.vote !== NO_VOTE_SENTINEL,
+        (r) =>
+          repIsSponsor(r) || r.cosponsorship || r.vote !== NO_VOTE_SENTINEL,
       );
       return (
         <div className="space-y-2">
@@ -436,12 +540,15 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
           {!bothVoiceVote && <ChamberNotice passage={passage} />}
           {repsWithSignal.map((rep) => {
             const hasVote = rep.vote !== NO_VOTE_SENTINEL;
+            const sponsor = repIsSponsor(rep);
             return (
               <RepCard
                 key={rep.bioguideId}
                 rep={rep}
                 displayVote={hasVote ? rep.vote : "No recorded vote"}
-                muted={!hasVote}
+                muted={!hasVote && !sponsor}
+                isSponsor={sponsor}
+                introducedDate={introducedDate}
               />
             );
           })}
@@ -456,14 +563,19 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
       return (
         <div className="space-y-2">
           <ChamberNotice passage={passage} />
-          {groupReps.map((rep) => (
-            <RepCard
-              key={rep.bioguideId}
-              rep={rep}
-              displayVote="Pending"
-              muted
-            />
-          ))}
+          {groupReps.map((rep) => {
+            const sponsor = repIsSponsor(rep);
+            return (
+              <RepCard
+                key={rep.bioguideId}
+                rep={rep}
+                displayVote="Pending"
+                muted={!sponsor}
+                isSponsor={sponsor}
+                introducedDate={introducedDate}
+              />
+            );
+          })}
         </div>
       );
     }
@@ -478,13 +590,43 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
           <ChamberNotice passage={passage} />
           {groupReps.map((rep) => {
             const isMissing = rep.vote === NO_VOTE_SENTINEL;
+            const sponsor = repIsSponsor(rep);
             const displayVote = isMissing ? "Not yet" : rep.vote;
             return (
               <RepCard
                 key={rep.bioguideId}
                 rep={rep}
                 displayVote={displayVote}
-                muted={isMissing}
+                muted={isMissing && !sponsor}
+                isSponsor={sponsor}
+                introducedDate={introducedDate}
+              />
+            );
+          })}
+        </div>
+      );
+    }
+
+    // Chamber rejected the bill (failed passage / cloture / suspension).
+    // The chamber DID hold a recorded vote, just not one that advanced
+    // the bill. Show the rejection notice so users don't read it as
+    // "hasn't voted yet," then surface each rep's vote.
+    if (passage.status === "rejected") {
+      return (
+        <div className="space-y-2">
+          <ChamberNotice passage={passage} />
+          {groupReps.map((rep) => {
+            const isMissing = rep.vote === NO_VOTE_SENTINEL;
+            const sponsor = repIsSponsor(rep);
+            const displayVote = isMissing ? "Did not vote" : rep.vote;
+            return (
+              <RepCard
+                key={rep.bioguideId}
+                rep={rep}
+                displayVote={displayVote}
+                muted={isMissing && !sponsor}
+                isSponsor={sponsor}
+                introducedDate={introducedDate}
               />
             );
           })}
@@ -498,13 +640,16 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
       <div className="space-y-2">
         {groupReps.map((rep) => {
           const isMissing = rep.vote === NO_VOTE_SENTINEL;
+          const sponsor = repIsSponsor(rep);
           const displayVote = isMissing ? "Did not vote" : rep.vote;
           return (
             <RepCard
               key={rep.bioguideId}
               rep={rep}
               displayVote={displayVote}
-              muted={isMissing}
+              muted={isMissing && !sponsor}
+              isSponsor={sponsor}
+              introducedDate={introducedDate}
             />
           );
         })}

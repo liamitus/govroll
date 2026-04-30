@@ -43,6 +43,7 @@ async function backfillOne(billRow: { id: number; billId: string }) {
     where: { id: billRow.id },
     data: {
       sponsor: meta.sponsor,
+      sponsorBioguideId: meta.sponsorBioguideId,
       cosponsorCount: meta.cosponsorCount,
       cosponsorPartySplit: meta.cosponsorPartySplit,
       policyArea: meta.policyArea,
@@ -59,11 +60,18 @@ async function backfillOne(billRow: { id: number; billId: string }) {
 async function main() {
   const { limit, concurrency } = parseArgs();
 
-  // Re-process bills missing either sponsor OR shortText. This lets the script
-  // fill in CRS summaries for bills that were backfilled before we added the
-  // summary fetch.
+  // Re-process bills missing sponsor, sponsorBioguideId, or shortText.
+  // Picking up bills with sponsor text but no bioguideId lets us
+  // populate the new column for existing rows without re-fetching
+  // bills that already have everything.
   const bills = await prisma.bill.findMany({
-    where: { OR: [{ sponsor: null }, { shortText: null }] },
+    where: {
+      OR: [
+        { sponsor: null },
+        { AND: [{ sponsor: { not: null } }, { sponsorBioguideId: null }] },
+        { shortText: null },
+      ],
+    },
     select: { id: true, billId: true },
     orderBy: { introducedDate: "desc" },
     take: limit,

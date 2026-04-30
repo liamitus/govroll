@@ -37,6 +37,11 @@ export async function refreshBillMetadataFunction(limit = 25) {
     where: {
       OR: [
         { sponsor: null },
+        // Bills that already have sponsor text but predate the
+        // sponsorBioguideId column. The cron picks them up and fills
+        // in the bioguideId so the rep card can match the sponsor to
+        // the user's reps.
+        { AND: [{ sponsor: { not: null } }, { sponsorBioguideId: null }] },
         {
           AND: [
             { shortText: null },
@@ -89,6 +94,7 @@ export async function refreshBillMetadataFunction(limit = 25) {
         where: { id: bill.id },
         data: {
           sponsor: meta.sponsor,
+          sponsorBioguideId: meta.sponsorBioguideId,
           cosponsorCount: meta.cosponsorCount,
           cosponsorPartySplit: meta.cosponsorPartySplit,
           policyArea: meta.policyArea,

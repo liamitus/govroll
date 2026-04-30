@@ -108,13 +108,18 @@ export type ChamberName = "house" | "senate";
 export type ChamberPassageStatus =
   | "passed_with_rollcall"
   | "passed_without_rollcall"
+  | "rejected"
   | "pending";
+
+export type ChamberRejectionReason = "passage" | "cloture" | "suspension";
 
 export interface ChamberPassageInfo {
   chamber: ChamberName;
   status: ChamberPassageStatus;
   passageRollCallCount: number;
   proceduralRollCallCount: number;
+  /** Only set when status === "rejected". */
+  rejectionReason?: ChamberRejectionReason;
 }
 
 export interface VersionInfo {

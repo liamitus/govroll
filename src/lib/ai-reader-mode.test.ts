@@ -79,6 +79,7 @@ describe("buildBillChatSystemPrompt — reader mode toggle", () => {
       null,
       {
         sponsor: "Sen. X",
+        sponsorBioguideId: null,
         cosponsorCount: 0,
         cosponsorPartySplit: null,
         policyArea: null,

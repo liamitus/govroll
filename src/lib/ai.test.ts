@@ -49,6 +49,7 @@ describe("buildBillChatSystemPrompt", () => {
   it("emits a CRS-summary-only prompt when no sections are available", () => {
     const prompt = buildBillChatSystemPrompt("Test Bill", null, {
       sponsor: "Sen. X",
+      sponsorBioguideId: null,
       cosponsorCount: 0,
       cosponsorPartySplit: null,
       policyArea: "Taxation",
@@ -78,6 +79,7 @@ describe("buildBillChatSystemPrompt", () => {
     );
     const tier1 = buildBillChatSystemPrompt("Test Bill", null, {
       sponsor: null,
+      sponsorBioguideId: null,
       cosponsorCount: null,
       cosponsorPartySplit: null,
       policyArea: null,
@@ -101,6 +103,7 @@ describe("buildBillChatSystemPrompt", () => {
     // the prompt builder actually surfaces every field we bother to collect.
     const prompt = buildBillChatSystemPrompt("Test Bill", null, {
       sponsor: "Sen. X (D-NY)",
+      sponsorBioguideId: null,
       cosponsorCount: 3,
       cosponsorPartySplit: "2 D, 1 R",
       policyArea: "Health",
@@ -182,6 +185,7 @@ describe("buildBillChatSystemPrompt", () => {
     );
     const prompt = buildBillChatSystemPrompt("Big Bill", null, {
       sponsor: null,
+      sponsorBioguideId: null,
       cosponsorCount: 40,
       cosponsorPartySplit: null,
       policyArea: null,
@@ -258,6 +262,7 @@ describe("buildBillChatSystemPrompt", () => {
     });
     const crsOnly = buildBillChatSystemPrompt("Test Bill", null, {
       sponsor: null,
+      sponsorBioguideId: null,
       cosponsorCount: null,
       cosponsorPartySplit: null,
       policyArea: null,
