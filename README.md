@@ -96,6 +96,44 @@ Push to `main` triggers an automatic Vercel deployment. The build runs:
 prisma generate && next build
 ```
 
+### Database migrations
+
+Vercel builds **cannot reach** the prod Postgres on port 5432 (Supavisor
+lives on 6543; direct connections from Vercel egress are blocked). The
+build never runs `prisma migrate deploy`. So migrations apply manually
+via the Supabase MCP in the agent loop:
+
+```
+mcp__supabase__apply_migration(name, query)
+```
+
+Then record the apply in the Prisma tracker so future tooling sees the
+schema as in-sync:
+
+```sql
+INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
+VALUES (gen_random_uuid()::text, '<sha256 of migration.sql>', NOW(), '<dir-name>', NOW(), 1);
+```
+
+CI guards this with the **Migration tracker drift** job
+(`.github/workflows/ci.yml`) — every push and PR to `main` runs
+`npm run db:migrate:check` against the prod tracker. The job fails if:
+
+- A migration directory exists without a tracker row (forgot to apply)
+- A tracker row exists without a directory (deleted-but-applied migration)
+- Tracker checksum disagrees with `sha256(migration.sql)` (file edited
+  post-apply, which Prisma forbids)
+
+**One-time setup**: add `PROD_DATABASE_URL` to repo Secrets — Settings →
+Secrets and variables → Actions. Use the Supavisor _direct_ connection
+string (port 5432) so the read of `_prisma_migrations` doesn't go
+through the pooler. Read-only credentials are sufficient.
+
+This check existed because PR #55 (2026-04-27) shipped a migration that
+was never applied — the thumbs-up/-down endpoint silently returned 500
+for 3 days before anyone noticed. We never want to learn about a missed
+migration from a user's broken click again.
+
 ### Ingestion (GitHub Actions)
 
 Govroll runs on Vercel Hobby, which caps cron jobs at once-per-day. To get
