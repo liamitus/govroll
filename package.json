@@ -6,6 +6,7 @@
     "dev": "next dev --webpack --port 1776",
     "build": "prisma generate && next build",
     "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:check": "tsx scripts/check-migration-drift.ts",
     "postinstall": "prisma generate",
     "start": "next start",
     "test": "vitest run",

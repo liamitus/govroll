@@ -165,3 +165,38 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  migration-drift:
+    # Compare prisma/migrations/* against the prod _prisma_migrations
+    # tracker. Catches the "PR shipped a migration that never got applied
+    # to prod" failure mode (PR #55, AiSummaryFeedback, 2026-04-27 — the
+    # thumbs-up/-down endpoint returned 500 for 3 days before anyone
+    # noticed). The deploy pipeline runs `prisma generate && next build`
+    # only — it never runs `prisma migrate deploy` — so the only forcing
+    # function on the manual MCP-apply step is this check.
+    #
+    # PROD_DATABASE_URL is the Supavisor *direct* connection string, not
+    # the pooler. Repo secret. Tracker rows are read-only here.
+    name: Migration tracker drift
+    needs: install
+    runs-on: ubuntu-latest
+    # Only fail PRs / pushes when we have credentials to actually verify.
+    # Forks contributing PRs won't have access to the secret — skip there
+    # rather than red-X every external contribution.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+      - run: npm ci
+      - name: Check migration tracker drift against prod
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::PROD_DATABASE_URL secret is not configured. Add it in repo Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          npm run db:migrate:check
