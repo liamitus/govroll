@@ -1,4 +1,38 @@
+import type { ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
 import { formatJourneyDate, type JourneyStep } from "@/lib/bill-helpers";
+
+// Above this length we treat `step.detail` as a long-form (likely AI-generated
+// markdown) summary and collapse it behind a `<details>` toggle on mobile.
+// Static stage descriptions from getJourneySteps() are all well under this.
+const LONG_DETAIL_THRESHOLD = 200;
+
+const detailMarkdownComponents = {
+  h1: ({ children }: { children?: ReactNode }) => (
+    <p className="text-foreground/90 mb-1.5 font-semibold">{children}</p>
+  ),
+  h2: ({ children }: { children?: ReactNode }) => (
+    <p className="text-foreground/90 mb-1.5 font-semibold">{children}</p>
+  ),
+  h3: ({ children }: { children?: ReactNode }) => (
+    <p className="text-foreground/90 mb-1.5 font-semibold">{children}</p>
+  ),
+  p: ({ children }: { children?: ReactNode }) => (
+    <p className="mb-1.5 leading-relaxed last:mb-0">{children}</p>
+  ),
+  strong: ({ children }: { children?: ReactNode }) => (
+    <strong className="text-foreground font-semibold">{children}</strong>
+  ),
+  ul: ({ children }: { children?: ReactNode }) => (
+    <ul className="my-1.5 list-disc space-y-0.5 pl-5">{children}</ul>
+  ),
+  ol: ({ children }: { children?: ReactNode }) => (
+    <ol className="my-1.5 list-decimal space-y-0.5 pl-5">{children}</ol>
+  ),
+  li: ({ children }: { children?: ReactNode }) => (
+    <li className="leading-relaxed">{children}</li>
+  ),
+};
 
 function circleClass(status: JourneyStep["status"]): string {
   switch (status) {
@@ -197,11 +231,34 @@ export function BillJourney({
                   {step.description}
                 </p>
               )}
-              {step.detail && (
-                <p className="text-muted-foreground border-civic-gold/30 mt-1 border-l-2 pl-3 text-sm leading-relaxed">
-                  {step.detail}
-                </p>
-              )}
+              {step.detail &&
+                (step.detail.length <= LONG_DETAIL_THRESHOLD ? (
+                  <p className="text-muted-foreground border-civic-gold/30 mt-1 border-l-2 pl-3 text-sm leading-relaxed">
+                    {step.detail}
+                  </p>
+                ) : (
+                  <details className="group mt-1.5">
+                    <summary className="text-civic-gold/90 hover:text-civic-gold inline-flex cursor-pointer list-none items-center gap-1 text-xs font-medium [&::-webkit-details-marker]:hidden">
+                      <span className="group-open:hidden">
+                        Show change summary
+                      </span>
+                      <span className="hidden group-open:inline">
+                        Hide change summary
+                      </span>
+                      <span
+                        aria-hidden
+                        className="transition-transform group-open:rotate-180"
+                      >
+                        ▾
+                      </span>
+                    </summary>
+                    <div className="border-civic-gold/30 text-muted-foreground mt-1.5 border-l-2 pl-3 text-sm leading-relaxed">
+                      <ReactMarkdown components={detailMarkdownComponents}>
+                        {step.detail}
+                      </ReactMarkdown>
+                    </div>
+                  </details>
+                ))}
             </div>
           </div>
         ))}
