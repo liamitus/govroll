@@ -242,6 +242,37 @@ describe("buildBillChatSystemPrompt", () => {
     expect(prompt).not.toContain("most semantically relevant");
     expect(prompt).not.toContain("rephrase");
   });
+
+  it("instructs the model not to preface answers with 'Based on the bill text/sections provided'", () => {
+    // Real users were seeing every answer prefixed with "Based on the
+    // bill sections provided, ..." or "Based on the bill text
+    // provided, ..." — confusing because the user didn't provide
+    // anything. Both citation-instruction variants (full-text and
+    // reader-mode) and the CRS-summary-only path must explicitly tell
+    // the model to skip the preface and just answer.
+    const sections = [section("Section 1", "Bill content.")];
+
+    const fullText = buildBillChatSystemPrompt("Test Bill", sections, null);
+    const readerMode = buildBillChatSystemPrompt("Test Bill", sections, null, {
+      readerMode: true,
+    });
+    const crsOnly = buildBillChatSystemPrompt("Test Bill", null, {
+      sponsor: null,
+      cosponsorCount: null,
+      cosponsorPartySplit: null,
+      policyArea: null,
+      latestActionDate: null,
+      latestActionText: null,
+      shortText: "Some CRS summary text.",
+      popularTitle: null,
+      displayTitle: null,
+      shortTitle: null,
+    });
+
+    for (const prompt of [fullText, readerMode, crsOnly]) {
+      expect(prompt).toMatch(/Don't preface answers with/);
+    }
+  });
 });
 
 describe("packSectionsToBudget", () => {

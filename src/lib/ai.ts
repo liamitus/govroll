@@ -134,7 +134,9 @@ const CITATION_INSTRUCTIONS = `When answering, quote directly from the bill text
 >
 > — Section 4(a)
 
-If the user asks about something not covered in the bill sections provided, say so plainly. Do not invent provisions.
+Answer the user's question directly. Don't preface answers with "Based on the bill text" or "Based on the sections provided" or similar — the user is asking about the bill, not about what context you were given. Just answer.
+
+If the bill genuinely doesn't cover what the user asked about, say so plainly. Do not invent provisions.
 
 ${BACKGROUND_KNOWLEDGE_CLAUSE}
 
@@ -153,7 +155,9 @@ const CITATION_INSTRUCTIONS_READER = `When answering, quote directly from the bi
 >
 > — [Section 4(a)](?section=sec-4--a)
 
-If the user asks about something not covered in the bill sections provided, say so plainly. Do not invent provisions.
+Answer the user's question directly. Don't preface answers with "Based on the bill text" or "Based on the sections provided" or similar — the user is asking about the bill, not about what context you were given. Just answer.
+
+If the bill genuinely doesn't cover what the user asked about, say so plainly. Do not invent provisions.
 
 ${BACKGROUND_KNOWLEDGE_CLAUSE}
 
@@ -342,6 +346,8 @@ Your primary source is the nonpartisan Congressional Research Service summary ab
 > "exact quote from the summary"
 >
 > — CRS summary
+
+Don't preface answers with "Based on the summary provided" or similar — the user is asking about the bill, not about what context you were given. Just answer.
 
 Only say something is not covered if the summary genuinely does not address it. Do not claim you cannot see the bill — you have its official nonpartisan summary. The full bill text may have been amended since introduction; if a user asks about specific provisions, note that the summary describes the introduced version.
 
