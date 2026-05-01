@@ -389,7 +389,7 @@ export function BillListClient() {
           {!isRefiltering && total > 0 && (
             <>
               <span>
-                {total.toLocaleString("en-US")} bill{total !== 1 ? "s" : ""}
+                {`${total.toLocaleString("en-US")} bill${total !== 1 ? "s" : ""}`}
               </span>
               {queryFilters.momentum === "live" && hiddenByMomentum > 0 && (
                 <button
