@@ -98,7 +98,7 @@ export function ConversationHistory({ userId }: { userId: string }) {
                 {previewFor(c.lastMessage)}
               </p>
               <p className="text-muted-foreground/70 mt-1 text-xs">
-                {c.questionCount} question{c.questionCount === 1 ? "" : "s"}
+                {`${c.questionCount} question${c.questionCount === 1 ? "" : "s"}`}
               </p>
             </div>
             <span className="text-muted-foreground shrink-0 text-sm whitespace-nowrap">

@@ -193,8 +193,7 @@ export default async function MadePossibleByPage() {
       {/* Anonymous aggregate */}
       {anonCount > 0 && (
         <p className="text-muted-foreground text-center text-base font-medium">
-          + {anonCount.toLocaleString("en-US")} anonymous citizen
-          {anonCount !== 1 ? "s" : ""}
+          {`+ ${anonCount.toLocaleString("en-US")} anonymous citizen${anonCount !== 1 ? "s" : ""}`}
         </p>
       )}
 

@@ -172,8 +172,7 @@ export function AlignmentScore({
           </p>
           <p className="text-navy mb-1 text-2xl font-bold">{pct}% Aligned</p>
           <p className="text-muted-foreground text-base">
-            Out of {comparable} bill{comparable !== 1 ? "s" : ""} you&apos;ve
-            both voted on, you agreed on {aligned}.
+            {`Out of ${comparable} bill${comparable !== 1 ? "s" : ""} you've both voted on, you agreed on ${aligned}.`}
           </p>
         </div>
       </div>

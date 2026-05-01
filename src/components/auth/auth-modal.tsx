@@ -262,7 +262,9 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
 
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting
-                  ? "..."
+                  ? mode === "login"
+                    ? "Signing in..."
+                    : "Creating account..."
                   : mode === "login"
                     ? "Sign In"
                     : "Create Account"}

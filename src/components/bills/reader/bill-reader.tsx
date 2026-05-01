@@ -103,8 +103,7 @@ export function BillReader({
                 <h1 className="bill-prose-title">{bill.headline}</h1>
                 <div className="text-muted-foreground bill-prose-meta mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                   <span>
-                    {sections.length} section
-                    {sections.length === 1 ? "" : "s"} · {minutes} min read
+                    {`${sections.length} section${sections.length === 1 ? "" : "s"} · ${minutes} min read`}
                   </span>
                   {groups.length > 1 ? (
                     <>
