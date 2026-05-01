@@ -30,6 +30,7 @@ export async function GET(request: Request) {
       ok: true,
       period: snapshot.period,
       aiEnabled: snapshot.aiEnabled,
+      carryoverCents: snapshot.carryoverCents,
       incomeCents: snapshot.incomeCents,
       spendCents: snapshot.spendCents,
       reserveCents: snapshot.reserveCents,

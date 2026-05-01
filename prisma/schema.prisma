@@ -456,6 +456,12 @@ model BudgetLedger {
   // YYYY-MM identifier for the budget period. One row per month.
   period           String   @unique
   incomeCents      Int      @default(0)
+  // Surplus rolled forward from the previous period's row at the time
+  // this row was first created. Lets unspent donations keep funding the
+  // project across the month boundary instead of resetting to $0.
+  // Treated like income for the purposes of `availableCents` and the
+  // public progress bar.
+  carryoverCents   Int      @default(0)
   spendCents       Int      @default(0)
   // Reserve withheld from "available" before flipping AI on.
   reserveCents     Int      @default(0)
