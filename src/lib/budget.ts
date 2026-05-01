@@ -6,11 +6,17 @@ import { computeCostCents, type CacheTokenBreakdown } from "@/lib/ai-pricing";
  * cost, so we track monthly income vs. spend in a simple ledger and flip
  * `aiEnabled` off when the remaining budget drops below zero.
  *
- * All amounts are integer cents. Period strings are "YYYY-MM" in UTC.
+ * Each period (YYYY-MM in UTC) gets its own row, but unspent donations roll
+ * forward via `carryoverCents` so a generous April keeps May's AI funded
+ * across the month boundary instead of resetting to $0. The progress bar
+ * treats `carryover + income` as a single "raised" total.
+ *
+ * All amounts are integer cents.
  */
 
 export type BudgetSnapshot = {
   period: string;
+  carryoverCents: number;
   incomeCents: number;
   spendCents: number;
   reserveCents: number;
@@ -36,6 +42,16 @@ export function previousPeriod(now: Date = new Date()): string {
   return currentPeriod(d);
 }
 
+/** Period immediately before the given YYYY-MM string. Used during ledger
+ *  bootstrap to find the row whose surplus should be carried forward. */
+export function previousPeriodOf(period: string): string {
+  const [y, m] = period.split("-").map(Number);
+  // m is 1-indexed in YYYY-MM; (m - 2) is the previous month 0-indexed for
+  // Date.UTC, which also handles year wrap (e.g. m=1 → -1 → previous Dec).
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return currentPeriod(d);
+}
+
 /** AI spend from the previous month, or 0 if no ledger row exists. */
 export async function previousMonthSpendCents(): Promise<number> {
   const row = await prisma.budgetLedger.findUnique({
@@ -46,15 +62,41 @@ export async function previousMonthSpendCents(): Promise<number> {
 }
 
 /**
- * Read (or bootstrap) the ledger row for the given period. Bootstraps with
- * aiEnabled=true on the assumption that a fresh month starts from zero and
- * small initial spend is tolerable; the cron will flip it off if needed.
+ * Read (or bootstrap) the ledger row for the given period. On first creation,
+ * seeds `carryoverCents` with any unspent surplus from the previous period so
+ * donations roll forward across the month boundary. `aiEnabled` starts true;
+ * the cron flips it off later if cumulative spend overshoots.
  */
 export async function getOrCreateLedger(period = currentPeriod()) {
+  const existing = await prisma.budgetLedger.findUnique({ where: { period } });
+  if (existing) return existing;
+
+  const prev = await prisma.budgetLedger.findUnique({
+    where: { period: previousPeriodOf(period) },
+    select: {
+      carryoverCents: true,
+      incomeCents: true,
+      spendCents: true,
+      reserveCents: true,
+    },
+  });
+  const carryoverCents = prev
+    ? Math.max(
+        0,
+        prev.carryoverCents +
+          prev.incomeCents -
+          prev.spendCents -
+          prev.reserveCents,
+      )
+    : 0;
+
+  // Upsert (not create) so two concurrent first-of-month requests can't both
+  // race past the unique-constraint check; whoever wins keeps their carryover.
   return prisma.budgetLedger.upsert({
     where: { period },
     create: {
       period,
+      carryoverCents,
       reserveCents: DEFAULT_RESERVE_CENTS,
       aiEnabled: true,
       aiDisabledReason: "bootstrap",
@@ -68,9 +110,13 @@ export async function getBudgetSnapshot(
 ): Promise<BudgetSnapshot> {
   const ledger = await getOrCreateLedger(period);
   const availableCents =
-    ledger.incomeCents - ledger.spendCents - ledger.reserveCents;
+    ledger.carryoverCents +
+    ledger.incomeCents -
+    ledger.spendCents -
+    ledger.reserveCents;
   return {
     period: ledger.period,
+    carryoverCents: ledger.carryoverCents,
     incomeCents: ledger.incomeCents,
     spendCents: ledger.spendCents,
     reserveCents: ledger.reserveCents,

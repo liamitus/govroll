@@ -16,6 +16,7 @@ export async function GET() {
 
   return NextResponse.json({
     period: snapshot.period,
+    carryoverCents: snapshot.carryoverCents,
     incomeCents: snapshot.incomeCents,
     spendCents: snapshot.spendCents,
     aiEnabled: snapshot.aiEnabled,

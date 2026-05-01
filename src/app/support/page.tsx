@@ -33,7 +33,10 @@ export default async function SupportPage() {
     snapshot.spendCents,
     lastMonthSpend,
   );
-  const funded = snapshot.incomeCents >= totalCostCents;
+  // Carried-forward surplus from prior months counts toward this month's
+  // funding target the same way fresh donations do.
+  const raisedCents = snapshot.carryoverCents + snapshot.incomeCents;
+  const funded = raisedCents >= totalCostCents;
 
   return (
     <div className="mx-auto max-w-2xl space-y-10 px-4 py-10">
@@ -55,6 +58,7 @@ export default async function SupportPage() {
 
       {/* Budget thermometer */}
       <BudgetThermometer
+        carryoverCents={snapshot.carryoverCents}
         incomeCents={snapshot.incomeCents}
         spendCents={snapshot.spendCents}
         lastMonthSpendCents={lastMonthSpend}

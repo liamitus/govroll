@@ -8,16 +8,21 @@ import {
 
 /**
  * Budget thermometer — shows how much of the total monthly running costs
- * have been covered by citizen contributions.
+ * have been covered by citizen contributions. Carried-forward surplus from
+ * prior months is treated the same as fresh income for the bar and the
+ * funded/needs-support state, but is broken out in a subline so donors can
+ * see exactly where the money came from.
  */
 
 export function BudgetThermometer({
+  carryoverCents,
   incomeCents,
   spendCents,
   lastMonthSpendCents,
   aiEnabled,
   period,
 }: {
+  carryoverCents: number;
   incomeCents: number;
   spendCents: number;
   lastMonthSpendCents: number;
@@ -27,10 +32,12 @@ export function BudgetThermometer({
   const aiCostCents = estimatedAiCostCents(spendCents, lastMonthSpendCents);
   const totalCostCents = totalMonthlyCostCents(spendCents, lastMonthSpendCents);
   const totalDollars = (totalCostCents / 100).toFixed(0);
-  const incomeDollars = (incomeCents / 100).toFixed(0);
+  const raisedCents = carryoverCents + incomeCents;
+  const raisedDollars = (raisedCents / 100).toFixed(0);
+  const carryoverDollars = (carryoverCents / 100).toFixed(0);
   const target = Math.max(totalCostCents, 1);
-  const pct = Math.min(Math.round((incomeCents / target) * 100), 100);
-  const funded = incomeCents >= totalCostCents;
+  const pct = Math.min(Math.round((raisedCents / target) * 100), 100);
+  const funded = raisedCents >= totalCostCents;
 
   // Three-tier status: Funded > Needs Support > AI Paused
   const status = !aiEnabled
@@ -45,6 +52,11 @@ export function BudgetThermometer({
     "en-US",
     { month: "long" },
   );
+  // Same trick for the previous month name in the carryover sub-line.
+  const prevMonthName = new Date(
+    Number(year),
+    Number(month) - 2,
+  ).toLocaleString("en-US", { month: "long" });
 
   // Card style follows status
   const cardBg = !aiEnabled
@@ -77,9 +89,16 @@ export function BudgetThermometer({
       </div>
 
       <div className="text-muted-foreground flex justify-between text-base">
-        <span>${incomeDollars} raised</span>
+        <span>${raisedDollars} raised</span>
         <span>${totalDollars} to run this month</span>
       </div>
+
+      {carryoverCents > 0 && (
+        <p className="text-muted-foreground/80 -mt-3 text-sm">
+          Includes ${carryoverDollars} carried from {prevMonthName} —
+          contributions roll forward, they don&apos;t reset.
+        </p>
+      )}
 
       {/* Cost breakdown */}
       <details className="text-muted-foreground text-base">
@@ -130,18 +149,18 @@ export function BudgetThermometer({
         </p>
       </details>
 
-      {!aiEnabled && incomeCents === 0 && (
+      {!aiEnabled && raisedCents === 0 && (
         <p className="text-base font-medium text-red-700">
           AI features are paused until a few citizens chip in. ${totalDollars}{" "}
           covers a full month — be the first to unlock them for everyone.
         </p>
       )}
 
-      {!aiEnabled && incomeCents > 0 && (
+      {!aiEnabled && raisedCents > 0 && (
         <p className="text-base font-medium text-red-700">
           AI features are paused — contributions so far haven&apos;t quite
           covered the month. About $
-          {Math.max(1, Math.ceil((totalCostCents - incomeCents) / 100))} more to
+          {Math.max(1, Math.ceil((totalCostCents - raisedCents) / 100))} more to
           bring them back online.
         </p>
       )}
