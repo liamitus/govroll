@@ -52,13 +52,36 @@ export function previousPeriodOf(period: string): string {
   return currentPeriod(d);
 }
 
-/** AI spend from the previous month, or 0 if no ledger row exists. */
-export async function previousMonthSpendCents(): Promise<number> {
-  const row = await prisma.budgetLedger.findUnique({
-    where: { period: previousPeriod() },
-    select: { spendCents: true },
+/**
+ * AI spend for the most recent N months that have ledger rows, ordered most
+ * recent → oldest. Months with no ledger row are skipped (truly no data),
+ * but rows with `spendCents = 0` are kept (a real "quiet month" data point).
+ *
+ * Used by the public budget thermometer to forecast this month's AI cost as
+ * a trailing average rather than anchoring on a single inflated prior month.
+ */
+export async function trailingMonthsSpendCents(
+  months: number,
+): Promise<number[]> {
+  const periods: string[] = [];
+  let p = previousPeriod();
+  for (let i = 0; i < months; i++) {
+    periods.push(p);
+    p = previousPeriodOf(p);
+  }
+  const rows = await prisma.budgetLedger.findMany({
+    where: { period: { in: periods } },
+    select: { period: true, spendCents: true },
   });
-  return row?.spendCents ?? 0;
+  const byPeriod = new Map<string, number>(
+    rows.map((r: { period: string; spendCents: number }) => [
+      r.period,
+      r.spendCents,
+    ]),
+  );
+  return periods
+    .map((period) => byPeriod.get(period))
+    .filter((v): v is number => v !== undefined);
 }
 
 /**

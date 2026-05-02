@@ -1,9 +1,12 @@
 import {
   getBudgetSnapshot,
   getTypicalDonationCents,
-  previousMonthSpendCents,
+  trailingMonthsSpendCents,
 } from "@/lib/budget";
-import { totalMonthlyCostCents } from "@/lib/site-costs";
+import {
+  TRAILING_WINDOW_MONTHS,
+  totalMonthlyCostCents,
+} from "@/lib/site-costs";
 import { prisma } from "@/lib/prisma";
 import { DonateForm } from "./donate-form";
 import { BudgetThermometer } from "./budget-thermometer";
@@ -19,19 +22,19 @@ export const dynamic = "force-dynamic";
 export const revalidate = 300; // 5 min cache
 
 export default async function SupportPage() {
-  const [snapshot, typicalCents, donorCount, lastMonthSpend] =
+  const [snapshot, typicalCents, donorCount, trailingSpends] =
     await Promise.all([
       getBudgetSnapshot(),
       getTypicalDonationCents(),
       prisma.donation.count({
         where: { moderationStatus: { in: ["APPROVED", "PENDING"] } },
       }),
-      previousMonthSpendCents(),
+      trailingMonthsSpendCents(TRAILING_WINDOW_MONTHS),
     ]);
 
   const totalCostCents = totalMonthlyCostCents(
     snapshot.spendCents,
-    lastMonthSpend,
+    trailingSpends,
   );
   // Carried-forward surplus from prior months counts toward this month's
   // funding target the same way fresh donations do.
@@ -61,7 +64,7 @@ export default async function SupportPage() {
         carryoverCents={snapshot.carryoverCents}
         incomeCents={snapshot.incomeCents}
         spendCents={snapshot.spendCents}
-        lastMonthSpendCents={lastMonthSpend}
+        trailingSpendsCents={trailingSpends}
         aiEnabled={snapshot.aiEnabled}
         period={snapshot.period}
       />
