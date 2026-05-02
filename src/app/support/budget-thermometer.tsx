@@ -18,19 +18,21 @@ export function BudgetThermometer({
   carryoverCents,
   incomeCents,
   spendCents,
-  lastMonthSpendCents,
+  trailingSpendsCents,
   aiEnabled,
   period,
 }: {
   carryoverCents: number;
   incomeCents: number;
   spendCents: number;
-  lastMonthSpendCents: number;
+  /** AI spend for the most recent N months that have ledger rows, ordered
+   *  most-recent → oldest. Drives the trailing-average forecast. */
+  trailingSpendsCents: readonly number[];
   aiEnabled: boolean;
   period: string;
 }) {
-  const aiCostCents = estimatedAiCostCents(spendCents, lastMonthSpendCents);
-  const totalCostCents = totalMonthlyCostCents(spendCents, lastMonthSpendCents);
+  const aiCostCents = estimatedAiCostCents(spendCents, trailingSpendsCents);
+  const totalCostCents = totalMonthlyCostCents(spendCents, trailingSpendsCents);
   const totalDollars = (totalCostCents / 100).toFixed(0);
   const raisedCents = carryoverCents + incomeCents;
   const raisedDollars = (raisedCents / 100).toFixed(0);
