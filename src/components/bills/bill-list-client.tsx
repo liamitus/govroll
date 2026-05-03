@@ -396,8 +396,7 @@ export function BillListClient() {
                   onClick={() => setFilters({ momentum: "all" })}
                   className="text-muted-foreground/70 hover:text-navy underline decoration-dotted underline-offset-2 transition-colors"
                 >
-                  ({hiddenByMomentum.toLocaleString("en-US")} dormant or dead
-                  hidden)
+                  {`(${hiddenByMomentum.toLocaleString("en-US")} dormant or dead hidden)`}
                 </button>
               )}
               {queryFilters.momentum === "all" && (
@@ -431,16 +430,14 @@ export function BillListClient() {
             {exactMatch ? (
               <>
                 Jump to {citation.shortLabel} {citation.number}
-                {citation.congress !== null && (
-                  <> · {formatOrdinal(citation.congress)} Congress</>
-                )}
+                {citation.congress !== null &&
+                  ` · ${formatOrdinal(citation.congress)} Congress`}
               </>
             ) : (
               <>
                 No bill found for {citation.shortLabel} {citation.number}
-                {citation.congress !== null && (
-                  <> · {formatOrdinal(citation.congress)} Congress</>
-                )}
+                {citation.congress !== null &&
+                  ` · ${formatOrdinal(citation.congress)} Congress`}
               </>
             )}
           </div>

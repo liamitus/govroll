@@ -137,9 +137,7 @@ export default async function MadePossibleByPage() {
         ) : (
           <>
             <h1 className="text-4xl font-bold tracking-tight">
-              {totalCount.toLocaleString("en-US")}{" "}
-              {totalCount === 1 ? "citizen keeps" : "citizens keep"} Govroll
-              running.
+              {`${totalCount.toLocaleString("en-US")} ${totalCount === 1 ? "citizen keeps" : "citizens keep"} Govroll running.`}
             </h1>
             <p className="text-muted-foreground mx-auto max-w-lg">
               No ads. No corporate sponsors. Just people who believe civic

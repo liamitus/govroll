@@ -343,7 +343,7 @@ function RejectionNotice({ passage }: { passage: ChamberPassageInfo }) {
     <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
       <p className="text-foreground">
         <span className="font-semibold">
-          The {chamberName} voted on this bill and rejected it.
+          {`The ${chamberName} voted on this bill and rejected it.`}
         </span>{" "}
         <span className="text-muted-foreground">
           The vote below is where each member stood.
@@ -403,8 +403,7 @@ function ChamberNotice({ passage }: { passage: ChamberPassageInfo }) {
       <div className="bg-accent/20 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
         <p className="text-foreground">
           <span className="font-semibold">
-            The {chamberName} agreed to this bill, but there&rsquo;s no
-            per-member vote to show.
+            {`The ${chamberName} agreed to this bill, but there’s no per-member vote to show.`}
           </span>{" "}
           <span className="text-muted-foreground">
             Voice votes and unanimous consent don&rsquo;t produce individual

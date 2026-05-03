@@ -84,7 +84,7 @@ export function AlignmentScore({
                 Alignment Score
               </p>
               <p className="text-navy mb-1 text-xl font-bold">
-                How well does {repName} represent you?
+                {`How well does ${repName} represent you?`}
               </p>
               <p className="text-muted-foreground mb-4 max-w-sm text-base">
                 Sign in and vote on bills to see a personalized alignment score

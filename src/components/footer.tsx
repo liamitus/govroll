@@ -39,7 +39,7 @@ export function Footer() {
           </nav>
 
           <p className="text-muted-foreground/70 text-sm">
-            &copy; {new Date().getFullYear()} Govroll &middot; Built by{" "}
+            {`© ${new Date().getFullYear()} Govroll · Built by `}
             <a
               href="https://liamhowell.com"
               target="_blank"

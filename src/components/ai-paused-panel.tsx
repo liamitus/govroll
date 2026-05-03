@@ -24,15 +24,9 @@ export function AiPausedPanel({
         AI features are paused this month
       </p>
       <p className="text-sm text-red-700/80">
-        Govroll&apos;s AI summaries and chat are funded entirely by citizens.
-        {hasNumbers && (
-          <>
-            {" "}
-            This month: ${(incomeCents / 100).toFixed(0)} raised / $
-            {(spendCents / 100).toFixed(0)} spent.
-          </>
-        )}{" "}
-        When enough people chip in, they come back online for everyone.
+        {hasNumbers
+          ? `Govroll’s AI summaries and chat are funded entirely by citizens. This month: $${(incomeCents / 100).toFixed(0)} raised / $${(spendCents / 100).toFixed(0)} spent. When enough people chip in, they come back online for everyone.`
+          : "Govroll’s AI summaries and chat are funded entirely by citizens. When enough people chip in, they come back online for everyone."}
       </p>
       <Link
         href="/support"

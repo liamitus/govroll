@@ -199,10 +199,10 @@ export function BillGroupCard({
                 <rect x="3" y="14" width="7" height="7" rx="1" />
                 <rect x="14" y="14" width="7" height="7" rx="1" />
               </svg>
-              {bills.length} related
+              {`${bills.length} related`}
               {!allVoted && votedCount > 0 && (
                 <span className="text-muted-foreground/80">
-                  · {votedCount}/{bills.length} voted
+                  {` · ${votedCount}/${bills.length} voted`}
                 </span>
               )}
             </span>
