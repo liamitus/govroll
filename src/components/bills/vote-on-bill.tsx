@@ -77,7 +77,7 @@ function RollCallCard({ rollCall }: { rollCall: RollCallVote }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="text-foreground text-base font-semibold">
-          {inferChamber(rollCall)} Vote
+          {`${inferChamber(rollCall)} Vote`}
         </h4>
         {dateStr && (
           <span className="text-muted-foreground text-sm">{dateStr}</span>
@@ -380,7 +380,7 @@ export function VoteOnBill({
               return (
                 <>
                   <h3 className="text-muted-foreground text-sm font-semibold tracking-wider uppercase">
-                    {inferChamber(legacyRollCall)} Vote
+                    {`${inferChamber(legacyRollCall)} Vote`}
                   </h3>
                   <RollCallCard rollCall={legacyRollCall} />
                 </>

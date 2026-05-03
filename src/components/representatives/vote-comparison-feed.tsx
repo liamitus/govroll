@@ -211,7 +211,7 @@ export function VoteComparisonFeed({
             </>
           ) : (
             <>
-              Show all {filtered.length} votes{" "}
+              {`Show all ${filtered.length} votes `}
               <ChevronDown className="h-4 w-4" />
             </>
           )}

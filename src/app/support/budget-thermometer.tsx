@@ -71,7 +71,7 @@ export function BudgetThermometer({
     <div className={`space-y-5 rounded-xl border p-8 ${cardBg}`}>
       <div className="flex items-center justify-between text-lg">
         <span className="font-semibold">
-          {monthName} {year} Running Costs
+          {`${monthName} ${year} Running Costs`}
         </span>
         <span
           className={`rounded-full px-3 py-1 text-base font-semibold ${status.bg}`}
@@ -91,14 +91,13 @@ export function BudgetThermometer({
       </div>
 
       <div className="text-muted-foreground flex justify-between text-base">
-        <span>${raisedDollars} raised</span>
-        <span>${totalDollars} to run this month</span>
+        <span>{`$${raisedDollars} raised`}</span>
+        <span>{`$${totalDollars} to run this month`}</span>
       </div>
 
       {carryoverCents > 0 && (
         <p className="text-muted-foreground/80 -mt-3 text-sm">
-          Includes ${carryoverDollars} carried from {prevMonthName} —
-          contributions roll forward, they don&apos;t reset.
+          {`Includes $${carryoverDollars} carried from ${prevMonthName} — contributions roll forward, they don’t reset.`}
         </p>
       )}
 
@@ -153,17 +152,13 @@ export function BudgetThermometer({
 
       {!aiEnabled && raisedCents === 0 && (
         <p className="text-base font-medium text-red-700">
-          AI features are paused until a few citizens chip in. ${totalDollars}{" "}
-          covers a full month — be the first to unlock them for everyone.
+          {`AI features are paused until a few citizens chip in. $${totalDollars} covers a full month — be the first to unlock them for everyone.`}
         </p>
       )}
 
       {!aiEnabled && raisedCents > 0 && (
         <p className="text-base font-medium text-red-700">
-          AI features are paused — contributions so far haven&apos;t quite
-          covered the month. About $
-          {Math.max(1, Math.ceil((totalCostCents - raisedCents) / 100))} more to
-          bring them back online.
+          {`AI features are paused — contributions so far haven’t quite covered the month. About $${Math.max(1, Math.ceil((totalCostCents - raisedCents) / 100))} more to bring them back online.`}
         </p>
       )}
 

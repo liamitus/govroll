@@ -19,7 +19,7 @@ export function RepKeyVotes({ keyVotes, repFirstName }: RepKeyVotesProps) {
         Key Votes
       </h2>
       <p className="text-muted-foreground -mt-1 text-sm">
-        How {repFirstName} voted on final passage of bills
+        {`How ${repFirstName} voted on final passage of bills`}
       </p>
 
       <div className="space-y-2">
