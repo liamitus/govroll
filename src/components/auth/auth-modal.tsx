@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog,
@@ -19,6 +19,81 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import Link from "next/link";
 
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential: string }) => void;
+            nonce?: string;
+            use_fedcm_for_prompt?: boolean;
+            auto_select?: boolean;
+            cancel_on_tap_outside?: boolean;
+          }) => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: {
+              type?: "standard" | "icon";
+              theme?: "outline" | "filled_blue" | "filled_black";
+              size?: "large" | "medium" | "small";
+              text?: "signin_with" | "signup_with" | "continue_with" | "signin";
+              shape?: "rectangular" | "pill" | "circle" | "square";
+              logo_alignment?: "left" | "center";
+              width?: number;
+            },
+          ) => void;
+        };
+      };
+    };
+  }
+}
+
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+const GIS_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
+
+async function generateNonce(): Promise<{ raw: string; hashed: string }> {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const raw = btoa(String.fromCharCode(...bytes));
+  const hashBuffer = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(raw),
+  );
+  const hashed = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return { raw, hashed };
+}
+
+function loadGisScript(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.google?.accounts?.id) return Promise.resolve();
+  const existing = document.querySelector<HTMLScriptElement>(
+    `script[src="${GIS_SCRIPT_SRC}"]`,
+  );
+  if (existing) {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener(
+        "error",
+        () => reject(new Error("Google Identity Services failed to load")),
+        { once: true },
+      );
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = GIS_SCRIPT_SRC;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () =>
+      reject(new Error("Google Identity Services failed to load"));
+    document.head.appendChild(script);
+  });
+}
+
 interface AuthModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -33,6 +108,22 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp } = useAuth();
+  const hiddenGoogleButtonRef = useRef<HTMLDivElement | null>(null);
+
+  // Forwards a click from our visual Button to Google's hidden, off-screen
+  // rendered button. Has to be programmatic-click-on-real-element (not a
+  // synthesized event), or GIS's internal click handler ignores it.
+  const handleGoogleClick = useCallback(() => {
+    const realButton =
+      hiddenGoogleButtonRef.current?.querySelector<HTMLElement>(
+        'div[role="button"]',
+      );
+    if (realButton) {
+      realButton.click();
+    } else {
+      setError("Google sign-in is still loading. Try again in a second.");
+    }
+  }, []);
 
   const resetForm = () => {
     setEmail("");
@@ -44,6 +135,84 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     resetForm();
     setMode(newMode);
   };
+
+  const handleGoogleCredential = useCallback(
+    async (credential: string, rawNonce: string) => {
+      const supabase = createSupabaseBrowserClient();
+      const { error: signInError } = await supabase.auth.signInWithIdToken({
+        provider: "google",
+        token: credential,
+        nonce: rawNonce,
+      });
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+      onOpenChange(false);
+      resetForm();
+    },
+    [onOpenChange],
+  );
+
+  // Callback ref: fires synchronously when the div attaches to / detaches from
+  // the DOM. base-ui's Dialog portal can mount content after the parent's
+  // useEffect fires, so a normal useRef + useEffect flow can race and silently
+  // bail with ref.current === null. Callback refs dodge that. React 19 also
+  // honors the returned cleanup function when the node detaches or the ref
+  // changes, so each attach gets its own cancellation flag.
+  const initGoogleButton = useCallback(
+    (node: HTMLDivElement | null) => {
+      hiddenGoogleButtonRef.current = node;
+      if (!node || !GOOGLE_CLIENT_ID) return;
+
+      let cancelled = false;
+
+      (async () => {
+        try {
+          await loadGisScript();
+          if (cancelled) return;
+          const gid = window.google?.accounts.id;
+          if (!gid) return;
+
+          const { raw, hashed } = await generateNonce();
+          if (cancelled) return;
+
+          gid.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: (response) => {
+              void handleGoogleCredential(response.credential, raw);
+            },
+            nonce: hashed,
+            use_fedcm_for_prompt: true,
+          });
+
+          if (cancelled) return;
+          node.innerHTML = "";
+          gid.renderButton(node, {
+            type: "standard",
+            theme: "outline",
+            size: "large",
+            text: "continue_with",
+            shape: "rectangular",
+            logo_alignment: "center",
+            width: 380,
+          });
+        } catch (err) {
+          if (cancelled) return;
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not load Google sign-in",
+          );
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    },
+    [handleGoogleCredential],
+  );
 
   const handleOAuth = async (provider: "google" | "github") => {
     const supabase = createSupabaseBrowserClient();
@@ -191,12 +360,19 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               </DialogTitle>
             </DialogHeader>
 
-            {/* OAuth buttons */}
+            {/* OAuth buttons — same Button shape for both providers. The
+                Google button forwards its click to a hidden GIS button rendered
+                off-screen below, which is what actually triggers the OAuth flow
+                and returns an ID token to handleGoogleCredential. */}
             <div className="space-y-2">
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => handleOAuth("google")}
+                onClick={
+                  GOOGLE_CLIENT_ID
+                    ? handleGoogleClick
+                    : () => handleOAuth("google")
+                }
                 type="button"
               >
                 <GoogleIcon />
@@ -212,6 +388,18 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 Continue with GitHub
               </Button>
             </div>
+            {GOOGLE_CLIENT_ID && (
+              <div
+                ref={initGoogleButton}
+                aria-hidden="true"
+                style={{
+                  position: "fixed",
+                  top: "-10000px",
+                  left: "-10000px",
+                  pointerEvents: "none",
+                }}
+              />
+            )}
 
             <div className="relative">
               <Separator />
