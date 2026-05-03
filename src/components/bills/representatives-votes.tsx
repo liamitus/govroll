@@ -433,7 +433,7 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
   const { address, setUserAddress } = useAddress();
   const [inputAddress, setInputAddress] = useState("");
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isError, refetch } = useQuery({
     queryKey: repsForBillQueryKey(billId, address),
     queryFn: ({ signal }) => fetchRepsForBill(billId, address, signal),
     enabled: !!address,
@@ -686,6 +686,31 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
             />
           </svg>
           Finding your representatives...
+        </div>
+      ) : isError ? (
+        <div className="border-border/60 bg-muted/30 space-y-3 rounded-lg border p-5 text-center">
+          <p className="text-foreground text-base">
+            We couldn&apos;t find your representatives for this address.
+          </p>
+          <p className="text-muted-foreground/90 mx-auto max-w-sm text-sm">
+            Our geocoder occasionally rejects addresses it doesn&apos;t
+            recognize. Try adding the ZIP code, removing an apartment number, or
+            using a nearby street address.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              onClick={() => refetch()}
+              className="text-foreground border-border/60 hover:bg-muted/50 inline-flex items-center gap-1.5 rounded-md border bg-white px-3 py-1.5 text-xs font-medium transition-colors"
+            >
+              Try again
+            </button>
+            <button
+              onClick={() => setUserAddress("")}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
+            >
+              Enter a different address
+            </button>
+          </div>
         </div>
       ) : reps.length === 0 ? (
         <p className="text-muted-foreground py-2 text-base">
