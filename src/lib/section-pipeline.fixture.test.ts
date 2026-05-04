@@ -122,6 +122,10 @@ describe("Pipeline round-trip — s1884 HEAR Act fixture", () => {
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Real-bill round-trip — S.3706 Victims' VOICES Act (after-quoted-block)
+//  Two fixtures cover the two shapes we hit in production: the
+//  introduced/reported XML (no -enr suffix) and the enrolled XML.
+//  The phantom-section bug surfaced on enrolled but the introduced shape
+//  is the more common one users land on, so both stay covered.
 // ─────────────────────────────────────────────────────────────────────────
 
 describe("Pipeline round-trip — S.3706 Victims' VOICES Act fixture", () => {
@@ -161,6 +165,35 @@ describe("Pipeline round-trip — S.3706 Victims' VOICES Act fixture", () => {
     // of sec-2-restitution, which is the visible signature of the bug.
     const twins = slugs.filter((s) => /^sec-2-restitution.*-2$/.test(s));
     expect(twins).toHaveLength(0);
+  });
+});
+
+describe("Pipeline round-trip — S.3706 Victims' VOICES Act enrolled fixture", () => {
+  it("re-parse produces exactly one top-level Section 2 (no duplicate)", async () => {
+    const chunks = await parseXml(fixture("s3706-victims-voices-enr.xml"));
+    const fullText = renderToFullText(chunks);
+    const parsed = parseSectionsFromFullText(fullText);
+
+    const topLevel = parsed.filter(
+      (s) => /^Section \d+\./.test(s.heading) && !s.heading.includes(" > "),
+    );
+    const headings = topLevel.map((s) => s.heading);
+    // Two sections, each unique.
+    expect(headings).toHaveLength(2);
+    expect(new Set(headings).size).toBe(2);
+
+    // No section's content is degenerate (just punctuation) — that was
+    // the signature of the phantom after-quoted-block section.
+    for (const s of parsed) {
+      expect(s.content.trim()).not.toMatch(/^[.,;:!?]+$/);
+    }
+
+    // Slugs still round-trip.
+    const slugs = sectionSlugsForBill(parsed);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    for (let i = 0; i < parsed.length; i++) {
+      expect(matchSectionBySlug(parsed, slugs[i])?.index).toBe(i);
+    }
   });
 });
 

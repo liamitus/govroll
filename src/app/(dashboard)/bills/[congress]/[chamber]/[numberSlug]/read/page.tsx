@@ -13,9 +13,14 @@ import {
 } from "@/lib/bills/url";
 
 import { BillReader } from "@/components/bills/reader/bill-reader";
+import {
+  congressOrdinal,
+  displayNumberFor,
+} from "@/components/bills/reader/reader-header-meta";
 import { TextNotAvailable } from "@/components/bills/reader/text-not-available";
 import type {
   ReaderSection,
+  ReaderVersionListEntry,
   ReaderVersionMeta,
 } from "@/components/bills/reader/reader-types";
 import type { SectionCaption } from "@/lib/section-caption";
@@ -125,10 +130,10 @@ export default async function BillReaderPage({
   searchParams,
 }: {
   params: RouteParams;
-  searchParams: Promise<{ section?: string }>;
+  searchParams: Promise<{ section?: string; v?: string }>;
 }) {
   const { congress, chamber, numberSlug } = await params;
-  const { section: initialSlug } = await searchParams;
+  const { section: initialSlug, v: requestedVersionCode } = await searchParams;
 
   const parsed = parseBillPath([congress, chamber, numberSlug]);
   if (!parsed) notFound();
@@ -140,16 +145,47 @@ export default async function BillReaderPage({
   );
   if (!billIdKey) notFound();
 
-  // Single Promise.all — bill metadata for title/sponsor, latest
-  // text-bearing version for actual rendering, and the version list
-  // (for a future version switcher; loaded now so we don't pay a
-  // round trip when we add it).
+  // Three parallel queries — bill metadata, the version we'll render
+  // (either the `?v=` pick or the latest text-bearing), and the slim
+  // version list for the picker. We keep the picker list separate so
+  // we don't pay for every version's `fullText` just to render the
+  // dropdown labels.
   //
-  // Bill.fullText is intentionally omitted: fetch-bill-text writes both
-  // Bill.fullText and a BillTextVersion row in lockstep, so latestVersion
-  // is the canonical source. The handful of legacy bills with only
-  // Bill.fullText fall through to the conditional fallback below.
-  const [bill, latestVersion, allVersions] = await Promise.all([
+  // Bill.fullText is intentionally omitted from the bill query: the
+  // text-bearing payload comes from BillTextVersion, and the legacy
+  // path that still uses Bill.fullText fetches it lazily below.
+  const renderVersionQuery = requestedVersionCode
+    ? prisma.billTextVersion.findFirst({
+        where: {
+          bill: { billId: billIdKey },
+          versionCode: requestedVersionCode,
+          fullText: { not: null },
+        },
+        select: {
+          id: true,
+          versionCode: true,
+          versionType: true,
+          versionDate: true,
+          fullText: true,
+          sectionCaptions: true,
+          isSubstantive: true,
+        },
+      })
+    : prisma.billTextVersion.findFirst({
+        where: { bill: { billId: billIdKey }, fullText: { not: null } },
+        orderBy: { versionDate: "desc" },
+        select: {
+          id: true,
+          versionCode: true,
+          versionType: true,
+          versionDate: true,
+          fullText: true,
+          sectionCaptions: true,
+          isSubstantive: true,
+        },
+      });
+
+  const [bill, renderVersion, pickerVersions] = await Promise.all([
     prisma.bill.findUnique({
       where: { billId: billIdKey },
       select: {
@@ -159,6 +195,8 @@ export default async function BillReaderPage({
         billType: true,
         link: true,
         textFetchAttemptedAt: true,
+        currentStatus: true,
+        sponsor: true,
         // Title-fallback fields for pickBillHeadline. The reader's H1,
         // sticky breadcrumb, and "text not yet available" page all use
         // the resolved headline rather than the raw title.
@@ -174,24 +212,14 @@ export default async function BillReaderPage({
         },
       },
     }),
-    prisma.billTextVersion.findFirst({
-      where: { bill: { billId: billIdKey }, fullText: { not: null } },
-      orderBy: { versionDate: "desc" },
-      select: {
-        id: true,
-        versionCode: true,
-        versionType: true,
-        versionDate: true,
-        fullText: true,
-        sectionCaptions: true,
-        isSubstantive: true,
-      },
-    }),
+    renderVersionQuery,
     prisma.billTextVersion.findMany({
-      where: { bill: { billId: billIdKey } },
+      where: {
+        bill: { billId: billIdKey },
+        fullText: { not: null },
+      },
       orderBy: { versionDate: "asc" },
       select: {
-        id: true,
         versionCode: true,
         versionType: true,
         versionDate: true,
@@ -199,6 +227,27 @@ export default async function BillReaderPage({
       },
     }),
   ]);
+
+  // If the reader explicitly asked for a version that doesn't exist,
+  // fall back to the latest text-bearing version transparently — the
+  // user typically got here from an older link.
+  const latestVersion =
+    renderVersion ??
+    (requestedVersionCode
+      ? await prisma.billTextVersion.findFirst({
+          where: { bill: { billId: billIdKey }, fullText: { not: null } },
+          orderBy: { versionDate: "desc" },
+          select: {
+            id: true,
+            versionCode: true,
+            versionType: true,
+            versionDate: true,
+            fullText: true,
+            sectionCaptions: true,
+            isSubstantive: true,
+          },
+        })
+      : null);
 
   if (!bill) notFound();
 
@@ -281,9 +330,18 @@ export default async function BillReaderPage({
         isSubstantive: true,
       };
 
-  // Used by the (future) version switcher; keep the query alive so
-  // we don't pay a second round trip when we wire it up.
-  void allVersions;
+  // The picker shows only text-bearing, substantive versions — showing
+  // a dropdown entry for a procedural-duplicate or text-less version
+  // is worse than hiding the option.
+  const availableVersions: ReaderVersionListEntry[] = pickerVersions
+    .filter((v) => v.isSubstantive !== false)
+    .map((v) => ({
+      versionCode: v.versionCode,
+      versionType: v.versionType,
+      versionDate: v.versionDate,
+    }));
+
+  const detailHref = canonicalReadHref.replace(/\/read$/, "");
 
   return (
     <BillReader
@@ -294,8 +352,14 @@ export default async function BillReaderPage({
         headline,
         billType: bill.billType,
         govtrackUrl: bill.link ?? null,
+        currentStatus: bill.currentStatus,
+        sponsor: bill.sponsor,
+        displayNumber: displayNumberFor(bill.billType, parsed.number),
+        congressLabel: congressOrdinal(parsed.congress),
+        detailHref,
       }}
       version={versionMeta}
+      availableVersions={availableVersions}
       sections={sections}
       initialSlug={initialSlug ?? null}
     />

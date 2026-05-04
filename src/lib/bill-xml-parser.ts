@@ -5,9 +5,12 @@
  * and dropped everything else. That silently lost <quoted-block> content —
  * the inserted text of amendments, which is the substantive change in most
  * amendment bills. This version traverses <quoted-block> transparently,
- * captures the USLM textual tags (text, continuation-text, after-quoted-block),
- * and falls through to "recurse if it has structural children; capture if
- * it has text" for any future tag we haven't taught it about.
+ * captures the USLM textual tags (text, continuation-text), and falls
+ * through to "recurse if it has structural children; capture if it has
+ * text" for any future tag we haven't taught it about.
+ *
+ * <after-quoted-block> is handled specially — see the note where it's
+ * consumed below.
  */
 
 const STRUCTURAL_TAGS = new Set([
@@ -35,11 +38,17 @@ const STRUCTURAL_TAGS = new Set([
 
 // Tags whose content is a block of bill text that should be captured
 // verbatim, without introducing a new heading level.
-const TEXTUAL_TAGS = new Set([
-  "text",
-  "continuation-text",
-  "after-quoted-block",
-]);
+const TEXTUAL_TAGS = new Set(["text", "continuation-text"]);
+
+// <after-quoted-block> holds the trailing connective that closes an
+// amendment's quoted insertion — usually `.`, `;`, or `; and`. It sits
+// at the SAME path as the outer section that's doing the amending (the
+// <quoted-block> itself is a pass-through with no heading), so emitting
+// it as its own chunk would surface as a duplicate section header in
+// the re-parse stage. We attach it to the last chunk emitted from the
+// quoted block instead, which is where the connective actually reads
+// in the rendered bill.
+const AFTER_QUOTED_TAG = "after-quoted-block";
 
 // Tags ignored inside a legis-body subtree — either handled separately
 // (enum/header via extractHeading) or structurally irrelevant.
@@ -124,6 +133,30 @@ function parseContainer(node: any, path: string[]): ParsedChunk[] {
 
       if (STRUCTURAL_TAGS.has(name)) {
         results.push(...parseContainer(child, newPath));
+      } else if (name === AFTER_QUOTED_TAG) {
+        const text = parseTextNode(child);
+        if (!text) continue;
+        // Merge the trailing connective into the most recent chunk so
+        // the re-parse doesn't see a second top-level section at the
+        // outer path. If the quoted block emitted nothing (shouldn't
+        // happen in well-formed bills), drop it — a lone `.` or `;`
+        // at the outer path is never information we'd render usefully.
+        const last = results[results.length - 1];
+        if (!last) continue;
+        const trimmedText = text.trim();
+        const trimmedLast = last.content.trimEnd();
+        // The quoted text usually already ends in the same punctuation
+        // that after-quoted-block carries (e.g. a sentence `.` inside
+        // the quote, plus the outer `.` that closes the amending
+        // sentence). Emitting both is cosmetically noisy and rarely
+        // meaningful — drop the redundant copy.
+        if (
+          /^[.,;:!?]$/.test(trimmedText) &&
+          trimmedLast.endsWith(trimmedText)
+        ) {
+          continue;
+        }
+        last.content = tidyContent(`${trimmedLast} ${trimmedText}`);
       } else if (TEXTUAL_TAGS.has(name)) {
         const text = parseTextNode(child);
         if (text) results.push({ path: newPath, content: text });
