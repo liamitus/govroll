@@ -38,6 +38,16 @@ export interface ReaderBillMeta {
    *  on older rows; the reader's "Sources" block hides the link in
    *  that case. */
   govtrackUrl: string | null;
+  /** GovTrack-style status key (e.g. "enacted_signed", "pass_over_senate"). */
+  currentStatus: string;
+  /** Raw Congress.gov sponsor string, e.g. "Sen. Cornyn, John [R-TX]". */
+  sponsor: string | null;
+  /** Short display number, e.g. "S. 3706" or "H.R. 1234". */
+  displayNumber: string;
+  /** "118th", "119th", etc. — for the small header meta line. */
+  congressLabel: string;
+  /** Canonical detail-page URL (one level up from /read). */
+  detailHref: string;
 }
 
 export interface ReaderVersionMeta {
@@ -46,4 +56,14 @@ export interface ReaderVersionMeta {
   versionType: string;
   versionDate: Date;
   isSubstantive: boolean;
+}
+
+/**
+ * Minimal shape for rendering the version picker — every text-bearing
+ * version the bill has, each keyed by its versionCode.
+ */
+export interface ReaderVersionListEntry {
+  versionCode: string;
+  versionType: string;
+  versionDate: Date;
 }

@@ -95,6 +95,47 @@ describe("BillXmlParser — S.1884 HEAR Act (amendment bill)", () => {
   });
 });
 
+describe("BillXmlParser — S.3706 Victims' VOICES Act (after-quoted-block regression)", () => {
+  it("does not emit a phantom second Section 2 from <after-quoted-block>", async () => {
+    // The enrolled XML contains a Section 2 whose amendment text ends
+    // with `<after-quoted-block>.</after-quoted-block>`. Before the
+    // fix, that period was emitted as its own chunk at Section 2's
+    // path, which re-parsed into a duplicate "Section 2" with content
+    // "." — showing up twice in the outline and at the bottom of the
+    // reader body.
+    const chunks = await parse(fixture("s3706-victims-voices-enr.xml"));
+
+    const topLevelSections = chunks.filter(
+      (c) => c.path.length === 1 && /^Section \d+\./.test(c.path[0]),
+    );
+    const uniqueTopLevelHeadings = new Set(
+      topLevelSections.map((c) => c.path[0]),
+    );
+    // Two distinct top-level sections (§1 Short title, §2 Restitution…)
+    // — no duplicates.
+    expect(topLevelSections).toHaveLength(uniqueTopLevelHeadings.size);
+    expect(uniqueTopLevelHeadings.size).toBe(2);
+
+    // No chunk's content is just trailing punctuation (the stray
+    // after-quoted-block period).
+    for (const c of chunks) {
+      expect(c.content).not.toMatch(/^[.,;:!?]+$/);
+    }
+  });
+
+  it("still captures the (A) (B) (C) amendment subparagraphs", async () => {
+    const chunks = await parse(fixture("s3706-victims-voices-enr.xml"));
+    const all = render(chunks);
+    expect(all).toContain("lost income, child care");
+    expect(all).toContain(
+      "transporting the victim for necessary medical and related professional services",
+    );
+    expect(all).toContain(
+      "physical and occupational therapy and rehabilitation",
+    );
+  });
+});
+
 describe("BillXmlParser — unknown container recursion", () => {
   it("recurses into unknown container-level tags that have structural children", async () => {
     // Future-proofing: if Congress adds a new tag we don't know about,

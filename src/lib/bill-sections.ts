@@ -79,6 +79,11 @@ function parseParsedFormat(fullText: string): BillSection[] {
     if (isHeading) {
       const heading = firstLine;
       const content = lines.slice(1).join("\n").trim();
+      // Drop degenerate blocks whose "body" is just trailing punctuation.
+      // These came from the pre-fix XML parser emitting <after-quoted-block>
+      // at the outer section's path — the fix is in bill-xml-parser.ts, but
+      // fullText stored before the fix still looks like this on re-parse.
+      if (/^[.,;:!?\s]+$/.test(content)) continue;
       const sectionRef = extractSectionRef(heading);
       sections.push({ heading, content, sectionRef });
     } else if (sections.length > 0) {
