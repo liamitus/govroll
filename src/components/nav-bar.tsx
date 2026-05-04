@@ -15,6 +15,7 @@ import { useState } from "react";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { useAddress } from "@/hooks/use-address";
 import { CongressStatus } from "@/components/congress-status/congress-status";
+import { GlobalSearch } from "@/components/global-search";
 
 export function NavBar() {
   const { user, loading, signOut } = useAuth();
@@ -24,8 +25,11 @@ export function NavBar() {
 
   return (
     <header className="bg-navy sticky top-0 z-50 border-b border-white/10">
-      <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <Link href={logoHref} className="group flex items-center gap-2">
+      <nav className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-6">
+        <Link
+          href={logoHref}
+          className="group flex flex-shrink-0 items-center gap-2"
+        >
           <span className="text-civic-gold text-sm tracking-widest">
             &#9733;
           </span>
@@ -37,7 +41,9 @@ export function NavBar() {
           </span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <GlobalSearch />
+
+        <div className="flex flex-shrink-0 items-center gap-2">
           <CongressStatus />
           {!loading && !user && (
             <Button
