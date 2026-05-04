@@ -259,15 +259,14 @@ const FIPS_TO_STATE: Record<string, string> = {
 
 /**
  * Get representatives for an address from our database.
+ *
+ * Returns `null` when none of the geocoders can resolve the address — this is
+ * a user-input failure (typo, PO box none of the providers know, etc.) and
+ * should be surfaced as a 400 by callers, not alerted on as a 500.
  */
 export async function getRepresentativesByAddress(address: string) {
   const geo = await geocodeAddress(address);
-
-  if (!geo) {
-    throw new Error(
-      "Could not geocode address. Please check the address and try again.",
-    );
-  }
+  if (!geo) return null;
 
   // Find senators for the state (always 2)
   const senators = await prisma.representative.findMany({

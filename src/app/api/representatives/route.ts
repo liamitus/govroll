@@ -27,6 +27,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const data = await getRepresentativesByAddress(address);
+    if (!data) {
+      return NextResponse.json(
+        {
+          error:
+            "Could not geocode address. Please check the address and try again.",
+        },
+        { status: 400 },
+      );
+    }
     const { officials } = data;
 
     const bill = await prisma.bill.findUnique({

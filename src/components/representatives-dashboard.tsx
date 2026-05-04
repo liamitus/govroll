@@ -186,9 +186,9 @@ export function RepresentativesDashboard() {
         <div className="border-border/60 bg-muted/30 space-y-3 rounded-lg border p-6 text-center">
           <p className="text-muted-foreground text-base">{error}</p>
           <p className="text-muted-foreground/80 mx-auto max-w-sm text-sm">
-            We look up districts through the U.S. Census Bureau&apos;s geocoder.
-            It occasionally rejects addresses it doesn&apos;t recognize — try
-            adding the ZIP code or removing an apartment number.
+            Our geocoder occasionally rejects addresses it doesn&apos;t
+            recognize. Try adding the ZIP code, removing an apartment number, or
+            using a nearby street address.
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             <button
