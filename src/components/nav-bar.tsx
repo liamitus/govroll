@@ -25,7 +25,7 @@ export function NavBar() {
 
   return (
     <header className="bg-navy sticky top-0 z-50 border-b border-white/10">
-      <nav className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-6">
+      <nav className="mx-auto grid h-14 max-w-6xl grid-cols-[auto_1fr_auto] items-center gap-4 px-6">
         <Link
           href={logoHref}
           className="group flex flex-shrink-0 items-center gap-2"
@@ -41,7 +41,9 @@ export function NavBar() {
           </span>
         </Link>
 
-        <GlobalSearch />
+        <div className="flex justify-center">
+          <GlobalSearch />
+        </div>
 
         <div className="flex flex-shrink-0 items-center gap-2">
           <CongressStatus />
