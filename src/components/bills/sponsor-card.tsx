@@ -73,7 +73,6 @@ function coalitionLine(
   demCount: number,
   repCount: number,
   otherCount: number,
-  sponsorParty: string | null,
   isSettled: boolean,
 ): string {
   if (count === 0) {
@@ -100,12 +99,20 @@ function coalitionLine(
     return `${count} ${noun} — ${leaning}`;
   }
 
-  const partyWord =
-    sponsorParty === "R"
-      ? "all Republican"
-      : sponsorParty === "D"
-        ? "all Democrat"
-        : split;
+  // Single-party label keyed off the cosponsors themselves — never the
+  // sponsor's party. A Democrat-sponsored bill cosponsored only by a
+  // Republican (e.g. sres-538-119: Alsobrooks + Collins) must read as
+  // "all Republican".
+  let partyWord: string;
+  if (demCount > 0 && repCount === 0 && otherCount === 0) {
+    partyWord = "all Democrat";
+  } else if (repCount > 0 && demCount === 0 && otherCount === 0) {
+    partyWord = "all Republican";
+  } else if (otherCount > 0 && demCount === 0 && repCount === 0) {
+    partyWord = "all Independent";
+  } else {
+    partyWord = split;
+  }
   return `${count} ${noun} — ${partyWord}`;
 }
 
@@ -227,7 +234,6 @@ export function SponsorCard({
     demCount,
     repCount,
     otherCount,
-    parsed.party,
     isSettled,
   );
   // Only show the expander when we actually have rows to reveal; otherwise
