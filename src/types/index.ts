@@ -190,11 +190,19 @@ export interface RepVoteRecord {
   billId: number;
   billSlug: string;
   title: string;
+  /** Bill introduction date — kept for back-compat. UI should prefer
+   *  `votedAt` when displaying the row's date. */
   date: string;
   repVote: string;
   link: string;
   category?: string | null;
   billStatus?: string;
+  /** Roll-call number on the chamber. The same bill produces multiple
+   *  roll calls (motion to proceed, cloture, amendments, final passage). */
+  rollCallNumber: number | null;
+  chamber: string | null;
+  /** ISO timestamp of the actual vote, distinct from bill introduction. */
+  votedAt: string | null;
 }
 
 export interface RepVotingStats {

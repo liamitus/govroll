@@ -33,7 +33,7 @@ import { getCachedResponse, setCachedResponse } from "@/lib/ai-cache";
 import { reportError } from "@/lib/error-reporting";
 import { formatStreamErrorForClient } from "@/lib/ai-chat-stream-errors";
 import { hasWhyIntent } from "@/lib/rep-mention";
-import { normalizeRepVote } from "@/lib/votes";
+import { normalizeRepVote, isPassageCategory } from "@/lib/votes";
 
 /** Max characters allowed in a single user message. */
 const MAX_MESSAGE_LENGTH = 2000;
@@ -662,11 +662,6 @@ async function tryRecordSpend(args: {
  * That keeps the prompt truthful — we'd rather omit the fact than inject
  * a fabricated "did not vote" line.
  */
-const PASSAGE_CATEGORIES = new Set([
-  "passage",
-  "passage_suspension",
-  "veto_override",
-]);
 const NON_PASSAGE_AMENDMENT_LIKE = new Set([
   "amendment",
   "procedural",
@@ -723,14 +718,12 @@ async function resolveRepVoteContext(
 
   // Same prioritization as /api/representatives so the prompt fact and
   // the on-page rep card never disagree.
-  const passage = allVotes.find(
-    (v: VoteRow) => v.category && PASSAGE_CATEGORIES.has(v.category),
-  );
+  const passage = allVotes.find((v: VoteRow) => isPassageCategory(v.category));
   const uncategorized = allVotes.find((v: VoteRow) => !v.category);
   const other = allVotes.find(
     (v: VoteRow) =>
       v.category &&
-      !PASSAGE_CATEGORIES.has(v.category) &&
+      !isPassageCategory(v.category) &&
       !NON_PASSAGE_AMENDMENT_LIKE.has(v.category),
   );
   const amendmentLike = allVotes.find(

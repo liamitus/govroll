@@ -6,6 +6,10 @@
  *
  * Anywhere you see a string vote value flowing from `RepresentativeVote.vote`
  * through to a comparison, label, or color, route it through this module.
+ *
+ * It also owns the GovTrack vote-category vocabulary — what counts as a
+ * substantive "passage" vote vs. a procedural step — since that vocabulary
+ * shows up in alignment math, in UI labels, and in the AI prompt builder.
  */
 
 export type NormalizedRepVote =
@@ -62,4 +66,51 @@ export function repAlignsWithUser(
   if (userVote === "For" && repYes) return "match";
   if (userVote === "Against" && repNo) return "match";
   return "mismatch";
+}
+
+/**
+ * GovTrack vote categories that represent a substantive yea/nay on the
+ * bill itself — final passage, passage under suspension of the rules,
+ * or a veto override. These are the votes the alignment score weighs;
+ * cloture and procedural motions don't count, since a member can vote
+ * yes on cloture and no on passage (or vice versa) and the substantive
+ * position is the passage vote.
+ */
+export const PASSAGE_CATEGORIES: ReadonlySet<string> = new Set([
+  "passage",
+  "passage_suspension",
+  "veto_override",
+]);
+
+export function isPassageCategory(
+  category: string | null | undefined,
+): boolean {
+  return typeof category === "string" && PASSAGE_CATEGORIES.has(category);
+}
+
+/**
+ * Short, plain-English label for a GovTrack vote category. Used as the
+ * row identity when distinguishing multiple roll calls on the same bill
+ * — e.g. a budget bill with a passage vote, a cloture vote, and three
+ * amendment votes all show up under the same bill title.
+ */
+export function voteCategoryLabel(category: string | null | undefined): string {
+  switch (category) {
+    case "passage":
+      return "Final passage";
+    case "passage_suspension":
+      return "Passage (suspension)";
+    case "veto_override":
+      return "Veto override";
+    case "cloture":
+      return "Cloture";
+    case "amendment":
+      return "Amendment";
+    case "procedural":
+      return "Procedural";
+    case "nomination":
+      return "Nomination";
+    default:
+      return "Vote";
+  }
 }
