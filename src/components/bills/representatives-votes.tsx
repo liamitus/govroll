@@ -18,13 +18,21 @@ import {
   repsForBillQueryKey,
 } from "@/lib/queries/representatives-client";
 import { shouldCombineVoiceVoteNotice } from "@/lib/representatives-display";
+import { isYesVote, isNoVote } from "@/lib/votes";
 
 const NO_VOTE_SENTINEL = "No vote recorded";
 
-/** Normalize congressional vote jargon to plain English */
+/**
+ * Normalize congressional vote jargon to plain English.
+ *
+ * Wraps the shared chamber-mismatch logic (Senate "Yea"/"Nay" vs House
+ * "Aye"/"No") but preserves passthrough for the synthetic display
+ * sentinels this file emits ("Pending", "Did not vote", "Not yet",
+ * "No recorded vote") so they render as written.
+ */
 function normalizeVote(vote: string): string {
-  if (vote === "Yea" || vote === "Aye") return "Yes";
-  if (vote === "Nay" || vote === "No") return "No";
+  if (isYesVote(vote)) return "Yes";
+  if (isNoVote(vote)) return "No";
   return vote;
 }
 

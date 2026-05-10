@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import type { RepVoteRecord } from "@/types";
 import { billHref } from "@/lib/bills/url";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { isYesVote, isNoVote, repAlignsWithUser } from "@/lib/votes";
 
 interface VoteComparisonFeedProps {
   votingRecord: RepVoteRecord[];
@@ -18,29 +19,15 @@ function getMatchStatus(
   repVote: string,
   userVote: string | undefined,
 ): "match" | "mismatch" | "none" {
-  if (!userVote || userVote === "Abstain") return "none";
-  if (repVote === "Present" || repVote === "Not Voting") return "none";
-
-  if (
-    (userVote === "For" && repVote === "Yea") ||
-    (userVote === "Against" && repVote === "Nay")
-  ) {
-    return "match";
-  }
-  return "mismatch";
+  const status = repAlignsWithUser(repVote, userVote);
+  return status === "incomparable" ? "none" : status;
 }
 
 function repVoteBadgeClass(vote: string): string {
-  switch (vote) {
-    case "Yea":
-      return "bg-vote-yea text-white";
-    case "Nay":
-      return "bg-vote-nay text-white";
-    case "Present":
-      return "bg-vote-present text-white";
-    default:
-      return "bg-gray-300 text-gray-700";
-  }
+  if (isYesVote(vote)) return "bg-vote-yea text-white";
+  if (isNoVote(vote)) return "bg-vote-nay text-white";
+  if (vote === "Present") return "bg-vote-present text-white";
+  return "bg-gray-300 text-gray-700";
 }
 
 function userVoteBadgeClass(vote: string): string {

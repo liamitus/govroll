@@ -5,17 +5,12 @@ import { Phone, ExternalLink } from "lucide-react";
 import type { RepresentativeWithVote } from "@/types";
 import { partyColor } from "@/lib/representative-utils";
 import { RepPhoto } from "@/components/representatives/rep-photo";
+import { normalizeRepVote } from "@/lib/votes";
 
 const NO_VOTE_SENTINEL = "No vote recorded";
 
-function normalizeVote(vote: string): string {
-  if (vote === "Yea" || vote === "Aye") return "Yes";
-  if (vote === "Nay" || vote === "No") return "No";
-  return vote;
-}
-
 function voteBadgeClass(vote: string): string {
-  const v = normalizeVote(vote);
+  const v = normalizeRepVote(vote);
   if (v === "Yes") return "text-vote-yea bg-vote-yea-soft";
   if (v === "No") return "text-vote-nay bg-vote-nay-soft";
   if (v === "Present") return "text-vote-present bg-vote-present-soft";
@@ -101,7 +96,7 @@ function PromotedRep({
 }) {
   const colors = partyColor(rep.party);
   const hasVote = rep.vote !== NO_VOTE_SENTINEL;
-  const voteLabel = hasVote ? normalizeVote(rep.vote) : null;
+  const voteLabel = hasVote ? normalizeRepVote(rep.vote) : null;
   const repHref = `/representatives/${rep.slug || rep.bioguideId}`;
 
   const ctaCopy = (() => {
@@ -154,7 +149,7 @@ function PromotedRep({
 function CompactRepRow({ rep }: { rep: RepresentativeWithVote }) {
   const repHref = `/representatives/${rep.slug || rep.bioguideId}`;
   const hasVote = rep.vote !== NO_VOTE_SENTINEL;
-  const voteLabel = hasVote ? normalizeVote(rep.vote) : null;
+  const voteLabel = hasVote ? normalizeRepVote(rep.vote) : null;
 
   return (
     <div className="bg-card flex items-center gap-2 rounded-md border p-2 text-xs">

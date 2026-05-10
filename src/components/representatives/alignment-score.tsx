@@ -5,6 +5,7 @@ import type { RepVoteRecord } from "@/types";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { repAlignsWithUser } from "@/lib/votes";
 
 interface AlignmentScoreProps {
   votingRecord: RepVoteRecord[];
@@ -22,17 +23,10 @@ function computeAlignment(
   let aligned = 0;
 
   for (const bill of votingRecord) {
-    const userVote = userVotes[bill.billId];
-    if (!userVote || userVote === "Abstain") continue;
-    if (bill.repVote === "Present" || bill.repVote === "Not Voting") continue;
-
+    const status = repAlignsWithUser(bill.repVote, userVotes[bill.billId]);
+    if (status === "incomparable") continue;
     comparable++;
-    if (
-      (userVote === "For" && bill.repVote === "Yea") ||
-      (userVote === "Against" && bill.repVote === "Nay")
-    ) {
-      aligned++;
-    }
+    if (status === "match") aligned++;
   }
 
   return {
