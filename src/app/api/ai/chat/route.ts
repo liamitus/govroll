@@ -33,6 +33,7 @@ import { getCachedResponse, setCachedResponse } from "@/lib/ai-cache";
 import { reportError } from "@/lib/error-reporting";
 import { formatStreamErrorForClient } from "@/lib/ai-chat-stream-errors";
 import { hasWhyIntent } from "@/lib/rep-mention";
+import { normalizeRepVote } from "@/lib/votes";
 
 /** Max characters allowed in a single user message. */
 const MAX_MESSAGE_LENGTH = 2000;
@@ -673,12 +674,6 @@ const NON_PASSAGE_AMENDMENT_LIKE = new Set([
   "nomination",
 ]);
 
-function normalizeVoteForPrompt(vote: string): string {
-  if (vote === "Yea" || vote === "Aye") return "Yes";
-  if (vote === "Nay" || vote === "No") return "No";
-  return vote;
-}
-
 function chamberLabelForPrompt(chamber: string | null): string | null {
   if (!chamber) return null;
   const lower = chamber.toLowerCase();
@@ -758,7 +753,7 @@ async function resolveRepVoteContext(
 
   return {
     displayName,
-    voteLabel: normalizeVoteForPrompt(best.vote),
+    voteLabel: normalizeRepVote(best.vote),
     voteDate: best.votedAt ? best.votedAt.toISOString().slice(0, 10) : null,
     chamber: chamberLabelForPrompt(best.chamber),
     rollCallNumber: best.rollCallNumber,
