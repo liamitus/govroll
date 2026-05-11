@@ -4,10 +4,22 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { RepVoteRecord } from "@/types";
 import { billHref } from "@/lib/bills/url";
+import { isYesVote } from "@/lib/votes";
 
 interface RepKeyVotesProps {
   keyVotes: RepVoteRecord[];
   repFirstName: string;
+}
+
+function formatVoteDate(record: RepVoteRecord): string {
+  // Prefer the actual roll-call date; fall back to bill.date for legacy
+  // rows that don't have votedAt populated.
+  const iso = record.votedAt ?? record.date;
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function RepKeyVotes({ keyVotes, repFirstName }: RepKeyVotesProps) {
@@ -23,38 +35,37 @@ export function RepKeyVotes({ keyVotes, repFirstName }: RepKeyVotesProps) {
       </p>
 
       <div className="space-y-2">
-        {keyVotes.map((vote) => (
-          <div
-            key={`${vote.billId}-${vote.date}`}
-            className="border-border/60 flex items-center gap-3 rounded-lg border bg-white p-3 sm:p-4"
-          >
-            <Badge
-              className={
-                vote.repVote === "Yea"
-                  ? "bg-vote-yea flex-shrink-0 text-white"
-                  : "bg-vote-nay flex-shrink-0 text-white"
-              }
+        {keyVotes.map((vote) => {
+          const yes = isYesVote(vote.repVote);
+          return (
+            <div
+              key={`${vote.billId}-${vote.rollCallNumber ?? "x"}`}
+              className="border-border/60 flex items-center gap-3 rounded-lg border bg-white p-3 sm:p-4"
             >
-              {vote.repVote === "Yea" ? "YES" : "NO"}
-            </Badge>
-
-            <div className="min-w-0 flex-1">
-              <Link
-                href={billHref({ billId: vote.billSlug, title: vote.title })}
-                className="text-navy line-clamp-2 text-base leading-snug font-semibold hover:underline"
+              <Badge
+                className={
+                  yes
+                    ? "bg-vote-yea flex-shrink-0 text-white"
+                    : "bg-vote-nay flex-shrink-0 text-white"
+                }
               >
-                {vote.title}
-              </Link>
-              <p className="text-muted-foreground mt-0.5 text-sm">
-                {new Date(vote.date).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </p>
+                {yes ? "YES" : "NO"}
+              </Badge>
+
+              <div className="min-w-0 flex-1">
+                <Link
+                  href={billHref({ billId: vote.billSlug, title: vote.title })}
+                  className="text-navy line-clamp-2 text-base leading-snug font-semibold hover:underline"
+                >
+                  {vote.title}
+                </Link>
+                <p className="text-muted-foreground mt-0.5 text-sm">
+                  {formatVoteDate(vote)}
+                </p>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

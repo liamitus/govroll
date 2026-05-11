@@ -1,39 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { RepVoteRecord } from "@/types";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { AuthModal } from "@/components/auth/auth-modal";
-import { repAlignsWithUser } from "@/lib/votes";
+import { computeBillAlignment } from "@/lib/vote-grouping";
 
 interface AlignmentScoreProps {
   votingRecord: RepVoteRecord[];
   userVotes: Record<number, string> | null;
   repName: string;
-}
-
-function computeAlignment(
-  votingRecord: RepVoteRecord[],
-  userVotes: Record<number, string> | null,
-) {
-  if (!userVotes) return { aligned: 0, comparable: 0, pct: null };
-
-  let comparable = 0;
-  let aligned = 0;
-
-  for (const bill of votingRecord) {
-    const status = repAlignsWithUser(bill.repVote, userVotes[bill.billId]);
-    if (status === "incomparable") continue;
-    comparable++;
-    if (status === "match") aligned++;
-  }
-
-  return {
-    aligned,
-    comparable,
-    pct: comparable > 0 ? Math.round((aligned / comparable) * 100) : null,
-  };
 }
 
 function EmptyDonut() {
@@ -60,9 +37,9 @@ export function AlignmentScore({
 }: AlignmentScoreProps) {
   const { user } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
-  const { aligned, comparable, pct } = computeAlignment(
-    votingRecord,
-    userVotes,
+  const { aligned, comparable, pct } = useMemo(
+    () => computeBillAlignment(votingRecord, userVotes),
+    [votingRecord, userVotes],
   );
 
   // Not logged in — show preview donut + sign in CTA

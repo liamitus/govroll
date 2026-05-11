@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isYesVote, isNoVote, isPassageCategory } from "@/lib/votes";
 
 export async function GET(
   _request: Request,
@@ -20,10 +21,18 @@ export async function GET(
       );
     }
 
-    // Fetch rep's voting record with bill info
+    // Fetch rep's voting record with full per-roll-call metadata. Same
+    // bill produces multiple roll calls (motion to proceed, cloture,
+    // amendments, final passage); the client uses these fields to group
+    // them under one row instead of N duplicate-titled rows.
     const repVotes = await prisma.representativeVote.findMany({
       where: { representativeId: rep.id },
-      include: {
+      select: {
+        vote: true,
+        rollCallNumber: true,
+        chamber: true,
+        votedAt: true,
+        category: true,
         bill: {
           select: {
             id: true,
@@ -35,7 +44,9 @@ export async function GET(
           },
         },
       },
-      orderBy: { bill: { date: "desc" } },
+      // votedAt desc, with bill.date as fallback for legacy rows that
+      // pre-date the votedAt backfill.
+      orderBy: [{ votedAt: "desc" }, { bill: { date: "desc" } }],
     });
 
     // Count bills this rep has sponsored
@@ -81,24 +92,37 @@ export async function GET(
       link: rv.bill.link,
       category: rv.category,
       billStatus: rv.bill.currentStatus,
+      rollCallNumber: rv.rollCallNumber,
+      chamber: rv.chamber,
+      votedAt: rv.votedAt ? rv.votedAt.toISOString() : null,
     }));
 
-    // Key votes: passage votes only, most recent first
+    // Key votes: substantive yea/nay votes (passage / passage_suspension /
+    // veto_override), one per bill, most recent first. Earlier this filtered
+    // only `category === "passage"` and only `Yea`/`Nay` — so House reps
+    // (who vote `Aye`/`No`) and bills passed under suspension never showed up.
+    const seenBillIds = new Set<number>();
     const keyVotes = votingRecord
       .filter(
         (v) =>
-          v.category === "passage" &&
-          (v.repVote === "Yea" || v.repVote === "Nay"),
+          isPassageCategory(v.category) &&
+          (isYesVote(v.repVote) || isNoVote(v.repVote)),
       )
+      .filter((v) => {
+        if (seenBillIds.has(v.billId)) return false;
+        seenBillIds.add(v.billId);
+        return true;
+      })
       .slice(0, 6);
 
-    // Compute stats
+    // Compute stats. yea/nay counts use the shared helper so House Aye/No
+    // are counted alongside Senate Yea/Nay.
     const totalVotes = repVotes.length;
     const missedVotes = repVotes.filter(
       (rv) => rv.vote === "Not Voting",
     ).length;
-    const yeaCount = repVotes.filter((rv) => rv.vote === "Yea").length;
-    const nayCount = repVotes.filter((rv) => rv.vote === "Nay").length;
+    const yeaCount = repVotes.filter((rv) => isYesVote(rv.vote)).length;
+    const nayCount = repVotes.filter((rv) => isNoVote(rv.vote)).length;
 
     return NextResponse.json({
       representative: {
