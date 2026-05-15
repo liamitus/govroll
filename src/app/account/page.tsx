@@ -47,8 +47,6 @@ export default function AccountPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
 
-  const supabase = createSupabaseBrowserClient();
-
   const showMessage = (text: string, type: "success" | "error" = "success") => {
     setMessage(text);
     setMessageType(type);
@@ -117,6 +115,11 @@ export default function AccountPage() {
 
   const handleUpdateUsername = async () => {
     if (!newUsername.trim()) return;
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      showMessage("Browser storage is disabled", "error");
+      return;
+    }
     const { error } = await supabase.auth.updateUser({
       data: { username: newUsername.trim() },
     });
@@ -136,6 +139,11 @@ export default function AccountPage() {
 
   const handleUpdateEmail = async () => {
     if (!newEmail.trim()) return;
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      showMessage("Browser storage is disabled", "error");
+      return;
+    }
     const { error } = await supabase.auth.updateUser({
       email: newEmail.trim(),
     });
@@ -153,6 +161,11 @@ export default function AccountPage() {
     const validation = validatePassword(newPassword);
     if (!validation.isValid) {
       showMessage("Password does not meet requirements", "error");
+      return;
+    }
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      showMessage("Browser storage is disabled", "error");
       return;
     }
     const { error } = await supabase.auth.updateUser({
@@ -175,7 +188,8 @@ export default function AccountPage() {
     });
 
     if (res.ok) {
-      await supabase.auth.signOut();
+      const supabase = createSupabaseBrowserClient();
+      if (supabase) await supabase.auth.signOut();
       router.push("/");
     } else {
       const data = await res.json();

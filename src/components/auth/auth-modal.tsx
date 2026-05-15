@@ -52,6 +52,8 @@ declare global {
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 const GIS_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
+const STORAGE_DISABLED_MESSAGE =
+  "Sign-in requires browser storage. Disable private browsing or allow cookies for this site.";
 
 async function generateNonce(): Promise<{ raw: string; hashed: string }> {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -139,6 +141,10 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
   const handleGoogleCredential = useCallback(
     async (credential: string, rawNonce: string) => {
       const supabase = createSupabaseBrowserClient();
+      if (!supabase) {
+        setError(STORAGE_DISABLED_MESSAGE);
+        return;
+      }
       const { error: signInError } = await supabase.auth.signInWithIdToken({
         provider: "google",
         token: credential,
@@ -216,6 +222,10 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
 
   const handleOAuth = async (provider: "google" | "github") => {
     const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setError(STORAGE_DISABLED_MESSAGE);
+      return;
+    }
     const { data } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
@@ -235,6 +245,11 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     setSubmitting(true);
 
     const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setError(STORAGE_DISABLED_MESSAGE);
+      setSubmitting(false);
+      return;
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
     });

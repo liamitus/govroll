@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  createSupabaseBrowserClient,
+  type SupabaseBrowserClient,
+} from "@/lib/supabase/client";
 import type { User, AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { generateCitizenId, resolveUsername } from "@/lib/citizen-id";
-
-const supabase = createSupabaseBrowserClient();
 
 /**
  * Three discrete states the hook moves through:
@@ -21,14 +22,31 @@ const supabase = createSupabaseBrowserClient();
  */
 export type AuthState = "loading" | "signed-in" | "signed-out";
 
+const STORAGE_DISABLED_MESSAGE =
+  "Sign-in requires browser storage. Disable private browsing or allow cookies for this site.";
+
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [authState, setAuthState] = useState<AuthState>("loading");
   const initialized = useRef(false);
+  const supabaseRef = useRef<SupabaseBrowserClient | null>(null);
 
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
+
+    // Deferred to the effect so a throw during Supabase init can't crash
+    // module evaluation and topple the entire client tree into global-error.
+    const supabase = createSupabaseBrowserClient();
+    supabaseRef.current = supabase;
+
+    if (!supabase) {
+      // Storage is blocked (iOS Safari private mode, content blockers, etc.).
+      // No session can be persisted — move out of "loading" so the UI renders
+      // as a signed-out anonymous reader instead of stalling on skeletons.
+      setAuthState("signed-out");
+      return;
+    }
 
     supabase.auth
       .getUser()
@@ -68,6 +86,10 @@ export function useAuth() {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    const supabase = supabaseRef.current;
+    if (!supabase) {
+      return { error: { message: STORAGE_DISABLED_MESSAGE } };
+    }
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -76,6 +98,10 @@ export function useAuth() {
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
+    const supabase = supabaseRef.current;
+    if (!supabase) {
+      return { error: { message: STORAGE_DISABLED_MESSAGE } };
+    }
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -91,6 +117,8 @@ export function useAuth() {
   }, []);
 
   const signOut = useCallback(async () => {
+    const supabase = supabaseRef.current;
+    if (!supabase) return;
     await supabase.auth.signOut();
   }, []);
 
