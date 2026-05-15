@@ -18,7 +18,6 @@ export default function UpdatePasswordPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
-  const supabase = createSupabaseBrowserClient();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +31,14 @@ export default function UpdatePasswordPage() {
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
+      return;
+    }
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setError(
+        "Browser storage is disabled. Disable private browsing or allow cookies for this site.",
+      );
       return;
     }
 

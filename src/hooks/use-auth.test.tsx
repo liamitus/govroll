@@ -9,17 +9,10 @@ const signUpMock = vi.fn();
 const signOutMock = vi.fn();
 const updateUserMock = vi.fn();
 
+const createClientMock = vi.fn();
+
 vi.mock("@/lib/supabase/client", () => ({
-  createSupabaseBrowserClient: () => ({
-    auth: {
-      getUser: getUserMock,
-      onAuthStateChange: onAuthStateChangeMock,
-      signInWithPassword: signInMock,
-      signUp: signUpMock,
-      signOut: signOutMock,
-      updateUser: updateUserMock,
-    },
-  }),
+  createSupabaseBrowserClient: () => createClientMock(),
 }));
 
 vi.mock("@/lib/citizen-id", () => ({
@@ -37,6 +30,16 @@ beforeEach(() => {
   onAuthStateChangeMock.mockImplementation((cb) => {
     authChangeCallback = cb;
     return { data: { subscription: { unsubscribe: vi.fn() } } };
+  });
+  createClientMock.mockReturnValue({
+    auth: {
+      getUser: getUserMock,
+      onAuthStateChange: onAuthStateChangeMock,
+      signInWithPassword: signInMock,
+      signUp: signUpMock,
+      signOut: signOutMock,
+      updateUser: updateUserMock,
+    },
   });
 });
 
@@ -114,5 +117,27 @@ describe("useAuth — authState", () => {
 
     await waitFor(() => expect(result.current.authState).toBe("signed-in"));
     expect(result.current.loading).toBe(false);
+  });
+
+  it('lands on "signed-out" when the client factory returns null (iOS Safari private mode)', async () => {
+    createClientMock.mockReturnValue(null);
+
+    const { result } = renderHook(() => useAuth());
+    await waitFor(() => expect(result.current.authState).toBe("signed-out"));
+    expect(result.current.user).toBeNull();
+    // Hook must not touch the auth surface — there's no client to call.
+    expect(getUserMock).not.toHaveBeenCalled();
+    expect(onAuthStateChangeMock).not.toHaveBeenCalled();
+  });
+
+  it("signIn returns a storage-disabled error when the client is unavailable", async () => {
+    createClientMock.mockReturnValue(null);
+
+    const { result } = renderHook(() => useAuth());
+    await waitFor(() => expect(result.current.authState).toBe("signed-out"));
+
+    const res = await result.current.signIn("a@b.com", "pw");
+    expect(res.error?.message).toMatch(/browser storage/i);
+    expect(signInMock).not.toHaveBeenCalled();
   });
 });
