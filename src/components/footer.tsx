@@ -41,12 +41,12 @@ export function Footer() {
           <p className="text-muted-foreground/70 text-sm">
             {`© ${new Date().getFullYear()} Govroll · Built by `}
             <a
-              href="https://liamhowell.com"
+              href="https://howellandgibbs.com"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-foreground transition-colors"
             >
-              Liam Howell
+              Howell &amp; Gibbs
             </a>
           </p>
         </div>

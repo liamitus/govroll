@@ -97,15 +97,15 @@ export default function AboutPage() {
         <p className="text-muted-foreground text-base leading-relaxed">
           Govroll is built and maintained by{" "}
           <a
-            href="https://liamhowell.com"
+            href="https://howellandgibbs.com"
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary underline underline-offset-2"
           >
-            Liam Howell
+            Howell &amp; Gibbs
           </a>
-          , a software engineer who believes civic tools should be free, open,
-          and accessible to everyone.
+          , a studio that believes civic tools should be free, open, and
+          accessible to everyone.
         </p>
       </section>
 
