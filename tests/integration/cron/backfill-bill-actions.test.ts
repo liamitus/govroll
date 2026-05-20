@@ -291,4 +291,128 @@ describe("GET /api/cron/backfill-bill-actions", () => {
     expect(body.processed).toBe(0);
     expect(body.remaining).toBe(0);
   });
+
+  it("priority pass picks bills with vote-after-status mismatch even if mis-tiered", async () => {
+    // A DEAD-tier bill (would normally be excluded) where the chamber
+    // has clearly passed it — the only reason it's tagged DEAD is the
+    // upstream status didn't advance. Priority pass must surface it.
+    const prisma = getTestPrisma();
+    const mistiered = await seedBill({
+      billId: "house_bill-9001-119",
+      billType: "house_bill",
+      currentStatus: "introduced",
+      currentStatusDate: new Date("2026-02-15"),
+      momentumTier: "DEAD",
+    });
+    // Seed a representative + a passage vote DATED AFTER the bill's
+    // currentStatusDate — the priority filter looks for exactly this
+    // shape.
+    const rep = await prisma.representative.create({
+      data: {
+        bioguideId: "P000001",
+        firstName: "Priority",
+        lastName: "Rep",
+        state: "CA",
+        district: "1",
+        party: "Democrat",
+        chamber: "representative",
+        slug: "priority-rep-ca",
+      },
+    });
+    await prisma.representativeVote.create({
+      data: {
+        billId: mistiered.id,
+        representativeId: rep.id,
+        vote: "Yea",
+        chamber: "House",
+        category: "passage",
+        rollCallNumber: 42,
+        votedAt: new Date("2026-04-30"),
+      },
+    });
+
+    server.use(
+      http.get("https://api.congress.gov/v3/bill/119/hr/9001/actions", () =>
+        HttpResponse.json({
+          actions: [
+            {
+              actionDate: "2026-04-30",
+              text: "On passage Passed by the Yeas and Nays: 224 - 200.",
+              type: "Floor",
+              sourceSystem: { name: "House floor actions" },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    const body = await res.json();
+    expect(body.priorityProcessed).toBe(1);
+    expect(body.statusesReconciled).toBe(1);
+
+    const after = await prisma.bill.findUnique({
+      where: { id: mistiered.id },
+    });
+    expect(after?.currentStatus).toBe("pass_over_house");
+    expect(after?.lastActionRefreshAt).not.toBeNull();
+  });
+
+  it("priority pass ignores bills whose vote dates predate currentStatusDate", async () => {
+    // Bill is "reported" on 2026-05-01, vote is from 2026-04-15.
+    // Vote is OLDER than the status, so reconcile already happened
+    // (or the bill was always at reported); not a staleness signal.
+    // Priority filter must not pick this up.
+    const prisma = getTestPrisma();
+    const bill = await seedBill({
+      billId: "house_bill-9002-119",
+      billType: "house_bill",
+      currentStatus: "reported",
+      currentStatusDate: new Date("2026-05-01"),
+      momentumTier: "ACTIVE",
+    });
+    const rep = await prisma.representative.create({
+      data: {
+        bioguideId: "P000002",
+        firstName: "Older",
+        lastName: "Rep",
+        state: "NY",
+        district: "1",
+        party: "Republican",
+        chamber: "representative",
+        slug: "older-rep-ny",
+      },
+    });
+    await prisma.representativeVote.create({
+      data: {
+        billId: bill.id,
+        representativeId: rep.id,
+        vote: "Yea",
+        chamber: "House",
+        category: "passage",
+        rollCallNumber: 99,
+        votedAt: new Date("2026-04-15"),
+      },
+    });
+    server.use(
+      http.get("https://api.congress.gov/v3/bill/119/hr/9002/actions", () =>
+        HttpResponse.json({
+          actions: [
+            {
+              actionDate: "2026-05-01",
+              text: "Reported by committee",
+              type: "Committee",
+              sourceSystem: { name: "House committee actions" },
+            },
+          ],
+        }),
+      ),
+    );
+    const res = await invokeCron(GET);
+    const body = await res.json();
+    // Routine pass picks it up (tier ACTIVE, never refreshed), but
+    // it should not be counted in the priority pass.
+    expect(body.priorityProcessed).toBe(0);
+    expect(body.processed).toBe(1);
+  });
 });
