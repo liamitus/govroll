@@ -77,6 +77,15 @@ model Bill {
   // can't get text for (genuinely unpublished, withdrawn, etc.) rotate to
   // the back of the queue instead of blocking all other bills behind them.
   textFetchAttemptedAt  DateTime?
+  // Set whenever backfill-bill-actions runs against a bill (success OR
+  // failure) and refreshes its action history + reconciles currentStatus.
+  // Distinct from lastMetadataRefreshAt — that one tracks the
+  // CRS-summary/titles cooldown; this one drives the rolling status
+  // refresh that fixes the Farm Bill staleness class. Cron orders by
+  // this ascending NULLS FIRST so bills we've never refreshed are
+  // first, then oldest-refresh, with newly-active bills resurfacing
+  // when their `currentStatusDate` advances elsewhere in the pipeline.
+  lastActionRefreshAt   DateTime?
   // Title variants fetched from Congress.gov /titles endpoint. We search
   // on all of these via the weighted searchVector generated column —
   // users type popular names ("CHIPS Act"), not official titles.

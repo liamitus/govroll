@@ -286,6 +286,78 @@ describe("summarizeChamberPassage", () => {
     expect(house?.rejectionReason).toBe("suspension");
     expect(out.find((c) => c.chamber === "senate")).toBeUndefined();
   });
+
+  // Roll-call override regression cases — the Farm Bill bug. GovTrack's
+  // status feed and our roll-call ingest are independent pipelines, and
+  // status sometimes lags chamber action by weeks. When we already have
+  // the passage roll call in our DB, that's direct evidence the chamber
+  // passed — the UI must reflect it instead of contradicting it with a
+  // stale "hasn't voted yet" notice.
+  it("stale status: House passage roll call beats currentStatus=reported", () => {
+    // H.R. 7567 Farm Bill, May 2026: GovTrack reported `reported` from
+    // the March committee vote, but the House passed it 224-200 on
+    // April 30 and the roll call is in our DB.
+    const out = summarizeChamberPassage(
+      { billType: "house_bill", currentStatus: "reported" },
+      {
+        house: { passage: 1, procedural: 1 },
+        senate: { passage: 0, procedural: 0 },
+      },
+    );
+    const house = out.find((c) => c.chamber === "house");
+    expect(house?.status).toBe("passed_with_rollcall");
+    expect(house?.passageRollCallCount).toBe(1);
+    expect(house?.proceduralRollCallCount).toBe(1);
+  });
+
+  it("stale status: pass_over_senate when our DB shows House also passed", () => {
+    // Senate-origin bill that GovTrack still has at pass_over_senate
+    // but House has since passed (roll call in our DB).
+    const out = summarizeChamberPassage(
+      { billType: "senate_bill", currentStatus: "pass_over_senate" },
+      {
+        house: { passage: 1, procedural: 0 },
+        senate: { passage: 1, procedural: 0 },
+      },
+    );
+    expect(out).toHaveLength(2);
+    expect(out.find((c) => c.chamber === "house")?.status).toBe(
+      "passed_with_rollcall",
+    );
+    expect(out.find((c) => c.chamber === "senate")?.status).toBe(
+      "passed_with_rollcall",
+    );
+  });
+
+  it("stale status: introduced bill with a passage roll call is still treated as passed", () => {
+    // Defensive: even if currentStatus is `introduced`, a passage
+    // roll call must override the pending notice.
+    const out = summarizeChamberPassage(
+      { billType: "house_bill", currentStatus: "introduced" },
+      {
+        house: { passage: 1, procedural: 0 },
+        senate: { passage: 0, procedural: 0 },
+      },
+    );
+    const house = out.find((c) => c.chamber === "house");
+    expect(house?.status).toBe("passed_with_rollcall");
+  });
+
+  it("procedural roll call alone does NOT trigger the override", () => {
+    // Cloture / motion-to-discharge votes happen on pending bills all
+    // the time and don't imply passage. The override must require an
+    // actual passage-category roll call.
+    const out = summarizeChamberPassage(
+      { billType: "senate_bill", currentStatus: "introduced" },
+      {
+        house: { passage: 0, procedural: 0 },
+        senate: { passage: 0, procedural: 1 },
+      },
+    );
+    const senate = out.find((c) => c.chamber === "senate");
+    expect(senate?.status).toBe("pending");
+    expect(senate?.proceduralRollCallCount).toBe(1);
+  });
 });
 
 describe("chamberIsRelevant", () => {

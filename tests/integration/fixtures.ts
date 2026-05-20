@@ -24,6 +24,9 @@ export async function seedBill(
     sponsor: string;
     fullText: string;
     lastMetadataRefreshAt: Date;
+    lastActionRefreshAt: Date;
+    latestActionText: string;
+    latestActionDate: Date;
     currentChamber: string;
   }> = {},
 ) {
