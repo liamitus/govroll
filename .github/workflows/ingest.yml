@@ -25,7 +25,12 @@ on:
     - cron: "*/10 * * * *" # compute-congress-status    (every 10m)
     - cron: "15 * * * *" # compute-momentum           (hourly)
     - cron: "45 * * * *" # backfill-bill-text         (hourly, small batch)
-    - cron: "10 */2 * * *" # backfill-bill-actions      (every 2h)
+    # Was every 2h, bumped to every 30m. This cron now reconciles
+    # currentStatus on top of the action backfill (Farm Bill class
+    # of bugs). With ~5k live bills and batch=20 every 30m, every
+    # live bill gets refreshed every ~2 days while a chamber vote
+    # shows up in the DB within hours of it happening.
+    - cron: "5,35 * * * *" # backfill-bill-actions      (every 30m)
     - cron: "40 */2 * * *" # backfill-cosponsors        (every 2h)
     - cron: "0 */3 * * *" # fetch-bills                (every 3h)
     - cron: "30 */6 * * *" # refresh-bill-metadata      (every 6h)
@@ -86,7 +91,7 @@ jobs:
             "*/10 * * * *")  echo "endpoint=compute-congress-status"   >> "$GITHUB_OUTPUT" ;;
             "15 * * * *")    echo "endpoint=compute-momentum"          >> "$GITHUB_OUTPUT" ;;
             "45 * * * *")    echo "endpoint=backfill-bill-text"        >> "$GITHUB_OUTPUT" ;;
-            "10 */2 * * *")  echo "endpoint=backfill-bill-actions"     >> "$GITHUB_OUTPUT" ;;
+            "5,35 * * * *")  echo "endpoint=backfill-bill-actions"     >> "$GITHUB_OUTPUT" ;;
             "40 */2 * * *")  echo "endpoint=backfill-cosponsors"       >> "$GITHUB_OUTPUT" ;;
             "0 */3 * * *")   echo "endpoint=fetch-bills"               >> "$GITHUB_OUTPUT" ;;
             "30 */6 * * *")  echo "endpoint=refresh-bill-metadata"     >> "$GITHUB_OUTPUT" ;;

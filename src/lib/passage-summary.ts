@@ -247,6 +247,15 @@ export function chamberIsRelevant(
  *   passed_* > rejected > pending
  * A chamber can't simultaneously have passed and rejected the bill
  * for a given currentStatus, so the precedence is just defensive.
+ *
+ * Roll-call override: if we have a passage-category roll call recorded
+ * in our DB for a chamber, treat that chamber as having passed even
+ * when `currentStatus` says otherwise. GovTrack's status feed and our
+ * roll-call ingest are independent pipelines, and the votes pipeline
+ * is the more reliable of the two — a stale status shouldn't make us
+ * announce "the House hasn't voted yet" right next to the 224-200
+ * passage roll call we already display. Direct evidence (we have the
+ * names) wins over the indirect signal (a status string).
  */
 export function summarizeChamberPassage(
   bill: BillStatusInput,
@@ -256,9 +265,12 @@ export function summarizeChamberPassage(
   const results: ChamberPassage[] = [];
 
   for (const chamber of chambers) {
-    if (!chamberIsRelevant(chamber, bill)) continue;
-
     const { passage, procedural } = rollCalls[chamber];
+    const hasPassageRollCall = passage > 0;
+
+    // A passage roll call is itself proof the chamber acted, so the
+    // chamber is relevant even if currentStatus hasn't caught up yet.
+    if (!chamberIsRelevant(chamber, bill) && !hasPassageRollCall) continue;
 
     if (chamberHasPassed(chamber, bill)) {
       // Only a passage-category roll call proves the chamber recorded
@@ -277,12 +289,33 @@ export function summarizeChamberPassage(
 
     const rejection = chamberRejection(chamber, bill);
     if (rejection !== null) {
+      // Rejection beats the roll-call override: a `passage` category
+      // roll call only means the vote *was* a passage vote, not that
+      // it succeeded. A failed suspension or fail_originating_house
+      // has a passage-type roll call AND a definitive rejection
+      // status — the rejection wins.
       results.push({
         chamber,
         status: "rejected",
         passageRollCallCount: passage,
         proceduralRollCallCount: procedural,
         rejectionReason: rejection,
+      });
+      continue;
+    }
+
+    if (hasPassageRollCall) {
+      // Roll-call override: status doesn't think the chamber passed
+      // and doesn't think it rejected, but we have a passage roll
+      // call in our DB. Direct evidence (we have the names) wins
+      // over the indirect signal — without this override the UI
+      // shows "hasn't held a final vote yet" next to a 224-200
+      // passage roll call we already display elsewhere on the page.
+      results.push({
+        chamber,
+        status: "passed_with_rollcall",
+        passageRollCallCount: passage,
+        proceduralRollCallCount: procedural,
       });
       continue;
     }
