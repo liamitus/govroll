@@ -547,6 +547,102 @@ async function fetchBillSummary(
 }
 
 /**
+ * One bill record from Congress.gov's `/bill?fromDateTime=...&toDateTime=...`
+ * list endpoint — the source of truth for "what's changed in Congress lately."
+ * Same shape regardless of whether the bill is newly introduced or just had
+ * an action; consumers branch on whether the billId already exists.
+ *
+ * `type` arrives uppercase (HR, S, HJRES, HCONRES, …); map it to the
+ * GovTrack-shape billType (house_bill, senate_bill, …) via parse-bill-id's
+ * BILL_TYPE_MAP before constructing a billId.
+ */
+export interface CongressListBill {
+  congress: number;
+  number: string;
+  type: string;
+  originChamber?: string;
+  originChamberCode?: string;
+  title: string;
+  updateDate: string;
+  latestAction?: { actionDate?: string; text?: string };
+  url?: string;
+}
+
+/**
+ * Fetch every bill whose Congress.gov `updateDate` falls in `[from, to)`.
+ *
+ * Walks pagination with the same 250-row page size used elsewhere in this
+ * file. Sorts ascending by updateDate so callers iterating windows resume
+ * deterministically from a saved cursor. Caps at MAX_PAGES rows to avoid
+ * runaway memory if Congress.gov ever returns a non-paginating response.
+ *
+ * The `updateDate` filter (rather than `introducedDate`) is deliberate:
+ * Congress.gov surfaces a bill in this feed whenever ANY field changes —
+ * introduction, committee action, vote, status — which is exactly the
+ * signal we want for keeping our row in sync.
+ */
+export async function fetchCongressBillsByUpdate(params: {
+  fromDateTime: string;
+  toDateTime: string;
+  signal?: AbortSignal;
+}): Promise<CongressListBill[]> {
+  const collected: CongressListBill[] = [];
+  let offset = 0;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await withRetry(() =>
+      congressApiClient.get("/bill", {
+        params: {
+          fromDateTime: params.fromDateTime,
+          toDateTime: params.toDateTime,
+          sort: "updateDate+asc",
+          limit: PAGE_LIMIT,
+          offset,
+        },
+        signal: params.signal,
+      }),
+    );
+
+    const arr = res.data?.bills;
+    if (!Array.isArray(arr)) break;
+    collected.push(...(arr as CongressListBill[]));
+
+    if (arr.length < PAGE_LIMIT) break;
+    const next: unknown = res.data?.pagination?.next;
+    if (typeof next !== "string" || next.length === 0) break;
+    offset += PAGE_LIMIT;
+  }
+
+  return collected;
+}
+
+/**
+ * Lean fetch — returns just `introducedDate` from Congress.gov's
+ * `/bill/{congress}/{type}/{number}` endpoint. The list endpoint we use
+ * for ingestion (`fetchCongressBillsByUpdate`) omits introducedDate; we
+ * need it on the CREATE path to satisfy the NOT NULL column on Bill.
+ *
+ * Returns `null` on missing field or network error so callers can fall
+ * back to a reasonable substitute (e.g. latestAction.actionDate) rather
+ * than failing the whole ingest run.
+ */
+export async function fetchBillIntroducedDate(
+  congress: number,
+  apiBillType: string,
+  billNumber: number,
+): Promise<string | null> {
+  try {
+    const res = await withRetry(() =>
+      congressApiClient.get(`/bill/${congress}/${apiBillType}/${billNumber}`),
+    );
+    const v = res.data?.bill?.introducedDate;
+    return typeof v === "string" && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Lean fetch — returns just the sponsor's bioguideId from Congress.gov
  * by hitting the `/bill/{congress}/{type}/{number}` endpoint exactly
  * once. Used by the sponsorBioguideId backfill, which doesn't want to
