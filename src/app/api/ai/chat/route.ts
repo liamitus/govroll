@@ -13,7 +13,12 @@ import {
   shouldFilterSections,
   type AiUsageRecord,
   type RepVoteContext,
+  type CrossBillContext,
 } from "@/lib/ai";
+import {
+  classifyChatIntent,
+  type ChatIntentClassification,
+} from "@/lib/ai-intent-classifier";
 import { parseSectionsFromFullText } from "@/lib/bill-sections";
 import {
   billHasEmbeddings,
@@ -253,14 +258,18 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // ── Bill context ───────────────────────────────────────────────────
+    // ── Bill context + intent classification (in parallel) ────────────
+    // Classifier runs alongside the bill fetch so its ~300ms latency
+    // overlaps the DB roundtrip. On failure it returns intent: "direct"
+    // — the chat path is unaffected. See docs/ai-chat-intent-router.md.
+    //
     // When bill text is missing (tier-2/3), the AI leans heavily on
     // metadata — so pull the action timeline and a cosponsor sample too.
     // Caps below keep the prompt bounded on long-running bills.
     const ACTION_HISTORY_LIMIT = 15;
     const COSPONSOR_ROSTER_LIMIT = 20;
 
-    const [bill, latestVersion] = await Promise.all([
+    const [bill, latestVersion, classifierResult] = await Promise.all([
       prisma.bill.findUnique({
         where: { id: numericBillId },
         // Omit fullText — the latestVersion query below is the canonical
@@ -317,7 +326,33 @@ export async function POST(request: NextRequest) {
         orderBy: { versionDate: "desc" },
         select: { fullText: true },
       }),
+      classifyChatIntent(userMessageText),
     ]);
+
+    // Record classifier spend + emit telemetry. Done before the cache
+    // short-circuit so we measure intent on every turn, including
+    // cache hits — that's the demand signal Layer 2 uses to decide
+    // whether to ship cross-bill resolution.
+    await tryRecordClassifierSpend(userId, classifierResult.usage);
+    logClassifiedIntent({
+      userId,
+      billId: numericBillId,
+      classification: classifierResult.classification,
+      fallback: classifierResult.fallback,
+    });
+
+    // Resolve once, here, before the cache check — a cross-bill turn
+    // must NOT serve a cache entry that was generated without the
+    // comparison block, because the answer shape is fundamentally
+    // different. Same defensive instinct as section-scoped + rep-vote
+    // turns. See the isFirstTurn gate below.
+    const crossBillContext: CrossBillContext | null =
+      !classifierResult.fallback &&
+      classifierResult.classification.intent === "cross_bill" &&
+      classifierResult.classification.namedBill &&
+      classifierResult.classification.namedBill.trim().length > 0
+        ? { namedBill: classifierResult.classification.namedBill.trim() }
+        : null;
 
     const rawText = latestVersion?.fullText || null;
     const allSections = rawText ? parseSectionsFromFullText(rawText) : null;
@@ -384,9 +419,14 @@ export async function POST(request: NextRequest) {
     // different sections may have meaningfully different answers, and
     // collapsing them would surface the wrong one. A rep mention does the
     // same: "why did Sanders vote no" and "why did Kelly vote yes" must
-    // not collide on cache.
+    // not collide on cache. Cross-bill is the same shape: pre-classifier
+    // cache entries answered a *different* question and must not be
+    // served as if they answered the comparison one.
     const isFirstTurn =
-      uiMessages.length <= 1 && !sectionContext && !repVoteContext;
+      uiMessages.length <= 1 &&
+      !sectionContext &&
+      !repVoteContext &&
+      !crossBillContext;
     if (isFirstTurn) {
       const cached = await getCachedResponse(numericBillId, userMessageText);
       if (cached) {
@@ -512,6 +552,7 @@ export async function POST(request: NextRequest) {
       uiMessages: aiUiMessages,
       readerMode,
       repVoteContext,
+      crossBillContext,
       // On the RAG path, tell the prompt builder how the section list
       // was assembled. Without this the model sees N disconnected
       // fragments and reasonably hedges that it "can't see the
@@ -649,6 +690,82 @@ async function tryRecordSpend(args: {
     });
   } catch (err) {
     console.error("Failed to record AI spend:", err);
+  }
+}
+
+/**
+ * Record the intent classifier's Haiku call against the spend ledger
+ * under a dedicated feature key so its cost shows up separately from
+ * the main Sonnet stream in usage reports. Soft-fails — a missed
+ * ledger write must never break the user's chat turn.
+ *
+ * Falls through silently when the classifier itself fell back (no real
+ * tokens spent — `model` is suffixed `:fallback`).
+ */
+async function tryRecordClassifierSpend(userId: string, usage: AiUsageRecord) {
+  if (usage.inputTokens === 0 && usage.outputTokens === 0) return;
+  try {
+    await recordSpend({
+      userId,
+      feature: "intent_classify",
+      model: usage.model,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cache: usage.cache,
+    });
+  } catch (err) {
+    console.error("Failed to record intent classifier spend:", err);
+  }
+}
+
+/**
+ * Structured log so we can aggregate intent distribution + named-bill
+ * frequency over time without a schema migration. Two signals we'll
+ * pull from this in the first weeks of Layer 1:
+ *   - `intent` distribution → confirms the routing assumption (most
+ *     turns are `direct`, cross-bill is a single-digit %).
+ *   - `cross_bill` named bill frequency → tells us whether Layer 2
+ *     resolution should hit our own bills table first (popular bills,
+ *     high tsvector hit rate) or the Congress.gov API (long tail).
+ *
+ * Kept on console.log (info) not console.warn so it doesn't trip
+ * error-rate alerts. Vercel log search picks it up by the `event`
+ * field just fine.
+ */
+function logClassifiedIntent(args: {
+  userId: string;
+  billId: number;
+  classification: ChatIntentClassification;
+  fallback: boolean;
+}) {
+  console.log(
+    JSON.stringify({
+      event: "chat_intent_classified",
+      route: "POST /api/ai/chat",
+      userId: args.userId,
+      billId: args.billId,
+      intent: args.classification.intent,
+      namedBill: args.classification.namedBill,
+      reasoning: args.classification.reasoning,
+      fallback: args.fallback,
+    }),
+  );
+
+  if (
+    args.classification.intent === "cross_bill" &&
+    args.classification.namedBill &&
+    args.classification.namedBill.trim().length > 0
+  ) {
+    // Separate event for cross-bill so the Layer 2 demand-gate query
+    // is one log filter, not a JSON-path through the generic event.
+    console.log(
+      JSON.stringify({
+        event: "chat_cross_bill_named",
+        route: "POST /api/ai/chat",
+        billId: args.billId,
+        namedBill: args.classification.namedBill.trim(),
+      }),
+    );
   }
 }
 
