@@ -70,38 +70,83 @@ export async function GET(request: Request) {
     Date.now() - REFRESH_COOLDOWN_HOURS * 60 * 60 * 1000,
   );
 
-  // Live, non-terminal bills due for refresh. Order: never-refreshed
-  // first (NULL last in DESC == NULL first in ASC NULLS FIRST), then
-  // oldest refresh. We exclude terminal-state bills (enacted/became
-  // law) — actions there are stable and we don't need to keep pinging
-  // congress.gov for them. Failed bills (fail_* / prov_kill_*) are
-  // also stable; we leave them for occasional manual reruns.
-  const batch = await prisma.bill.findMany({
-    where: {
-      momentumTier: { in: tiers },
-      currentStatus: { not: { startsWith: "enacted_" } },
-      OR: [
-        { lastActionRefreshAt: null },
-        { lastActionRefreshAt: { lt: cooldownCutoff } },
-      ],
-    },
-    orderBy: [
-      // NULLS FIRST — bills we've never refreshed take priority. Then
-      // oldest refresh. Prisma supports `nulls: "first"` on PG.
-      { lastActionRefreshAt: { sort: "asc", nulls: "first" } },
-      { currentStatusDate: "desc" },
-    ],
-    select: {
-      id: true,
-      billId: true,
-      billType: true,
-      currentStatus: true,
-      currentStatusDate: true,
-      latestActionText: true,
-      latestActionDate: true,
-    },
-    take: limit,
-  });
+  type BatchRow = {
+    id: number;
+    billId: string;
+    billType: string;
+    currentStatus: string;
+    currentStatusDate: Date;
+    latestActionText: string | null;
+    latestActionDate: Date | null;
+  };
+
+  // Priority pass: bills where we have direct evidence the chamber
+  // acted but currentStatus hasn't caught up — a passage-category
+  // RepresentativeVote dates AFTER the bill's currentStatusDate.
+  // These are the visibly-broken bills (the Farm Bill class). They
+  // can be in any tier — `compute-momentum` mis-tiers DEAD/DORMANT
+  // bills specifically because their status didn't advance, so the
+  // tier filter we use below would hide them from the normal pool.
+  // Cap the priority pull so it can't fully starve the routine
+  // refresh — we still want fresh bills cycling through.
+  const priorityLimit = Math.min(limit, 10);
+  const priorityRows = await prisma.$queryRaw<BatchRow[]>`
+    SELECT b.id, b."billId", b."billType", b."currentStatus",
+           b."currentStatusDate", b."latestActionText", b."latestActionDate"
+    FROM "Bill" b
+    WHERE b."currentStatus" IN (
+      'introduced', 'reported', 'pass_over_house', 'pass_over_senate',
+      'passed_house', 'passed_senate'
+    )
+      AND (
+        b."lastActionRefreshAt" IS NULL
+        OR b."lastActionRefreshAt" < ${cooldownCutoff}
+      )
+      AND EXISTS (
+        SELECT 1 FROM "RepresentativeVote" rv
+        WHERE rv."billId" = b.id
+          AND rv.category IN ('passage', 'passage_suspension', 'veto_override')
+          AND rv."votedAt" > b."currentStatusDate" + INTERVAL '1 day'
+      )
+    ORDER BY b."lastActionRefreshAt" ASC NULLS FIRST, b."currentStatusDate" ASC
+    LIMIT ${priorityLimit};
+  `;
+
+  const priorityIds = priorityRows.map((r) => r.id);
+  const remainingSlots = Math.max(0, limit - priorityRows.length);
+
+  // Routine pass: bills due for refresh, ordered by NULLS-FIRST and
+  // newest-status first. Excludes anything already in the priority
+  // batch to avoid double-processing.
+  const routineRows: BatchRow[] = remainingSlots
+    ? await prisma.bill.findMany({
+        where: {
+          momentumTier: { in: tiers },
+          currentStatus: { not: { startsWith: "enacted_" } },
+          ...(priorityIds.length ? { id: { notIn: priorityIds } } : {}),
+          OR: [
+            { lastActionRefreshAt: null },
+            { lastActionRefreshAt: { lt: cooldownCutoff } },
+          ],
+        },
+        orderBy: [
+          { lastActionRefreshAt: { sort: "asc", nulls: "first" } },
+          { currentStatusDate: "desc" },
+        ],
+        select: {
+          id: true,
+          billId: true,
+          billType: true,
+          currentStatus: true,
+          currentStatusDate: true,
+          latestActionText: true,
+          latestActionDate: true,
+        },
+        take: remainingSlots,
+      })
+    : [];
+
+  const batch: BatchRow[] = [...priorityRows, ...routineRows];
 
   let processed = 0;
   let statusesReconciled = 0;
@@ -283,6 +328,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     processed,
+    priorityProcessed: priorityRows.length,
     statusesReconciled,
     latestActionUpdated,
     errorCount: errors.length,
