@@ -2,27 +2,45 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchBillActions } from "@/lib/congress-api";
 import { parseBillId } from "@/lib/parse-bill-id";
+import { reconcileStatus } from "@/lib/reconcile-bill-status";
 import { reportError } from "@/lib/error-reporting";
 
 /**
  * GET /api/cron/backfill-bill-actions
  *
- * Paginated catch-up for the BillAction table. Action history drives the
- * bill-journey timeline on /bills/[id] and feeds status reconciliation
- * (GovTrack sometimes misreports passed_bill when reconciliation is still
- * happening; congress.gov actions reveal the truth).
+ * Rolling refresh of BillAction + reconciliation of Bill.currentStatus.
  *
- * Before this endpoint: 95.7% of live bills had zero BillAction rows.
- * Daily cron processes 15 bills/day which would take ~140 days to drain
- * the backlog.
+ * Action history drives the bill-journey timeline on /bills/[id] AND
+ * feeds the status reconciliation that fixes GovTrack staleness (the
+ * Farm Bill May 2026 class: GovTrack stuck at `reported` while
+ * congress.gov shows the House passed the bill).
  *
- * Protected by CRON_SECRET. Oldest-by-status-date first (so the daily
- * cron's newer bills stay at the back). Each call is idempotent —
- * fetchBillActions upserts on (billId, actionDate, text).
+ * Prior behavior (pre-rewrite): WHERE was `actions: { none: {} }`,
+ * which permanently excluded any bill that had ever had any action
+ * stored. That made the route a one-shot initial backfill — once a
+ * bill had any action, this cron never touched it again, and
+ * currentStatus drifted forever. 24 production bills ended up with
+ * passage roll calls in our DB but `currentStatus = "reported"`.
+ *
+ * Current behavior: pick bills that have never been refreshed, OR
+ * were refreshed before the cooldown cutoff, OR have status that's
+ * older than their underlying action data. Refresh actions, call
+ * `reconcileStatus`, write currentStatus/currentStatusDate +
+ * latestActionText/Date when the data says so, and ALWAYS stamp
+ * lastActionRefreshAt so each pass advances the queue.
+ *
+ * Protected by CRON_SECRET. Bills with NULL lastActionRefreshAt come
+ * first (never refreshed), then oldest refresh, then random tiebreak.
+ * Each call is idempotent — fetchBillActions upserts on
+ * (billId, actionDate, text).
  */
 
 export const maxDuration = 60;
 const TIMEOUT_MS = 55_000;
+// How long a bill can go without an action refresh before it re-enters
+// the pool. 6h is short enough that a chamber vote shows up the same
+// day, long enough that the ~5k live bills don't hammer congress.gov.
+const REFRESH_COOLDOWN_HOURS = 6;
 
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;
@@ -35,38 +53,107 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  // Actions are ~1s each (one API call). Batch of 20 fits in ~30s with overhead.
+  // Actions are ~1s each (one API call). Batch of 20 fits in ~30s with
+  // overhead. Reconcile + Bill.update adds ~50ms per bill, negligible.
   const limit = Math.min(
     30,
     parseInt(url.searchParams.get("limit") ?? "20", 10),
   );
-  const tiers = (url.searchParams.get("tiers") ?? "ACTIVE,ADVANCING,ENACTED")
+  const tiers = (url.searchParams.get("tiers") ?? "ACTIVE,ADVANCING,STALLED")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
 
   const started = Date.now();
   const deadline = started + TIMEOUT_MS;
+  const cooldownCutoff = new Date(
+    Date.now() - REFRESH_COOLDOWN_HOURS * 60 * 60 * 1000,
+  );
 
-  // Select live bills that have no actions yet. Oldest by currentStatusDate
-  // first — they're most likely to have stable, fully-published action
-  // histories on congress.gov.
-  const batch = await prisma.bill.findMany({
-    where: {
-      momentumTier: { in: tiers },
-      actions: { none: {} },
-    },
-    orderBy: [{ currentStatusDate: "asc" }],
-    select: { id: true, billId: true },
-    take: limit,
-  });
+  type BatchRow = {
+    id: number;
+    billId: string;
+    billType: string;
+    currentStatus: string;
+    currentStatusDate: Date;
+    latestActionText: string | null;
+    latestActionDate: Date | null;
+  };
+
+  // Priority pass: bills where we have direct evidence the chamber
+  // acted but currentStatus hasn't caught up — a passage-category
+  // RepresentativeVote dates AFTER the bill's currentStatusDate.
+  // These are the visibly-broken bills (the Farm Bill class). They
+  // can be in any tier — `compute-momentum` mis-tiers DEAD/DORMANT
+  // bills specifically because their status didn't advance, so the
+  // tier filter we use below would hide them from the normal pool.
+  // Cap the priority pull so it can't fully starve the routine
+  // refresh — we still want fresh bills cycling through.
+  const priorityLimit = Math.min(limit, 10);
+  const priorityRows = await prisma.$queryRaw<BatchRow[]>`
+    SELECT b.id, b."billId", b."billType", b."currentStatus",
+           b."currentStatusDate", b."latestActionText", b."latestActionDate"
+    FROM "Bill" b
+    WHERE b."currentStatus" IN (
+      'introduced', 'reported', 'pass_over_house', 'pass_over_senate',
+      'passed_house', 'passed_senate'
+    )
+      AND (
+        b."lastActionRefreshAt" IS NULL
+        OR b."lastActionRefreshAt" < ${cooldownCutoff}
+      )
+      AND EXISTS (
+        SELECT 1 FROM "RepresentativeVote" rv
+        WHERE rv."billId" = b.id
+          AND rv.category IN ('passage', 'passage_suspension', 'veto_override')
+          AND rv."votedAt" > b."currentStatusDate" + INTERVAL '1 day'
+      )
+    ORDER BY b."lastActionRefreshAt" ASC NULLS FIRST, b."currentStatusDate" ASC
+    LIMIT ${priorityLimit};
+  `;
+
+  const priorityIds = priorityRows.map((r) => r.id);
+  const remainingSlots = Math.max(0, limit - priorityRows.length);
+
+  // Routine pass: bills due for refresh, ordered by NULLS-FIRST and
+  // newest-status first. Excludes anything already in the priority
+  // batch to avoid double-processing.
+  const routineRows: BatchRow[] = remainingSlots
+    ? await prisma.bill.findMany({
+        where: {
+          momentumTier: { in: tiers },
+          currentStatus: { not: { startsWith: "enacted_" } },
+          ...(priorityIds.length ? { id: { notIn: priorityIds } } : {}),
+          OR: [
+            { lastActionRefreshAt: null },
+            { lastActionRefreshAt: { lt: cooldownCutoff } },
+          ],
+        },
+        orderBy: [
+          { lastActionRefreshAt: { sort: "asc", nulls: "first" } },
+          { currentStatusDate: "desc" },
+        ],
+        select: {
+          id: true,
+          billId: true,
+          billType: true,
+          currentStatus: true,
+          currentStatusDate: true,
+          latestActionText: true,
+          latestActionDate: true,
+        },
+        take: remainingSlots,
+      })
+    : [];
+
+  const batch: BatchRow[] = [...priorityRows, ...routineRows];
 
   let processed = 0;
+  let statusesReconciled = 0;
+  let latestActionUpdated = 0;
   let timedOut = false;
   const errors: Array<{ billId: string; error: string }> = [];
 
-  // Call the lib directly (avoids the script wrapper's extra Prisma query
-  // and the 1s-per-bill sleep, which burns half our budget on nothing).
   for (const b of batch) {
     if (Date.now() >= deadline) {
       timedOut = true;
@@ -76,6 +163,11 @@ export async function GET(request: Request) {
       const parsed = parseBillId(b.billId);
       if (!parsed.congress || !parsed.apiBillType || !parsed.billNumber) {
         errors.push({ billId: b.billId, error: "invalid bill id" });
+        // Stamp anyway so we don't loop on this unparseable id.
+        await prisma.bill.update({
+          where: { id: b.id },
+          data: { lastActionRefreshAt: new Date() },
+        });
         continue;
       }
       const actions = await fetchBillActions(
@@ -83,17 +175,26 @@ export async function GET(request: Request) {
         parsed.apiBillType,
         parsed.billNumber,
       );
+
+      // Stamp refresh-attempted clock no matter what — we're trying to
+      // *drain the queue*, not just record successes. A bill that has
+      // no congress.gov actions yet shouldn't monopolize the next ten
+      // runs as a NULL-first head-of-queue.
+      const refreshStamp = { lastActionRefreshAt: new Date() };
+
       if (!actions || actions.length === 0) {
-        // No actions yet — still count as processed so we don't loop on the
-        // same bills. Mark the absence of actions doesn't happen via a flag;
-        // instead the WHERE `actions: { none: {} }` keeps it in the pool
-        // until the daily cron re-tries when actions appear.
+        await prisma.bill.update({
+          where: { id: b.id },
+          data: refreshStamp,
+        });
         processed++;
         continue;
       }
-      // Dedupe on (actionDate, text) — congress.gov occasionally returns
-      // identical action rows, which would race the (billId, actionDate,
-      // text) unique constraint when upserted in parallel.
+
+      // Dedupe on (actionDate, text) — congress.gov occasionally
+      // returns identical action rows, which would race the
+      // (billId, actionDate, text) unique constraint when upserted
+      // in parallel.
       const seen = new Set<string>();
       const uniqueActions = actions.filter((a) => {
         if (!a.actionDate || !a.text) return false;
@@ -123,17 +224,95 @@ export async function GET(request: Request) {
           }),
         ),
       );
+
+      // Reconcile currentStatus + latest action against what
+      // congress.gov now shows. The reconcile function returns null
+      // when GovTrack's status looks fine; otherwise it returns the
+      // corrected status string.
+      const correctedStatus = reconcileStatus(
+        b.currentStatus,
+        b.billType,
+        actions,
+      );
+
+      // Latest action is the newest by actionDate. Even when status
+      // doesn't change, latestActionText/Date can advance (e.g. a
+      // motion vote on a still-pending bill).
+      const latest = uniqueActions.reduce<
+        (typeof uniqueActions)[number] | null
+      >(
+        (acc, a) =>
+          !acc || new Date(a.actionDate) > new Date(acc.actionDate) ? a : acc,
+        null,
+      );
+
+      const billUpdate: {
+        lastActionRefreshAt: Date;
+        currentStatus?: string;
+        currentStatusDate?: Date;
+        latestActionText?: string;
+        latestActionDate?: Date;
+      } = { ...refreshStamp };
+
+      if (correctedStatus && correctedStatus !== b.currentStatus) {
+        billUpdate.currentStatus = correctedStatus;
+        // Use the latest action date as the status date — the action
+        // that drove the status change is the most relevant timestamp.
+        if (latest) {
+          billUpdate.currentStatusDate = new Date(latest.actionDate);
+        }
+        statusesReconciled++;
+      }
+
+      if (latest) {
+        const latestDate = new Date(latest.actionDate);
+        // Only write when newer than what's on the row — avoid
+        // pointless writes (and avoid clobbering manual fixes if the
+        // ingest somehow returns a slightly older latest).
+        if (
+          !b.latestActionDate ||
+          latestDate > b.latestActionDate ||
+          (b.latestActionText !== latest.text &&
+            latestDate.getTime() === b.latestActionDate.getTime())
+        ) {
+          billUpdate.latestActionText = latest.text;
+          billUpdate.latestActionDate = latestDate;
+          latestActionUpdated++;
+        }
+      }
+
+      await prisma.bill.update({
+        where: { id: b.id },
+        data: billUpdate,
+      });
       processed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push({ billId: b.billId, error: msg });
+      // Stamp on failure too — a bill that throws on every fetch
+      // (deleted, redirected, unparseable congress.gov page) must not
+      // monopolize the head of the queue. It'll come back around in
+      // REFRESH_COOLDOWN_HOURS, behind everyone we successfully
+      // touched in the meantime.
+      try {
+        await prisma.bill.update({
+          where: { id: b.id },
+          data: { lastActionRefreshAt: new Date() },
+        });
+      } catch {
+        // best-effort; don't mask the original error
+      }
     }
   }
 
   const remaining = await prisma.bill.count({
     where: {
       momentumTier: { in: tiers },
-      actions: { none: {} },
+      currentStatus: { not: { startsWith: "enacted_" } },
+      OR: [
+        { lastActionRefreshAt: null },
+        { lastActionRefreshAt: { lt: cooldownCutoff } },
+      ],
     },
   });
 
@@ -149,6 +328,9 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     processed,
+    priorityProcessed: priorityRows.length,
+    statusesReconciled,
+    latestActionUpdated,
     errorCount: errors.length,
     errors: errors.slice(0, 5),
     remaining,
