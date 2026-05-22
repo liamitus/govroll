@@ -279,10 +279,67 @@ export interface RetrievalContext {
   retrievedCount: number;
 }
 
+/**
+ * Cross-bill comparison context, populated by the intent classifier when
+ * the user's question references another piece of legislation by name
+ * (e.g. "does this contain the Save Our Bacon Act?"). We do NOT load
+ * the other bill's text in Layer 1 — the model is told to use general
+ * knowledge for the named bill's substance and to find topically-
+ * matching sections in THIS bill. Layer 2 (deferred) will resolve and
+ * pack the other bill's relevant sections too.
+ *
+ * See docs/ai-chat-intent-router.md.
+ */
+export interface CrossBillContext {
+  /** Verbatim user reference to the other legislation, e.g. "Save Our
+   *  Bacon Act" or "H.R. 4673". Comes from the classifier. */
+  namedBill: string;
+}
+
 export interface BillChatPromptOptions {
   readerMode?: boolean;
   repVoteContext?: RepVoteContext | null;
   retrievalContext?: RetrievalContext | null;
+  /** When set, the prompt gets an explicit "compare this bill to the
+   *  named legislation" block. Without it, the model historically did a
+   *  literal-string search for the named bill in this bill's text and
+   *  reported no match — the exact failure the intent router fixes. */
+  crossBillContext?: CrossBillContext | null;
+}
+
+/**
+ * Format the cross-bill block. Single source of truth so the prompt
+ * stays identical across the three branches of buildBillChatSystemPrompt
+ * (full sections / summary-only / metadata-only). Empty string when no
+ * cross-bill context — caller can concatenate unconditionally.
+ *
+ * Why the explicit "you do NOT have the other bill's text" framing:
+ * Sonnet 4.6 will otherwise either (a) literal-search this bill's text
+ * for the named bill's title and report no match (the original failure)
+ * or (b) fabricate provisions from the named bill as if it had the
+ * text. Naming the limit up front steers it to the right shape — use
+ * general knowledge with attribution, then find topical overlap here.
+ */
+function formatCrossBillContextBlock(
+  ctx: CrossBillContext | null | undefined,
+): string {
+  if (!ctx) return "";
+  const named = ctx.namedBill.trim();
+  if (named.length === 0) return "";
+  return `The user is asking how this bill compares with another piece of legislation, which they referred to as:
+"${named}"
+
+We have NOT loaded the text of that other bill into your context. Answer in this shape:
+
+1. From general knowledge about that legislation (if you recognize it), briefly state what it does in substance — its purpose, main provisions, scope. Frame this as background: "From general knowledge about [the Act]…" so the user understands you cannot quote it.
+
+2. Identify the sections of THIS bill that address the same subject matter. Quote them with the normal section citations.
+
+3. Be explicit about the limit: you can identify topical overlap, not literal text matches, without both bills loaded. Suggest the user verify on congress.gov for an authoritative side-by-side text comparison.
+
+4. If you do not recognize the named legislation at all, say so plainly and ask the user to share a bill number (e.g., "H.R. 4673") so it can be looked up.
+
+Do this even if the named legislation does not appear by title in the bill text — the user is asking about substantive overlap, not a string match.`;
 }
 
 function formatRepVoteContextBlock(ctx: RepVoteContext | null | undefined) {
@@ -328,6 +385,12 @@ export function buildBillChatSystemPrompt(
   const readerMode = opts.readerMode === true;
   const repVoteBlock = formatRepVoteContextBlock(opts.repVoteContext);
   const repVoteSuffix = repVoteBlock ? `\n\n${repVoteBlock}` : "";
+  // Cross-bill block sits BEFORE rep-vote in the suffix order. A turn can
+  // legitimately be both (e.g. "how did Sanders vote on the EATS Act?")
+  // and the rep-vote framing is the more specific instruction — placing
+  // it last lets it have the final word on response shape.
+  const crossBillBlock = formatCrossBillContextBlock(opts.crossBillContext);
+  const crossBillSuffix = crossBillBlock ? `\n\n${crossBillBlock}` : "";
 
   // No sections — answer from title / CRS summary / metadata only.
   if (!billSections || billSections.length === 0) {
@@ -353,7 +416,7 @@ Only say something is not covered if the summary genuinely does not address it. 
 
 ${BACKGROUND_KNOWLEDGE_CLAUSE}
 
-Stay factual and neutral.${repVoteSuffix}`;
+Stay factual and neutral.${crossBillSuffix}${repVoteSuffix}`;
     }
 
     return `You are a helpful, nonpartisan assistant that helps citizens understand U.S. legislation. You answer questions about bills clearly and accessibly, avoiding jargon where possible.
@@ -368,7 +431,7 @@ For questions about specific substantive provisions of the bill (what it actuall
 
 ${BACKGROUND_KNOWLEDGE_CLAUSE}
 
-Stay factual and neutral. Do not repeat the "text not available" caveat in every paragraph; one upfront mention is enough, and only when the question actually requires the bill text to answer.${repVoteSuffix}`;
+Stay factual and neutral. Do not repeat the "text not available" caveat in every paragraph; one upfront mention is enough, and only when the question actually requires the bill text to answer.${crossBillSuffix}${repVoteSuffix}`;
   }
 
   const billTextBlock = formatSectionsForPrompt(billSections, {
@@ -404,7 +467,7 @@ ${metadataBlock ? `Bill information:\n${metadataBlock}\n\n` : ""}${sectionsHeade
 
 ${billTextBlock}
 
-${citationInstructions}${retrievalNotePresent}${repVoteSuffix}`;
+${citationInstructions}${retrievalNotePresent}${crossBillSuffix}${repVoteSuffix}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -747,6 +810,11 @@ export interface StreamBillChatParams {
    *  paths so the existing "here is the bill, organized by section"
    *  framing keeps working. */
   retrievalContext?: RetrievalContext | null;
+  /** When set, the intent classifier identified the turn as a cross-bill
+   *  comparison. The prompt grows an explicit acknowledgment block that
+   *  steers the model toward background-knowledge + topical-overlap
+   *  framing instead of the historical literal-string failure mode. */
+  crossBillContext?: CrossBillContext | null;
   /** Fires once budget allocation completes, before the stream starts. */
   onBudget?: (diagnostics: ChatBudgetDiagnostics) => void;
   onFinish?: (event: {
@@ -787,6 +855,7 @@ export async function streamBillChatResponse(
     readerMode,
     repVoteContext,
     retrievalContext,
+    crossBillContext,
     onBudget,
     onFinish,
     onError,
@@ -825,7 +894,7 @@ export async function streamBillChatResponse(
     billTitle,
     packedSections,
     metadata,
-    { readerMode, repVoteContext, retrievalContext },
+    { readerMode, repVoteContext, retrievalContext, crossBillContext },
   );
 
   // Cacheable system message + (already-budgeted) conversation. We pass

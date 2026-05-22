@@ -280,6 +280,141 @@ describe("buildBillChatSystemPrompt", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Cross-bill context — the prompt-side half of the intent router
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("buildBillChatSystemPrompt — cross-bill context", () => {
+  const SAMPLE_SECTIONS: BillSection[] = [
+    section(
+      "Section 1. Short title",
+      "This Act may be cited as the Test Farm Bill.",
+    ),
+    section(
+      "Section 12111. A-PLUS program",
+      "Establishes the Amplifying Processing of Livestock in the United States program.",
+    ),
+  ];
+
+  it("does NOT include the cross-bill block when crossBillContext is null", () => {
+    const prompt = buildBillChatSystemPrompt(
+      "Test Farm Bill",
+      SAMPLE_SECTIONS,
+      null,
+      { crossBillContext: null },
+    );
+    expect(prompt).not.toMatch(/comparing with another piece of legislation/i);
+    expect(prompt).not.toMatch(/We have NOT loaded the text/i);
+  });
+
+  it("does NOT include the cross-bill block when the option is omitted entirely", () => {
+    // Calling without the opts object at all is a real caller path
+    // (scripts, tests). Make sure the absence-default is also clean.
+    const prompt = buildBillChatSystemPrompt(
+      "Test Farm Bill",
+      SAMPLE_SECTIONS,
+      null,
+    );
+    expect(prompt).not.toMatch(/We have NOT loaded the text/i);
+  });
+
+  it("injects the cross-bill block when crossBillContext.namedBill is set (full-sections branch)", () => {
+    const prompt = buildBillChatSystemPrompt(
+      "Test Farm Bill",
+      SAMPLE_SECTIONS,
+      null,
+      { crossBillContext: { namedBill: "Save Our Bacon Act" } },
+    );
+
+    // The block must (a) name the other bill verbatim, (b) tell the
+    // model it doesn't have that text loaded, (c) instruct it to use
+    // general knowledge plus topical overlap.
+    expect(prompt).toContain('"Save Our Bacon Act"');
+    expect(prompt).toMatch(/We have NOT loaded the text/);
+    expect(prompt).toMatch(/general knowledge about that legislation/i);
+    expect(prompt).toMatch(/topical overlap/i);
+    // Honest-fallback clause when the model doesn't recognize the act.
+    expect(prompt).toMatch(/ask the user to share a bill number/i);
+  });
+
+  it("injects the cross-bill block on the CRS-summary-only branch", () => {
+    // Tier-2 bills (no full text yet, have CRS summary) hit a different
+    // prompt branch — verify the block still flows through.
+    const prompt = buildBillChatSystemPrompt(
+      "Test Bill",
+      null,
+      {
+        sponsor: null,
+        sponsorBioguideId: null,
+        cosponsorCount: null,
+        cosponsorPartySplit: null,
+        policyArea: null,
+        latestActionDate: null,
+        latestActionText: null,
+        shortText: "A CRS summary describing the introduced bill.",
+        popularTitle: null,
+        displayTitle: null,
+        shortTitle: null,
+      },
+      { crossBillContext: { namedBill: "H.R. 4673" } },
+    );
+
+    expect(prompt).toContain('"H.R. 4673"');
+    expect(prompt).toMatch(/We have NOT loaded the text/);
+  });
+
+  it("injects the cross-bill block on the metadata-only branch", () => {
+    // Tier-3 bills (no text and no CRS summary) — most threadbare
+    // prompt. Cross-bill block still needs to land.
+    const prompt = buildBillChatSystemPrompt("Bare Bill", null, null, {
+      crossBillContext: { namedBill: "the EATS Act" },
+    });
+
+    expect(prompt).toContain('"the EATS Act"');
+    expect(prompt).toMatch(/We have NOT loaded the text/);
+  });
+
+  it("treats an empty-string namedBill as no context (defensive)", () => {
+    // The route filters empty strings out before passing them in, but
+    // an empty namedBill is still a valid TypeScript value — guard at
+    // the prompt boundary too so a future caller bug doesn't ship a
+    // malformed "compares with: " block.
+    const prompt = buildBillChatSystemPrompt(
+      "Test Bill",
+      SAMPLE_SECTIONS,
+      null,
+      { crossBillContext: { namedBill: "   " } },
+    );
+    expect(prompt).not.toMatch(/We have NOT loaded the text/);
+  });
+
+  it("composes with repVoteContext without losing either block", () => {
+    // 'How did Sanders vote on the EATS Act?' is BOTH a rep_vote and
+    // ostensibly a cross-bill turn — the route resolves both. Both
+    // blocks must coexist in the final prompt.
+    const prompt = buildBillChatSystemPrompt(
+      "Test Farm Bill",
+      SAMPLE_SECTIONS,
+      null,
+      {
+        crossBillContext: { namedBill: "EATS Act" },
+        repVoteContext: {
+          displayName: "Sen. Bernie Sanders (I-VT)",
+          voteLabel: "No",
+          voteDate: "2026-04-15",
+          chamber: "Senate",
+          rollCallNumber: 42,
+          isWhyIntent: true,
+        },
+      },
+    );
+
+    expect(prompt).toContain('"EATS Act"');
+    expect(prompt).toMatch(/Verified roll call fact/);
+    expect(prompt).toContain("Sen. Bernie Sanders");
+  });
+});
+
 describe("packSectionsToBudget", () => {
   it("returns the input unchanged when packing isn't needed", () => {
     const sections = Array.from({ length: 30 }, (_, i) =>
