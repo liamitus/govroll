@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import {
-  embedBill,
-  shouldUseRag,
-  RAG_BILL_CHAR_THRESHOLD,
-} from "@/lib/bill-embeddings";
+import { embedBill, RAG_BILL_CHAR_THRESHOLD } from "@/lib/bill-embeddings";
 import { reportError } from "@/lib/error-reporting";
 
 /**
@@ -64,41 +60,37 @@ export async function GET(request: Request) {
 
   // ── Pick the next bills that need (re-)embedding ──────────────────
   // Two cases:
-  //   1. No completion marker yet — initial backfill.
+  //   1. No completion marker yet — initial backfill (covers the
+  //      partial-write recovery case: chunks exist but the marker is
+  //      still null because the last chunk didn't land).
   //   2. Latest text version differs from `embeddingsTextVersionId` —
   //      version changed (new amendment), need to re-embed.
   //
-  // We use the `Bill.embeddingsTextVersionId` completion marker (set
-  // by `embedBill` after the LAST chunk lands) instead of "any chunk
-  // row exists" so a partial-write failure on a giant bill (multi-tx
-  // persistChunks isn't atomic) doesn't get silently marked done.
-  //
-  // `large` is measured on `BillTextVersion.fullText` length, not
-  // `Bill.fullText` — the latter is denormalized and sometimes stale.
-  const candidates = await prisma.bill.findMany({
-    select: {
-      id: true,
-      billId: true,
-      embeddingsTextVersionId: true,
-      textVersions: {
-        where: { fullText: { not: null } },
-        orderBy: { versionDate: "desc" },
-        take: 1,
-        select: { id: true, fullText: true },
-      },
-    },
-    orderBy: { id: "asc" },
-  });
+  // Filtering happens in SQL via $queryRaw so we don't pull every
+  // bill's fullText across the wire just to compare a length and an
+  // id. With Prisma's findMany + JS filter this query alone burned
+  // ~14 GB/day of Supabase egress. embedBill re-fetches the text it
+  // needs for the (at most `limit`) bills we actually process.
+  const candidates = await prisma.$queryRaw<
+    Array<{ id: number; billId: string }>
+  >`
+    SELECT b.id, b."billId"
+    FROM "Bill" b
+    INNER JOIN LATERAL (
+      SELECT id, "fullText"
+      FROM "BillTextVersion"
+      WHERE "billId" = b.id AND "fullText" IS NOT NULL
+      ORDER BY "versionDate" DESC
+      LIMIT 1
+    ) v ON TRUE
+    WHERE LENGTH(v."fullText") > ${RAG_BILL_CHAR_THRESHOLD}
+      AND (b."embeddingsTextVersionId" IS NULL
+           OR b."embeddingsTextVersionId" <> v.id)
+    ORDER BY b.id ASC
+  `;
 
-  const isUpToDate = (b: (typeof candidates)[number]) => {
-    const v = b.textVersions[0];
-    if (!v?.fullText) return true; // nothing to embed; treat as "done"
-    if (!shouldUseRag(v.fullText.length)) return true; // below threshold
-    return b.embeddingsTextVersionId === v.id;
-  };
-
-  const queue = candidates.filter((b) => !isUpToDate(b)).slice(0, limit);
-  const totalRemaining = candidates.filter((b) => !isUpToDate(b)).length;
+  const totalRemaining = candidates.length;
+  const queue = candidates.slice(0, limit);
 
   // ── Process sequentially, respecting deadline ─────────────────────
   const results: Array<{
