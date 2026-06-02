@@ -58,17 +58,30 @@ export function SectionRenderer({ section }: { section: ReaderSection }) {
             <h4 className="bill-prose-heading">{headingText}</h4>
           )}
 
-          <button
-            type="button"
-            data-section-ask-ai="true"
-            data-section-slug={section.slug}
-            className="bill-prose-ask-ai"
-            aria-label={`Ask AI about this section`}
-            title="Ask AI about this section"
-          >
-            <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            <span className="sr-only">Ask AI</span>
-          </button>
+          {/* The per-section "Ask AI" button is intentionally limited to
+              top-level sections. In practice depth-1 sections render via
+              <CollapsibleTopSection>'s summary (which carries its own
+              button); this branch is defensive for any depth-1 that flows
+              through here. Subsections deliberately get NO button —
+              stamping one onto every one-line clause is noise on
+              self-explanatory text (a short title, a one-sentence
+              definition). For passage-level questions deeper in a section,
+              the selection-explain popover (highlight any text → "Explain
+              in plain English") is the precise, on-demand affordance. See
+              <SelectionPopover>. */}
+          {section.depth <= 1 ? (
+            <button
+              type="button"
+              data-section-ask-ai="true"
+              data-section-slug={section.slug}
+              className="bill-prose-ask-ai"
+              aria-label="Ask AI about this section"
+              title="Ask AI about this section"
+            >
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              <span className="sr-only">Ask AI</span>
+            </button>
+          ) : null}
         </div>
       )}
 

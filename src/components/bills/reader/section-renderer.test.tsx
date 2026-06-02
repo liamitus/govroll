@@ -169,10 +169,20 @@ describe("<SectionRenderer> — data attributes (event-delegation contract)", ()
       "Section 5. Funding > (a) Authorization",
     );
   });
+});
 
-  it("includes a delegation-target Ask AI button with correct data-section-slug", () => {
+describe("<SectionRenderer> — Ask AI button is top-level only", () => {
+  // The per-section Ask-AI button is gated to top-level sections. In
+  // production depth-1 sections render via <CollapsibleTopSection>, but
+  // <SectionRenderer> keeps a defensive depth-1 path, so we assert the
+  // gate here. Subsections (depth ≥ 2) deliberately render no button —
+  // they'd otherwise stamp a chat affordance onto every one-line clause.
+  // Passage-level questions are served by the selection-explain popover.
+  it("top-level (depth 1) section includes the delegation-target Ask AI button", () => {
     const { container } = render(
-      <SectionRenderer section={makeSection({ slug: "sec-1-short-title" })} />,
+      <SectionRenderer
+        section={makeSection({ depth: 1, slug: "sec-1-short-title" })}
+      />,
     );
     const button = container.querySelector(
       "button[data-section-ask-ai]",
@@ -180,14 +190,34 @@ describe("<SectionRenderer> — data attributes (event-delegation contract)", ()
     expect(button).toBeTruthy();
     expect(button.dataset.sectionSlug).toBe("sec-1-short-title");
     expect(button.getAttribute("aria-label")).toMatch(/Ask AI/i);
+    // type=button guards against accidental form submission.
+    expect(button.type).toBe("button");
   });
 
-  it("Ask AI button is type=button (no accidental form submission)", () => {
-    const { container } = render(<SectionRenderer section={makeSection()} />);
-    const button = container.querySelector(
-      "button[data-section-ask-ai]",
-    ) as HTMLButtonElement;
-    expect(button.type).toBe("button");
+  it("depth-2 subsection renders NO Ask AI button", () => {
+    const { container } = render(
+      <SectionRenderer
+        section={makeSection({
+          depth: 2,
+          heading: "Section 1 > (a) In general",
+          slug: "sec-1--a-in-general",
+        })}
+      />,
+    );
+    expect(container.querySelector("button[data-section-ask-ai]")).toBeNull();
+  });
+
+  it("depth-3 subsection renders NO Ask AI button", () => {
+    const { container } = render(
+      <SectionRenderer
+        section={makeSection({
+          depth: 3,
+          heading: "Section 1 > (a) In general > (1) Eligible",
+          slug: "sec-1--a--1-eligible",
+        })}
+      />,
+    );
+    expect(container.querySelector("button[data-section-ask-ai]")).toBeNull();
   });
 });
 
