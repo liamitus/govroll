@@ -76,6 +76,10 @@ export interface RepresentativeInfo {
   imageUrl: string | null;
   link: string | null;
   phone: string | null;
+  /** End of current term (Jan 3 of an odd year). Drives the next-election
+   * countdown. Date when read straight from the DB (server components),
+   * ISO string when it crosses an API boundary. */
+  termEnd?: string | Date | null;
 }
 
 export interface RepVoteHistoryEntry {
