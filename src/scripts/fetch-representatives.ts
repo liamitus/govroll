@@ -62,6 +62,7 @@ export async function fetchRepresentativesFunction() {
           chamber,
           imageUrl,
           link: person.link,
+          termEnd: role.enddate ? new Date(role.enddate) : null,
         },
         create: {
           bioguideId,
@@ -74,6 +75,7 @@ export async function fetchRepresentativesFunction() {
           chamber,
           imageUrl,
           link: person.link,
+          termEnd: role.enddate ? new Date(role.enddate) : null,
         },
       });
     }

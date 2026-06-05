@@ -45,21 +45,61 @@ export function chamberLabel(chamber: string) {
   return chamber;
 }
 
-export function nextElection(chamber: string): string {
-  const now = new Date();
-  const electionDate = getElectionDay(nextElectionYear(chamber));
-  return timeUntil(now, electionDate);
+export function nextElection(
+  termEnd: Date | string | null | undefined,
+  chamber: string,
+): string {
+  const electionDate = getElectionDay(nextElectionYear(termEnd, chamber));
+  return timeUntil(new Date(), electionDate);
 }
 
-/** Returns the year of the next election for this chamber. */
-export function nextElectionYear(chamber: string): number {
-  const year = new Date().getFullYear();
-  if (chamber === "representative") {
-    return year % 2 === 0 ? year : year + 1;
+/**
+ * Year of a sitting member's next election.
+ *
+ * `termEnd` is the end of the member's CURRENT term — Jan 3 of an odd year.
+ * The election that decides the seat is held the prior November, so the next
+ * election falls in `year(termEnd) - 1`. This is exactly why a state's two
+ * senators differ: they sit in different election classes, so their terms end
+ * two years apart (NY — Schumer's term ends 2029, Gillibrand's 2031 → elections
+ * in 2028 and 2030). The old code added a flat +4 to every senator, which
+ * showed both as "in about 4 years".
+ *
+ * Falls back to the next even year when `termEnd` is missing (e.g. a member
+ * ingested before the term-end backfill ran): House seats are always up then,
+ * and a senator's class is unknowable without the term.
+ */
+export function nextElectionYear(
+  termEnd: Date | string | null | undefined,
+  chamber: string,
+): number {
+  const cycle = chamber === "representative" ? 2 : 6;
+  const parsed = parseDate(termEnd);
+  const now = new Date();
+
+  let year: number;
+  if (parsed) {
+    const endYear = parsed.getFullYear();
+    // Regular terms end in early January, so the deciding election was the
+    // prior November (endYear - 1). Some appointments instead run until an
+    // election day in November — that same election fills the seat, so the year
+    // is endYear. Split on mid-year to tell them apart; it's timezone-robust
+    // since a January or November date never crosses the H1/H2 boundary.
+    year = parsed.getMonth() >= 6 ? endYear : endYear - 1;
+  } else {
+    const y = now.getFullYear();
+    year = y % 2 === 0 ? y : y + 1;
   }
-  // Senate: approximate next even year + 4 (staggered)
-  const next = year % 2 === 0 ? year : year + 1;
-  return next + 4;
+
+  // Never return a past election: advance whole cycles past the post-election
+  // lame-duck window (Nov–Jan, before term data refreshes) or any stale data.
+  while (getElectionDay(year) < now) year += cycle;
+  return year;
+}
+
+function parseDate(value: Date | string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function getElectionDay(year: number): Date {

@@ -255,7 +255,7 @@ export function RepresentativesDashboard() {
                       </div>
 
                       <p className="text-muted-foreground mt-1.5 text-xs">
-                        Next election {nextElection(rep.chamber)}
+                        Next election {nextElection(rep.termEnd, rep.chamber)}
                       </p>
                     </div>
                   </div>
