@@ -597,9 +597,10 @@
   margin-top: 0.75rem;
 }
 
-/* Heading + per-section "Ask AI" inline action. The action is hidden
-   by default and reveals on group hover (desktop) or focus. Mobile
-   gets the bottom-bar Ask AI + selection popover, so the per-section
+/* Heading + top-level "Ask AI" inline action. Only top-level sections
+   carry this button (subsections rely on the selection-explain popover);
+   it's hidden by default and reveals on group hover (desktop) or focus.
+   Mobile gets the bottom-bar Ask AI + selection popover, so the inline
    action would just be visual noise. */
 .bill-prose-heading-row {
   display: flex;

@@ -173,6 +173,11 @@ model Representative {
   imageUrl       String?
   link           String?
   phone          String?
+  // End of the member's current term (Jan 3 of an odd year), from GovTrack's
+  // role.enddate. Drives the next-election countdown: the deciding election is
+  // the prior November, so next election = year(termEnd) - 1. This is what
+  // distinguishes a state's two senators, who sit in different election classes.
+  termEnd        DateTime?
   votes          RepresentativeVote[]
   cosponsorships BillCosponsor[]
 }

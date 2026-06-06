@@ -16,6 +16,9 @@ export interface RepByAddress {
   lastName: string;
   imageUrl: string | null;
   phone: string | null;
+  /** End of current term, ISO string (or null). Drives the next-election
+   * countdown — see nextElection(). */
+  termEnd: string | null;
 }
 
 export function repsByAddressQueryKey(address: string) {

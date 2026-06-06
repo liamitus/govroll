@@ -13,7 +13,7 @@ interface RepHeroProps {
 
 export function RepHero({ rep }: RepHeroProps) {
   const colors = partyColor(rep.party);
-  const electionCountdown = nextElection(rep.chamber);
+  const electionCountdown = nextElection(rep.termEnd, rep.chamber);
 
   return (
     <div className="flex flex-col items-start gap-6 sm:flex-row">

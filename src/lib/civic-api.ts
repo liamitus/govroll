@@ -315,6 +315,7 @@ export async function getRepresentativesByAddress(address: string) {
       imageUrl: s.imageUrl,
       link: s.link,
       phone: s.phone,
+      termEnd: s.termEnd,
       id: s.id,
     })),
     ...(houseReps.length > 0
@@ -336,6 +337,7 @@ export async function getRepresentativesByAddress(address: string) {
       imageUrl: r.imageUrl,
       link: r.link,
       phone: r.phone,
+      termEnd: r.termEnd,
       id: r.id,
     })),
   ];
