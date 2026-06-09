@@ -11,9 +11,11 @@ import { reportError } from "@/lib/error-reporting";
  * as wrong ordering.
  *
  * Query params:
- *   - limit (default 2000) — max bills to process this invocation.
+ *   - limit (default 600) — max bills to process this invocation.
  *     Incremental by default: stale (>20h old) + any bills with recent
- *     activity. Pass `full=1` to recompute every bill.
+ *     activity. Pass `full=1` to recompute every bill. The function also
+ *     self-bails at an internal deadline well under maxDuration, so a large
+ *     backlog spans several runs rather than timing out.
  *
  * Idempotent. Invoked by GitHub Actions. Protected by CRON_SECRET.
  */
@@ -34,7 +36,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const limit = Math.min(
     5000,
-    Math.max(1, parseInt(url.searchParams.get("limit") ?? "2000", 10)),
+    Math.max(1, parseInt(url.searchParams.get("limit") ?? "600", 10)),
   );
   const full = url.searchParams.get("full") === "1";
 
@@ -46,7 +48,7 @@ export async function GET(request: Request) {
     );
     const ms = Date.now() - start;
     console.log(
-      `[compute-momentum cron] ok=${result.ok} failed=${result.failed} in ${ms}ms (full=${full})`,
+      `[compute-momentum cron] ok=${result.ok} failed=${result.failed} timedOut=${result.timedOut} in ${ms}ms (full=${full})`,
     );
     return NextResponse.json({ ok: true, ms, limit, full, result });
   } catch (error: unknown) {
