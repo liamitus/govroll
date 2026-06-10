@@ -23,9 +23,13 @@ import type { StatusCode } from "@/lib/congress-session/types";
 export function StatusDot({
   status,
   className,
+  stale = false,
 }: {
   status: StatusCode;
   className?: string;
+  /** When the data is stale, drop the "live" pulse so we don't imply an
+   * ongoing vote on an hour-old reading. */
+  stale?: boolean;
 }) {
   if (status === "unknown") {
     return (
@@ -101,7 +105,7 @@ export function StatusDot({
         className,
       )}
     >
-      {status === "voting" && (
+      {status === "voting" && !stale && (
         <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/70 motion-reduce:hidden" />
       )}
       <span className="relative inline-block size-2 rounded-full bg-emerald-400" />
