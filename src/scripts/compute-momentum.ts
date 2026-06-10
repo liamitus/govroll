@@ -12,19 +12,38 @@ const prisma = createStandalonePrisma();
 
 const DAY_MS = 86_400_000;
 
+// Hard wall-clock budget for one cron invocation. The route caps maxDuration
+// at 60s; we bail at 45s (checked between update chunks) and return what we
+// processed, leaving margin to flush the response. Bailing early is safe: the
+// per-bill momentumComputedAt watermark means the next run resumes with the
+// bills we didn't reach (they sort first), so no progress is lost. Without
+// this, a large stale backlog could run the function unbounded until Vercel
+// kills it mid-flight — surfacing as a curl timeout in the GitHub Actions
+// ingest job.
+const DEADLINE_MS = 45_000;
+
 /**
- * Recomputes the momentum signal on Bill. Pulls only the fields needed, so a
- * full sweep over ~15k bills stays cheap.
+ * Recomputes the momentum signal on Bill. Pulls only the fields needed, and
+ * processes a bounded batch per invocation so a single run stays well under
+ * the route's 60s cap.
  *
  * Run modes:
  *   - Default: incremental. Processes bills whose momentum is stale (>20h old)
- *     or never computed, plus all bills that had any activity in the last 7d.
+ *     or never computed, plus all bills that had any activity in the last 7d,
+ *     oldest-computed first. Resumable across runs via the momentumComputedAt
+ *     watermark — a run that bails at DEADLINE_MS just leaves the rest for the
+ *     next invocation.
  *   - `full`: recomputes every bill. Use after deploying a scoring change.
  */
 export async function computeMomentumFunction(
-  limit = 2000,
+  limit = 600,
   mode: "incremental" | "full" = "incremental",
-): Promise<{ ok: number; failed: number }> {
+): Promise<{
+  ok: number;
+  failed: number;
+  processed: number;
+  timedOut: boolean;
+}> {
   const now = new Date();
   const currentCongress = getCurrentCongress(now);
 
@@ -80,7 +99,7 @@ export async function computeMomentumFunction(
 
   if (bills.length === 0) {
     console.log("[momentum] nothing to compute");
-    return { ok: 0, failed: 0 };
+    return { ok: 0, failed: 0, processed: 0, timedOut: false };
   }
 
   const billDbIds = bills.map((b) => b.id);
@@ -157,9 +176,17 @@ export async function computeMomentumFunction(
   const CHUNK = 50;
   let ok = 0;
   let failed = 0;
+  let timedOut = false;
   const tierCounts = new Map<MomentumTier | "ENACTED", number>();
 
   for (let i = 0; i < bills.length; i += CHUNK) {
+    // Bail before the 60s cap, leaving margin to flush the response. The
+    // bills we didn't reach keep their old momentumComputedAt and sort first
+    // on the next run, so progress resumes rather than restarts.
+    if (Date.now() - now.getTime() > DEADLINE_MS) {
+      timedOut = true;
+      break;
+    }
     const chunk = bills.slice(i, i + CHUNK);
     const results = await Promise.allSettled(
       chunk.map(async (bill) => {
@@ -218,8 +245,12 @@ export async function computeMomentumFunction(
   const tierSummary = Array.from(tierCounts.entries())
     .map(([t, c]) => `${t}=${c}`)
     .join(" ");
-  console.log(`[momentum] done — ${ok} ok, ${failed} failed [${tierSummary}]`);
-  return { ok, failed };
+  console.log(
+    `[momentum] done — ${ok} ok, ${failed} failed${
+      timedOut ? ` (timed out at ${ok + failed}/${bills.length})` : ""
+    } [${tierSummary}]`,
+  );
+  return { ok, failed, processed: ok + failed, timedOut };
 }
 
 if (require.main === module) {
