@@ -630,10 +630,13 @@ export async function fetchBillIntroducedDate(
   congress: number,
   apiBillType: string,
   billNumber: number,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   try {
     const res = await withRetry(() =>
-      congressApiClient.get(`/bill/${congress}/${apiBillType}/${billNumber}`),
+      congressApiClient.get(`/bill/${congress}/${apiBillType}/${billNumber}`, {
+        signal,
+      }),
     );
     const v = res.data?.bill?.introducedDate;
     return typeof v === "string" && v.length > 0 ? v : null;

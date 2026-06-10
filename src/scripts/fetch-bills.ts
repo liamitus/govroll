@@ -9,11 +9,14 @@ import dayjs, { type Dayjs } from "dayjs";
 
 const prisma = createStandalonePrisma();
 
-// Tunables for the cursor-driven chunked ingest. The defaults are chosen so
-// a single run comfortably fits Vercel's Hobby 60s cap: 3-hour windows, a
-// 48-hour rewind on each run so updates that arrive late don't slip the
-// cursor, and a 50s hard deadline before bail.
-const WINDOW_HOURS = 72;
+// Tunables for the cursor-driven chunked ingest, sized so a single run fits
+// comfortably under Vercel's Hobby 60s cap: 12-hour windows (small enough that
+// each window's fetch + upserts finish quickly and the cursor advances after
+// every window, so a slow Congress.gov patch can't wedge progress mid-run), a
+// 48-hour rewind on each run so late-arriving updates don't slip the cursor,
+// and a 50s deadline enforced as a hard AbortSignal — see fetchBillsFunction —
+// not just a cooperative time check that an in-flight request can overrun.
+const WINDOW_HOURS = 12;
 const LOOKBACK_HOURS = 48;
 const BACKSTOP_DAYS = 14;
 const DEADLINE_MS = 50_000;
@@ -92,6 +95,15 @@ export async function fetchBillsFunction(
   const started = Date.now();
   const now = dayjs();
 
+  // Enforce the 50s budget as a hard AbortSignal, not just the cooperative
+  // `Date.now()` checks below. Those checks only fire BETWEEN network calls, so
+  // a single slow window fetch (15s axios timeout × up to 3 withRetry attempts
+  // ≈ 48s) could run past the 60s Vercel cap before the next check — that's the
+  // intermittent 504 the ingest cron hit. Aborting in-flight Congress.gov
+  // requests at the deadline caps that tail so we always return under the cap.
+  const controller = new AbortController();
+  const deadlineTimer = setTimeout(() => controller.abort(), DEADLINE_MS);
+
   const cursorRow = await prisma.ingestCursor.findUnique({
     where: { key: CURSOR_KEY },
   });
@@ -110,44 +122,64 @@ export async function fetchBillsFunction(
   let windows = 0;
   let timedOut = false;
 
-  while (windowStart.isBefore(now)) {
-    if (Date.now() - started > DEADLINE_MS) {
-      timedOut = true;
-      break;
-    }
-
-    const tentativeEnd = windowStart.add(WINDOW_HOURS, "hour");
-    const windowEnd = tentativeEnd.isAfter(now) ? now : tentativeEnd;
-
-    const bills = await fetchCongressBillsByUpdate({
-      fromDateTime: toCongressIso(windowStart),
-      toDateTime: toCongressIso(windowEnd),
-    });
-
-    for (let i = 0; i < bills.length; i += UPSERT_CONCURRENCY) {
+  try {
+    while (windowStart.isBefore(now)) {
       if (Date.now() - started > DEADLINE_MS) {
         timedOut = true;
         break;
       }
-      const chunk = bills.slice(i, i + UPSERT_CONCURRENCY);
-      const results = await Promise.all(chunk.map(upsertBillFromList));
-      processed += results.length;
-      for (const r of results) {
-        if (r === "created") created++;
-        else if (r === "updated") updated++;
+
+      const tentativeEnd = windowStart.add(WINDOW_HOURS, "hour");
+      const windowEnd = tentativeEnd.isAfter(now) ? now : tentativeEnd;
+
+      let bills: CongressListBill[];
+      try {
+        bills = await fetchCongressBillsByUpdate({
+          fromDateTime: toCongressIso(windowStart),
+          toDateTime: toCongressIso(windowEnd),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // A deadline abort surfaces here as an axios cancel. Treat it like the
+        // cooperative check: bail cleanly with the cursor left at the last
+        // completed window, so the next run resumes from there. Re-throw any
+        // genuine failure for the route to turn into a 500.
+        if (controller.signal.aborted) {
+          timedOut = true;
+          break;
+        }
+        throw err;
       }
+
+      for (let i = 0; i < bills.length; i += UPSERT_CONCURRENCY) {
+        if (Date.now() - started > DEADLINE_MS) {
+          timedOut = true;
+          break;
+        }
+        const chunk = bills.slice(i, i + UPSERT_CONCURRENCY);
+        const results = await Promise.all(
+          chunk.map((b) => upsertBillFromList(b, controller.signal)),
+        );
+        processed += results.length;
+        for (const r of results) {
+          if (r === "created") created++;
+          else if (r === "updated") updated++;
+        }
+      }
+
+      if (timedOut) break;
+
+      await prisma.ingestCursor.upsert({
+        where: { key: CURSOR_KEY },
+        update: { cursor: windowEnd.toDate() },
+        create: { key: CURSOR_KEY, cursor: windowEnd.toDate() },
+      });
+
+      windowStart = windowEnd;
+      windows++;
     }
-
-    if (timedOut) break;
-
-    await prisma.ingestCursor.upsert({
-      where: { key: CURSOR_KEY },
-      update: { cursor: windowEnd.toDate() },
-      create: { key: CURSOR_KEY, cursor: windowEnd.toDate() },
-    });
-
-    windowStart = windowEnd;
-    windows++;
+  } finally {
+    clearTimeout(deadlineTimer);
   }
 
   const elapsedMs = Date.now() - started;
@@ -227,6 +259,7 @@ async function buildListBillFromBillId(
 
 async function upsertBillFromList(
   listBill: CongressListBill,
+  signal?: AbortSignal,
 ): Promise<"created" | "updated" | "skipped"> {
   const govTrackType = CONGRESS_TYPE_TO_GOVTRACK[listBill.type.toUpperCase()];
   if (!govTrackType) {
@@ -270,6 +303,7 @@ async function upsertBillFromList(
     listBill.congress,
     apiBillType,
     number,
+    signal,
   );
   // Fall back to latestAction.actionDate if the detail endpoint errored —
   // we'd rather create the row with an approximate date than skip a fresh

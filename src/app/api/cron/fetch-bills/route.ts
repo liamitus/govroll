@@ -29,9 +29,11 @@ export async function GET(request: Request) {
 
   const start = Date.now();
   try {
-    // Cursor-driven — each invocation processes a few 2-day windows, bails
-    // at the internal 50s deadline, and persists progress. GitHub Actions
-    // reinvokes hourly; the cursor converges within a couple of runs.
+    // Cursor-driven — each invocation walks 12-hour updateDate windows,
+    // persisting the cursor after each, and bails at the internal 50s deadline
+    // (enforced as a hard AbortSignal on in-flight Congress.gov requests).
+    // GitHub Actions reinvokes every 3h; the cursor converges within a run or
+    // two even after a slow upstream patch.
     const result = await fetchBillsFunction();
     const ms = Date.now() - start;
     console.log(`[fetch-bills cron] completed in ${ms}ms`, result);
