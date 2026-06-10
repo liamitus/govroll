@@ -1,0 +1,19 @@
+-- Drop the unused IVFFlat vector index on BillEmbeddingChunk.embedding.
+--
+-- Every RAG retrieval (src/lib/bill-rag-retrieval.ts) filters by billId
+-- first (`WHERE "billId" = $2 ... ORDER BY embedding <=> $1 LIMIT k`), so
+-- the planner uses BillEmbeddingChunk_billId_idx and re-ranks the small
+-- per-bill set by distance — the global vector index is never consulted.
+-- pg_stat_user_indexes confirms 0 scans since it was built, while the
+-- index costs ~1.7 GB on disk and adds ~160ms to every chunk INSERT during
+-- embedding. There is no cross-corpus (billId-agnostic) semantic search
+-- path today, so it is pure overhead. The btree on (billId) already serves
+-- the real query.
+--
+-- Reversible: if cross-bill semantic search is ever added, recreate inside
+-- a `SET LOCAL statement_timeout = 0` transaction (see
+-- 20260429210000_swap_hnsw_to_ivfflat):
+--   CREATE INDEX "BillEmbeddingChunk_embedding_ivfflat_idx"
+--     ON "BillEmbeddingChunk" USING ivfflat (embedding vector_cosine_ops)
+--     WITH (lists = 200);
+DROP INDEX IF EXISTS "BillEmbeddingChunk_embedding_ivfflat_idx";
