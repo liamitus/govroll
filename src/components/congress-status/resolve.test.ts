@@ -2,9 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   resolveOverall,
   effectiveStatus,
+  freshness,
   labelFor,
   chamberHintFor,
-  STALE_THRESHOLD_MS,
+  STALENESS_CEILING_MS,
 } from "./resolve";
 import type { ChamberStatusPayload } from "@/app/api/congress/status/route";
 import type { Chamber, StatusCode } from "@/lib/congress-session/types";
@@ -145,11 +146,11 @@ describe("resolveOverall", () => {
     expect(r.primaryChamber).toBeNull();
   });
 
-  it("downgrades a stale chamber to unknown so a fresh recess can win the tie", () => {
-    // House row is fresh (recess), Senate row is stale (would be voting if
-    // we trusted it). The pill should pick the house and not lie about
-    // ongoing votes.
-    const stale = new Date(NOW - STALE_THRESHOLD_MS * 4).toISOString();
+  it("prefers a fresh chamber over a stale one so the pill doesn't lie about votes", () => {
+    // House row is fresh (recess), Senate row is stale (would be voting if we
+    // trusted it). A confidently-fresh read outranks a stale higher-priority
+    // one, so the pill picks the House and stays honest.
+    const stale = new Date(NOW - STALENESS_CEILING_MS - 60_000).toISOString();
     const data = {
       chambers: {
         house: makePayload(
@@ -167,6 +168,27 @@ describe("resolveOverall", () => {
     const r = resolveOverall(data, NOW);
     expect(r.status).toBe("recess");
     expect(r.primaryChamber).toBe("house");
+    expect(r.stale).toBe(false); // winner (House) is fresh
+  });
+
+  it("keeps the last-known status but flags it stale when both chambers are old", () => {
+    const old = new Date(NOW - STALENESS_CEILING_MS - 60_000).toISOString();
+    const data = {
+      chambers: {
+        house: makePayload("house", "recess", null, "Returns Mon, Apr 27", {
+          lastCheckedAt: old,
+        }),
+        senate: makePayload("senate", "in_session", null, null, {
+          lastCheckedAt: old,
+        }),
+      },
+    };
+
+    const r = resolveOverall(data, NOW);
+    expect(r.status).toBe("in_session"); // in_session outranks recess
+    expect(r.primaryChamber).toBe("senate");
+    expect(r.stale).toBe(true);
+    expect(r.lastCheckedAt).toBe(old);
   });
 });
 
@@ -347,6 +369,8 @@ describe("chamberHintFor", () => {
       status: "adjourned_today" as StatusCode,
       primaryChamber: "senate" as Chamber,
       nextTransitionLabel: "Returns Tue, Apr 28",
+      stale: false,
+      lastCheckedAt: null,
     };
     expect(chamberHintFor(r)).toBe("Senate");
   });
@@ -356,6 +380,8 @@ describe("chamberHintFor", () => {
       status: "pre_session" as StatusCode,
       primaryChamber: "senate" as Chamber,
       nextTransitionLabel: "Convenes at 10:00 a.m. ET",
+      stale: false,
+      lastCheckedAt: null,
     };
     expect(chamberHintFor(r)).toBe("Senate");
   });
@@ -364,18 +390,49 @@ describe("chamberHintFor", () => {
 describe("effectiveStatus", () => {
   it("returns the stored status when fresh", () => {
     const p = makePayload("house", "voting", null, null);
-    expect(effectiveStatus(p, NOW)).toBe("voting");
+    expect(effectiveStatus(p)).toBe("voting");
   });
 
-  it("downgrades to unknown when older than 3× STALE_THRESHOLD_MS", () => {
+  it("still returns the last-known status when stale (staleness is shown separately)", () => {
     const p = makePayload("house", "voting", null, null, {
-      lastCheckedAt: new Date(NOW - STALE_THRESHOLD_MS * 4).toISOString(),
+      lastCheckedAt: new Date(
+        NOW - STALENESS_CEILING_MS - 60_000,
+      ).toISOString(),
     });
-    expect(effectiveStatus(p, NOW)).toBe("unknown");
+    expect(effectiveStatus(p)).toBe("voting");
   });
 
-  it("returns unknown for null payload", () => {
-    expect(effectiveStatus(null, NOW)).toBe("unknown");
-    expect(effectiveStatus(undefined, NOW)).toBe("unknown");
+  it("returns unknown only when there is no data at all", () => {
+    expect(effectiveStatus(null)).toBe("unknown");
+    expect(effectiveStatus(undefined)).toBe("unknown");
+  });
+});
+
+describe("freshness", () => {
+  it("is fresh within the ceiling", () => {
+    expect(freshness(makePayload("house", "recess", null, null), NOW)).toBe(
+      "fresh",
+    );
+  });
+
+  it("is stale once past the ceiling", () => {
+    const p = makePayload("house", "recess", null, null, {
+      lastCheckedAt: new Date(
+        NOW - STALENESS_CEILING_MS - 60_000,
+      ).toISOString(),
+    });
+    expect(freshness(p, NOW)).toBe("stale");
+  });
+
+  it("is missing when there is no payload", () => {
+    expect(freshness(null, NOW)).toBe("missing");
+    expect(freshness(undefined, NOW)).toBe("missing");
+  });
+
+  it("treats an unparseable timestamp as fresh rather than punishing real data", () => {
+    const p = makePayload("house", "recess", null, null, {
+      lastCheckedAt: "not-a-date",
+    });
+    expect(freshness(p, NOW)).toBe("fresh");
   });
 });
