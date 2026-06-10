@@ -56,6 +56,10 @@ on:
           - evaluate-budget
           - fetch-representatives
           - embed-large-bills
+      since:
+        description: "fetch-votes only — deep-backfill start date YYYY-MM-DD (optional)"
+        required: false
+        type: string
 
 # The whole workflow doesn't need write scopes — we only call an
 # authenticated HTTP endpoint on govroll.com.
@@ -123,9 +127,19 @@ jobs:
           BASE_URL: ${{ vars.GOVROLL_BASE_URL }}
           SECRET: ${{ secrets.CRON_SECRET }}
           ENDPOINT: ${{ steps.route.outputs.endpoint }}
+          SINCE: ${{ github.event.inputs.since }}
         run: |
           set -euo pipefail
           URL="${BASE_URL%/}/api/cron/${ENDPOINT}"
+          # Optional deep-backfill start for fetch-votes. The endpoint
+          # validates the format and 400s on anything but YYYY-MM-DD.
+          if [ -n "${SINCE:-}" ]; then
+            if [ "${ENDPOINT}" = "fetch-votes" ]; then
+              URL="${URL}?since=${SINCE}"
+            else
+              echo "::warning::'since' only applies to fetch-votes; ignoring for ${ENDPOINT}"
+            fi
+          fi
           echo "Calling $URL"
 
           # --fail-with-body so non-2xx responses still print the body,
