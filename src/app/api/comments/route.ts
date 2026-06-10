@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { reportError } from "@/lib/error-reporting";
 import { checkContentL2 } from "@/lib/moderation/layer2";
-import { assertUserRateLimit, RateLimitError } from "@/lib/rate-limit";
+import { assertUserCommentRateLimit, RateLimitError } from "@/lib/rate-limit";
 
 function clientIp(request: NextRequest): string | undefined {
   return (
@@ -61,11 +61,7 @@ export async function POST(request: NextRequest) {
 
   // Per-user posting cap (authoritative, DB-backed across instances).
   try {
-    await assertUserRateLimit(
-      userId,
-      "moderation_content",
-      COMMENTS_PER_USER_PER_HOUR,
-    );
+    await assertUserCommentRateLimit(userId, COMMENTS_PER_USER_PER_HOUR);
   } catch (err) {
     if (err instanceof RateLimitError) {
       return NextResponse.json(
@@ -112,13 +108,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Bill not found" }, { status: 404 });
     }
 
+    // Validate the parent (if replying): it must exist and belong to THIS
+    // bill. A cross-bill parent isn't found by this bill's tree-builder and
+    // renders as a bogus top-level comment; a nonexistent parent would 500 on
+    // the FK constraint at insert time.
+    let parentId: number | null = null;
+    if (parentCommentId != null) {
+      parentId = Number(parentCommentId);
+      if (!Number.isInteger(parentId) || parentId <= 0) {
+        return NextResponse.json(
+          { error: "Invalid parent comment" },
+          { status: 400 },
+        );
+      }
+      const parent = await prisma.comment.findUnique({
+        where: { id: parentId },
+        select: { billId: true },
+      });
+      if (!parent || parent.billId !== billId) {
+        return NextResponse.json(
+          { error: "Parent comment does not belong to this bill" },
+          { status: 400 },
+        );
+      }
+    }
+
     const comment = await prisma.comment.create({
       data: {
         userId,
         username,
         billId,
         content,
-        parentCommentId: parentCommentId || null,
+        parentCommentId: parentId,
       },
     });
 
