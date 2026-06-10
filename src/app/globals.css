@@ -252,6 +252,26 @@
   animation: fadeSlideUp 0.4s ease-out both;
 }
 
+/* CongressStatus calendar — week rows fade up in sequence as the popover opens. */
+@keyframes calRowIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.cal-row-in {
+  animation: calRowIn 0.35s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cal-row-in {
+    animation: none;
+  }
+}
+
 /* Stars decoration */
 .star-accent::before {
   content: "\2605";

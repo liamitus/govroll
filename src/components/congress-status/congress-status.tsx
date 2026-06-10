@@ -1,8 +1,10 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
 import { StatusDot } from "./status-dot";
+import { SessionCalendar } from "./session-calendar";
 import { cn } from "@/lib/utils";
 import {
   resolveOverall,
@@ -15,6 +17,7 @@ import type {
   CongressStatusResponse,
   ChamberStatusPayload,
 } from "@/app/api/congress/status/route";
+import type { CongressCalendarResponse } from "@/app/api/congress/calendar/route";
 
 /**
  * "Is Congress working right now?" — pill lives in the global NavBar,
@@ -36,6 +39,8 @@ const POLL_INTERVAL_IDLE_MS = 60_000;
 const POLL_INTERVAL_VOTING_MS = 15_000;
 
 export function CongressStatus() {
+  const [open, setOpen] = useState(false);
+
   const query = useQuery<CongressStatusResponse>({
     queryKey: ["congress-status"],
     queryFn: async () => {
@@ -53,13 +58,27 @@ export function CongressStatus() {
     staleTime: 30_000,
   });
 
+  // The recess calendar changes ~yearly, so fetch it once — only after the
+  // popover first opens — and let it sit in cache for the session.
+  const calendarQuery = useQuery<CongressCalendarResponse>({
+    queryKey: ["congress-calendar"],
+    queryFn: async () => {
+      const res = await fetch("/api/congress/calendar");
+      if (!res.ok) throw new Error(`calendar ${res.status}`);
+      return res.json();
+    },
+    enabled: open,
+    staleTime: 6 * 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+  });
+
   const resolved = resolveOverall(query.data);
   const label = labelFor(resolved.status);
   const chamberHint = chamberHintFor(resolved);
   const pillNextTransition = resolved.nextTransitionLabel;
 
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
         className={cn(
           "group inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 text-xs tracking-wide uppercase transition-colors hover:border-white/25 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none",
@@ -92,8 +111,13 @@ export function CongressStatus() {
           sideOffset={8}
           className="isolate z-50 outline-none"
         >
-          <Popover.Popup className="bg-popover text-popover-foreground ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 w-[280px] origin-(--transform-origin) rounded-lg p-3 text-sm shadow-md ring-1 duration-100 outline-none">
-            <PopoverContent data={query.data} loading={query.isLoading} />
+          <Popover.Popup className="bg-popover text-popover-foreground ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 w-[340px] max-w-[calc(100vw-1rem)] origin-(--transform-origin) rounded-lg p-3 text-sm shadow-md ring-1 duration-100 outline-none">
+            <PopoverContent
+              data={query.data}
+              loading={query.isLoading}
+              calendar={calendarQuery.data}
+              calendarLoading={calendarQuery.isLoading}
+            />
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
@@ -104,10 +128,16 @@ export function CongressStatus() {
 function PopoverContent({
   data,
   loading,
+  calendar,
+  calendarLoading,
 }: {
   data: CongressStatusResponse | undefined;
   loading: boolean;
+  calendar: CongressCalendarResponse | undefined;
+  calendarLoading: boolean;
 }) {
+  const todayIso = useMemo(() => easternToday(), []);
+
   if (loading && !data) {
     return <p className="text-muted-foreground">Checking Congress status…</p>;
   }
@@ -119,6 +149,9 @@ function PopoverContent({
     .sort()
     .pop();
 
+  const recesses = calendar?.recesses;
+  const showCalendar = calendarLoading || Boolean(recesses);
+
   return (
     <div className="space-y-3">
       <header>
@@ -127,9 +160,20 @@ function PopoverContent({
         </h3>
       </header>
       <ul className="space-y-2">
-        <ChamberRow label="House" payload={house} />
-        <ChamberRow label="Senate" payload={senate} />
+        <ChamberRow label="House" chamber="house" payload={house} />
+        <ChamberRow label="Senate" chamber="senate" payload={senate} />
       </ul>
+
+      {showCalendar && (
+        <div className="border-border/60 border-t pt-3">
+          <SessionCalendar
+            recesses={recesses ?? { house: [], senate: [] }}
+            todayIso={todayIso}
+            loading={!recesses}
+          />
+        </div>
+      )}
+
       <footer className="border-border/60 text-muted-foreground border-t pt-2 text-[11px]">
         {lastChecked ? (
           <>Updated {formatAgo(lastChecked)}</>
@@ -143,9 +187,11 @@ function PopoverContent({
 
 function ChamberRow({
   label,
+  chamber,
   payload,
 }: {
   label: string;
+  chamber: "house" | "senate";
   payload: ChamberStatusPayload | null | undefined;
 }) {
   const status = effectiveStatus(payload);
@@ -155,11 +201,18 @@ function ChamberRow({
 
   return (
     <li className="flex items-start gap-2">
-      <span className="mt-1 inline-block">
-        <StatusDot
-          status={status}
-          className="[&_span]:bg-foreground/60 [&_span]:ring-foreground/30"
-        />
+      {/* Chamber color swatch — ties this row to its bars in the calendar
+          below and serves as the grid's legend. */}
+      <span
+        aria-hidden
+        className={cn(
+          "mt-[5px] inline-flex size-2.5 shrink-0 items-center justify-center rounded-[3px]",
+          chamber === "house" ? "bg-house" : "bg-senate",
+        )}
+      >
+        {status === "voting" && (
+          <span className="size-1 animate-ping rounded-full bg-white/90 motion-reduce:hidden" />
+        )}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
@@ -177,6 +230,16 @@ function ChamberRow({
       </div>
     </li>
   );
+}
+
+/** YYYY-MM-DD in US Eastern time — the reference timezone for Congress. */
+function easternToday(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 function ariaLabelFor(
