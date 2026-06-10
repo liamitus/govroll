@@ -13,16 +13,26 @@ import type {
  * unit-tested in node without pulling in React Query.
  */
 
-// GH Actions cron routinely drifts 20-30 min under load, so the old 30 min
-// ceiling fired false "Status unavailable" downgrades. The pill downgrades to
-// `unknown` only when data is older than 3× this — see effectiveStatus().
-export const STALE_THRESHOLD_MS = 20 * 60 * 1000;
+// How long a chamber's last successful check is treated as "current". The
+// compute-congress-status cron targets every 10 min, but GitHub Actions
+// routinely drops/delays high-frequency scheduled runs, so the real cadence is
+// closer to 20-30 min and can gap past an hour. Past this window we keep
+// showing the last-known status, just marked stale ("as of Xm ago") rather
+// than collapsing to "Status unavailable" — that blunt downgrade is reserved
+// for genuinely missing data. See freshness() / effectiveStatus().
+export const STALENESS_CEILING_MS = 90 * 60 * 1000; // 90 min
 
 export interface Resolved {
   status: StatusCode;
   primaryChamber: Chamber | null;
   nextTransitionLabel: string | null;
+  /** Winner's data is older than the ceiling — render it visibly stale. */
+  stale: boolean;
+  /** Winner's last-checked ISO timestamp, for an "as of Xm ago" label. */
+  lastCheckedAt: string | null;
 }
+
+export type Freshness = "fresh" | "stale" | "missing";
 
 const PRIORITY: StatusCode[] = [
   "voting",
@@ -36,20 +46,33 @@ const PRIORITY: StatusCode[] = [
 ];
 
 /**
- * Downgrade to `unknown` when the stored status is older than our staleness
- * threshold. Matches the research recommendation: never lie green on stale
- * data; always prefer honest "Unknown" over confident-but-wrong.
+ * How much to trust a chamber row right now:
+ *   - missing: no payload (cron never populated it) → render as unknown
+ *   - stale:   older than the ceiling → show last-known status, marked stale
+ *   - fresh:   within the ceiling → show normally
+ * An unparseable timestamp is treated as fresh: we can't age it, and the row
+ * data is real, so don't punish it.
+ */
+export function freshness(
+  p: ChamberStatusPayload | null | undefined,
+  nowMs: number = Date.now(),
+): Freshness {
+  if (!p) return "missing";
+  const last = Date.parse(p.lastCheckedAt);
+  if (!Number.isFinite(last)) return "fresh";
+  return nowMs - last > STALENESS_CEILING_MS ? "stale" : "fresh";
+}
+
+/**
+ * The status to display for a chamber. We surface the last-known status even
+ * when it's stale (the UI marks staleness separately via freshness()) and only
+ * fall back to `unknown` when there's genuinely no data — an honest
+ * "Recess · as of 1h ago" beats a blunt "Status unavailable" on data we have.
  */
 export function effectiveStatus(
   p: ChamberStatusPayload | null | undefined,
-  nowMs: number = Date.now(),
 ): StatusCode {
-  if (!p) return "unknown";
-  const last = Date.parse(p.lastCheckedAt);
-  if (!Number.isFinite(last)) return p.status;
-  const age = nowMs - last;
-  if (age > STALE_THRESHOLD_MS * 3) return "unknown"; // 60 min ceiling
-  return p.status;
+  return p ? p.status : "unknown";
 }
 
 /**
@@ -69,42 +92,52 @@ export function resolveOverall(
   data: CongressStatusResponse | undefined,
   nowMs: number = Date.now(),
 ): Resolved {
-  if (!data) {
-    return {
-      status: "unknown",
-      primaryChamber: null,
-      nextTransitionLabel: null,
-    };
-  }
+  const NONE: Resolved = {
+    status: "unknown",
+    primaryChamber: null,
+    nextTransitionLabel: null,
+    stale: false,
+    lastCheckedAt: null,
+  };
+  if (!data) return NONE;
+
   const house = data.chambers.house;
   const senate = data.chambers.senate;
 
-  const score = (p: ChamberStatusPayload | null) =>
-    p ? PRIORITY.indexOf(effectiveStatus(p, nowMs)) : PRIORITY.length;
+  // A confidently-fresh read outranks a stale one regardless of status, so a
+  // stale "voting" can't outshout a fresh "recess". Within the same freshness,
+  // higher-priority status wins; the sooner next transition breaks final ties.
+  const freshnessRank = (p: ChamberStatusPayload | null): number => {
+    const f = freshness(p, nowMs);
+    return f === "fresh" ? 0 : f === "stale" ? 1 : 2;
+  };
+  const statusRank = (p: ChamberStatusPayload | null): number =>
+    p ? PRIORITY.indexOf(effectiveStatus(p)) : PRIORITY.length;
 
-  const hScore = score(house);
-  const sScore = score(senate);
+  const better = (
+    a: ChamberStatusPayload | null,
+    b: ChamberStatusPayload | null,
+  ): ChamberStatusPayload | null => {
+    if (!a) return b;
+    if (!b) return a;
+    if (freshnessRank(a) !== freshnessRank(b))
+      return freshnessRank(a) < freshnessRank(b) ? a : b;
+    if (statusRank(a) !== statusRank(b))
+      return statusRank(a) < statusRank(b) ? a : b;
+    return parseTime(a.nextTransitionAt) <= parseTime(b.nextTransitionAt)
+      ? a
+      : b;
+  };
 
-  let winner: ChamberStatusPayload | null;
-  if (hScore !== sScore) {
-    winner = hScore < sScore ? house : senate;
-  } else {
-    const hNext = parseTime(house?.nextTransitionAt);
-    const sNext = parseTime(senate?.nextTransitionAt);
-    winner = hNext <= sNext ? (house ?? senate) : (senate ?? house);
-  }
+  const winner = better(house, senate);
+  if (!winner) return NONE;
 
-  if (!winner) {
-    return {
-      status: "unknown",
-      primaryChamber: null,
-      nextTransitionLabel: null,
-    };
-  }
   return {
-    status: effectiveStatus(winner, nowMs),
+    status: effectiveStatus(winner),
     primaryChamber: winner.chamber,
     nextTransitionLabel: winner.nextTransitionLabel,
+    stale: freshness(winner, nowMs) === "stale",
+    lastCheckedAt: winner.lastCheckedAt,
   };
 }
 
