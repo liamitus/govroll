@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { clampLimit, clampPage } from "@/lib/pagination";
 
 interface CommentWithReplies {
   id: number;
@@ -19,8 +20,8 @@ export async function GET(
 ) {
   const { billId } = await params;
   const id = parseInt(billId);
-  const page = parseInt(request.nextUrl.searchParams.get("page") || "1");
-  const limit = parseInt(request.nextUrl.searchParams.get("limit") || "20");
+  const page = clampPage(request.nextUrl.searchParams.get("page"));
+  const limit = clampLimit(request.nextUrl.searchParams.get("limit"));
   const skip = (page - 1) * limit;
   const sortOption =
     request.nextUrl.searchParams.get("sort") === "best" ? "best" : "new";
