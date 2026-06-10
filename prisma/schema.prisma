@@ -292,6 +292,10 @@ model SummaryJob {
   textVersion BillTextVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
   @@index([status])
+  // Supports assertOndemandSummaryDailyCap()'s `count(startedAt >= todayStart)`
+  // on the public summary endpoint's trigger path, so the daily-cap check stays
+  // an index range scan instead of a growing seq scan.
+  @@index([startedAt])
 }
 
 model Vote {

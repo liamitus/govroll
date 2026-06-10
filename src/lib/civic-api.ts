@@ -197,6 +197,59 @@ async function geocodeAddress(
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  In-process geocode cache
+//
+//  The first provider in the chain (Geocodio) is BILLED, and an address→
+//  district mapping is effectively immutable until the next redistricting.
+//  Real users also re-enter the same handful of addresses, so caching the
+//  geocode result eliminates almost all repeat billing within a warm Fluid
+//  instance. This is a cost optimization for legitimate recurring lookups —
+//  abuse (looping *distinct* addresses, every one a cache miss) is bounded by
+//  the per-IP rate limit on the routes, not here. Successful results are held
+//  far longer than no-match results, which get a short TTL so a transient
+//  outage of all three providers isn't pinned as "address not found".
+// ─────────────────────────────────────────────────────────────────────────
+const GEOCODE_HIT_TTL_MS = 24 * 60 * 60 * 1000;
+const GEOCODE_MISS_TTL_MS = 10 * 60 * 1000;
+const GEOCODE_CACHE_MAX_ENTRIES = 5000;
+
+const geocodeCache = new Map<
+  string,
+  { result: GeocodingResult | null; expiresAt: number }
+>();
+
+function normalizeAddressKey(address: string): string {
+  return address.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+/** geocodeAddress wrapped in the in-process cache. */
+async function geocodeAddressCached(
+  address: string,
+): Promise<GeocodingResult | null> {
+  const key = normalizeAddressKey(address);
+  const now = Date.now();
+
+  const hit = geocodeCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.result;
+  if (hit) geocodeCache.delete(key);
+
+  const result = await geocodeAddress(address);
+
+  // Bound memory: Map preserves insertion order, so the first key is the
+  // oldest. Evict it before inserting when at capacity (simple FIFO).
+  if (geocodeCache.size >= GEOCODE_CACHE_MAX_ENTRIES) {
+    const oldest = geocodeCache.keys().next().value;
+    if (oldest !== undefined) geocodeCache.delete(oldest);
+  }
+  geocodeCache.set(key, {
+    result,
+    expiresAt: now + (result ? GEOCODE_HIT_TTL_MS : GEOCODE_MISS_TTL_MS),
+  });
+
+  return result;
+}
+
 /** USPS state/territory abbreviations keyed by Census FIPS code. */
 const FIPS_TO_STATE: Record<string, string> = {
   "01": "AL",
@@ -265,7 +318,7 @@ const FIPS_TO_STATE: Record<string, string> = {
  * should be surfaced as a 400 by callers, not alerted on as a 500.
  */
 export async function getRepresentativesByAddress(address: string) {
-  const geo = await geocodeAddress(address);
+  const geo = await geocodeAddressCached(address);
   if (!geo) return null;
 
   // Find senators for the state (always 2)

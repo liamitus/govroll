@@ -3,13 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { reportError } from "@/lib/error-reporting";
 import { checkContentL2 } from "@/lib/moderation/layer2";
-import { assertUserRateLimit, RateLimitError } from "@/lib/rate-limit";
-
-function clientIp(request: NextRequest): string | undefined {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined
-  );
-}
+import {
+  assertUserRateLimit,
+  getClientIp,
+  RateLimitError,
+} from "@/lib/rate-limit";
 
 const COMMENTS_PER_USER_PER_HOUR = 30;
 
@@ -82,7 +80,7 @@ export async function POST(request: NextRequest) {
   // deny-list pre-filters remain. If we start seeing frequent rate-limit
   // fallbacks in error alerts, that's the signal to queue moderation async
   // (persist comment as PENDING, run L2 offline, surface via admin review).
-  const mod = await checkContentL2(content, clientIp(request));
+  const mod = await checkContentL2(content, getClientIp(request));
   if (mod.flagged) {
     return NextResponse.json(
       {

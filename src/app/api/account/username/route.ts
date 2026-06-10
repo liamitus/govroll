@@ -3,12 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { checkNameL1 } from "@/lib/moderation/layer1";
 import { checkNameL2 } from "@/lib/moderation/layer2";
-
-function clientIp(request: NextRequest): string | undefined {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined
-  );
-}
+import { getClientIp } from "@/lib/rate-limit";
 
 export async function PATCH(request: NextRequest) {
   const { userId, error } = await getAuthenticatedUser();
@@ -44,7 +39,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   // Layer 2 — OpenAI moderation. Fails open; we don't leak category labels.
-  const l2 = await checkNameL2(trimmed, clientIp(request));
+  const l2 = await checkNameL2(trimmed, getClientIp(request));
   if (l2.flagged) {
     return NextResponse.json(
       { error: "That username cannot be used. Please choose another." },
