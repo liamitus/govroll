@@ -21,8 +21,10 @@ on:
     # is usually within a few minutes of the scheduled time but can be
     # delayed under heavy GitHub load. Don't design anything that needs
     # sub-15-min precision here — add overlap into the endpoint window.
+    # compute-congress-status moved to its own workflow (congress-status.yml):
+    # its */10 schedule collided with the crons below at :00/:20/:30/:50 and
+    # GitHub coalesced the overlapping triggers, starving the status refresh.
     - cron: "*/30 * * * *" # fetch-votes                (every 30m)
-    - cron: "*/10 * * * *" # compute-congress-status    (every 10m)
     - cron: "15 * * * *" # compute-momentum           (hourly)
     - cron: "45 * * * *" # backfill-bill-text         (hourly, small batch)
     # Was every 2h, bumped to every 30m. This cron now reconciles
@@ -46,7 +48,6 @@ on:
         type: choice
         options:
           - fetch-votes
-          - compute-congress-status
           - compute-momentum
           - backfill-bill-text
           - backfill-bill-actions
@@ -88,7 +89,6 @@ jobs:
           fi
           case "${SCHEDULE}" in
             "*/30 * * * *")  echo "endpoint=fetch-votes"               >> "$GITHUB_OUTPUT" ;;
-            "*/10 * * * *")  echo "endpoint=compute-congress-status"   >> "$GITHUB_OUTPUT" ;;
             "15 * * * *")    echo "endpoint=compute-momentum"          >> "$GITHUB_OUTPUT" ;;
             "45 * * * *")    echo "endpoint=backfill-bill-text"        >> "$GITHUB_OUTPUT" ;;
             "5,35 * * * *")  echo "endpoint=backfill-bill-actions"     >> "$GITHUB_OUTPUT" ;;
