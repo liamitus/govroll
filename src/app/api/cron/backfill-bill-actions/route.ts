@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqualStr } from "@/lib/timing-safe-equal";
 import { prisma } from "@/lib/prisma";
 import { fetchBillActions } from "@/lib/congress-api";
 import { parseBillId } from "@/lib/parse-bill-id";
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const auth = request.headers.get("authorization");
-  if (auth !== `Bearer ${expected}`) {
+  if (!timingSafeEqualStr(auth, `Bearer ${expected}`)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

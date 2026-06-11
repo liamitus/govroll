@@ -29,6 +29,11 @@ env:
   STRIPE_WEBHOOK_SECRET: "whsec_ci"
 
 jobs:
+  # NOTE: Playwright end-to-end smoke tests are intentionally NOT a job here.
+  # They need a browser, a built app, and a live Postgres, so they run in a
+  # dedicated workflow (.github/workflows/e2e.yml) on every PR to main and on
+  # pushes to main. Keeping them out of this fast lint/typecheck/test/build
+  # lane keeps feedback quick; e2e.yml is the gate for browser-level smoke.
   install:
     name: Install
     runs-on: ubuntu-latest

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { clampLimit, clampPage } from "@/lib/pagination";
 
 interface CommentWithReplies {
   id: number;
@@ -19,8 +20,8 @@ export async function GET(
 ) {
   const { billId } = await params;
   const id = parseInt(billId);
-  const page = parseInt(request.nextUrl.searchParams.get("page") || "1");
-  const limit = parseInt(request.nextUrl.searchParams.get("limit") || "20");
+  const page = clampPage(request.nextUrl.searchParams.get("page"));
+  const limit = clampLimit(request.nextUrl.searchParams.get("limit"));
   const skip = (page - 1) * limit;
   const sortOption =
     request.nextUrl.searchParams.get("sort") === "best" ? "best" : "new";
@@ -94,11 +95,14 @@ export async function GET(
       }
     }
 
-    // Paginate top-level only
+    // Paginate top-level only. `total` counts every comment (incl. replies)
+    // for the header; `topLevelTotal` is the pagination denominator since
+    // only top-level comments are paged here.
     const paginated = topLevel.slice(skip, skip + limit);
     const total = allComments.length;
+    const topLevelTotal = topLevel.length;
 
-    return NextResponse.json({ comments: paginated, total });
+    return NextResponse.json({ comments: paginated, total, topLevelTotal });
   } catch (error) {
     console.error("Error fetching comments:", error);
     return NextResponse.json(

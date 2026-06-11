@@ -22,7 +22,7 @@ export async function generateMetadata({
   const name = rep ? `${rep.firstName} ${rep.lastName}` : "Representative";
   const title = `${name} — Govroll`;
   const description = rep
-    ? `See how ${rep.firstName} ${rep.lastName} (${rep.party}-${rep.state}) votes in the ${rep.chamber === "senate" ? "Senate" : "House"} and compare with public opinion.`
+    ? `See how ${rep.firstName} ${rep.lastName} (${rep.party}-${rep.state}) votes in the ${rep.chamber === "senator" ? "Senate" : "House"} and compare with public opinion.`
     : "See how this representative votes and compare with public opinion.";
 
   return {
