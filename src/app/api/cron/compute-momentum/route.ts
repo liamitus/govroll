@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqualStr } from "@/lib/timing-safe-equal";
 import { computeMomentumFunction } from "@/scripts/compute-momentum";
 import { reportError } from "@/lib/error-reporting";
 
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const auth = request.headers.get("authorization");
-  if (auth !== `Bearer ${expected}`) {
+  if (!timingSafeEqualStr(auth, `Bearer ${expected}`)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

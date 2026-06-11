@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqualStr } from "@/lib/timing-safe-equal";
 import { prisma } from "@/lib/prisma";
-import { embedBill, RAG_BILL_CHAR_THRESHOLD } from "@/lib/bill-embeddings";
+import {
+  embedBill,
+  HAIKU_MODEL,
+  RAG_BILL_CHAR_THRESHOLD,
+  type EmbedBillResult,
+} from "@/lib/bill-embeddings";
+import { VOYAGE_EMBED_MODEL } from "@/lib/voyage";
+import { recordSpend } from "@/lib/budget";
+import { assertAiEnabled, AiDisabledError } from "@/lib/ai-gate";
 import { reportError } from "@/lib/error-reporting";
 
 /**
@@ -45,8 +54,27 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const auth = request.headers.get("authorization");
-  if (auth !== `Bearer ${expected}`) {
+  if (!timingSafeEqualStr(auth, `Bearer ${expected}`)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // ── Budget gate ───────────────────────────────────────────────────
+  // Embedding spends real money (Voyage + optional Haiku context), so —
+  // like every other generate-* cron — it pauses when AI is budget- or
+  // manually-disabled instead of draining the ledger unattended. Checked
+  // before the candidate scan so a disabled run also skips that DB work.
+  try {
+    await assertAiEnabled("embedding");
+  } catch (e) {
+    if (e instanceof AiDisabledError) {
+      console.log(`[embed-large-bills] AI disabled, skipping: ${e.reason}`);
+      return NextResponse.json({
+        ok: true,
+        skipped: "ai_disabled",
+        reason: e.reason,
+      });
+    }
+    throw e;
   }
 
   const url = new URL(request.url);
@@ -71,19 +99,27 @@ export async function GET(request: Request) {
   // id. With Prisma's findMany + JS filter this query alone burned
   // ~14 GB/day of Supabase egress. embedBill re-fetches the text it
   // needs for the (at most `limit`) bills we actually process.
+  //
+  // The size test reads the precomputed `textLength` column rather than
+  // `LENGTH(v."fullText")`. The old `LENGTH(...)` detoasted every bill's
+  // latest fullText on every run (~12-15s, ~10% of total DB time across
+  // 48 runs/day) just to compare a number. `textLength` is written at
+  // ingest (fetch-bill-text) and lives inline, so no toast fetch.
+  // `"fullText" IS NOT NULL` stays — it's a cheap null-bitmap check, not
+  // a detoast — so we still pick the latest version that actually has text.
   const candidates = await prisma.$queryRaw<
     Array<{ id: number; billId: string }>
   >`
     SELECT b.id, b."billId"
     FROM "Bill" b
     INNER JOIN LATERAL (
-      SELECT id, "fullText"
+      SELECT id, "textLength"
       FROM "BillTextVersion"
       WHERE "billId" = b.id AND "fullText" IS NOT NULL
       ORDER BY "versionDate" DESC
       LIMIT 1
     ) v ON TRUE
-    WHERE LENGTH(v."fullText") > ${RAG_BILL_CHAR_THRESHOLD}
+    WHERE v."textLength" > ${RAG_BILL_CHAR_THRESHOLD}
       AND (b."embeddingsTextVersionId" IS NULL
            OR b."embeddingsTextVersionId" <> v.id)
     ORDER BY b.id ASC
@@ -115,6 +151,8 @@ export async function GET(request: Request) {
         skipContext: true,
         maxCostCents: PER_BILL_COST_CAP_CENTS,
       });
+      // Book the spend embedBill just incurred against the budget ledger.
+      await recordEmbeddingSpend(result);
       results.push({
         billId: target.billId,
         chunks: result.chunksWritten,
@@ -146,4 +184,49 @@ export async function GET(request: Request) {
     elapsedMs,
     elapsedSec: Math.round(elapsedMs / 1000),
   });
+}
+
+/**
+ * Book a bill's embedding spend against the budget ledger. `embedBill`
+ * computes the cost but — being a pure pipeline that takes an injected
+ * client — deliberately doesn't touch the ledger, so the cron records it
+ * here. Without this the pipeline spent Voyage (and, with context, Haiku)
+ * money entirely off-ledger: invisible to the budget gate and able to
+ * keep running after AI was disabled.
+ *
+ * Spend is split by model so usage reports attribute Voyage embeddings
+ * vs. Haiku context separately. Soft-fails: the bill is already embedded
+ * and durable, so a transient ledger-write error must not fail the run
+ * (we report it so the gap is visible rather than silent).
+ */
+async function recordEmbeddingSpend(result: EmbedBillResult): Promise<void> {
+  try {
+    if (result.voyageTokens > 0) {
+      await recordSpend({
+        feature: "embedding",
+        model: VOYAGE_EMBED_MODEL,
+        inputTokens: result.voyageTokens,
+        outputTokens: 0,
+      });
+    }
+    // The cron runs skipContext=true, so normally there are no Haiku
+    // context tokens — but record them whenever present so re-enabling the
+    // contextual-retrieval stage can never silently put spend off-ledger.
+    if (result.haikuInputTokens > 0 || result.haikuOutputTokens > 0) {
+      await recordSpend({
+        feature: "embedding",
+        model: HAIKU_MODEL,
+        inputTokens: result.haikuInputTokens,
+        outputTokens: result.haikuOutputTokens,
+      });
+    }
+  } catch (err) {
+    console.error(
+      "[embed-large-bills] failed to record embedding spend:",
+      err instanceof Error ? err.message : err,
+    );
+    reportError(err, {
+      route: "GET /api/cron/embed-large-bills recordSpend",
+    });
+  }
 }
