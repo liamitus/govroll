@@ -1,0 +1,84 @@
+name: congress-status
+
+# Refreshes the "Is Congress working right now?" widget data
+# (CongressChamberStatus) on a tight cadence.
+#
+# Split out of ingest.yml on purpose: there this lived on a */10 schedule that
+# collided with the other ingest crons at :00/:20/:30/:50, and GitHub coalesces
+# overlapping schedules in one workflow into a single run (routing to just one
+# endpoint). That left the status untouched for an hour-plus at a time and
+# tripped the UI's staleness guard ("Status unavailable"). A dedicated file
+# gives the schedule clean, uncontested trigger slots.
+#
+# GitHub still doesn't guarantee on-time scheduled runs, so the UI tolerates
+# drift (see STALENESS_CEILING_MS in src/components/congress-status/resolve.ts)
+# rather than relying on sub-15-min precision here.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # every 10 minutes (UTC)
+  workflow_dispatch: {}
+
+# We only call an authenticated HTTP endpoint on govroll.com — no write scopes.
+permissions:
+  contents: read
+
+# Idempotent endpoint; if a run is still in flight, queue the next rather than
+# pile up (timeout-minutes bounds a hung run).
+concurrency:
+  group: congress-status
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Refresh congress status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate configuration
+        env:
+          BASE_URL: ${{ vars.GOVROLL_BASE_URL }}
+          SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "${BASE_URL:-}" ]; then
+            echo "::error::Repo variable GOVROLL_BASE_URL is not set."
+            exit 1
+          fi
+          if [ -z "${SECRET:-}" ]; then
+            echo "::error::Repo secret CRON_SECRET is not set."
+            exit 1
+          fi
+
+      - name: Invoke compute-congress-status
+        env:
+          BASE_URL: ${{ vars.GOVROLL_BASE_URL }}
+          SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          URL="${BASE_URL%/}/api/cron/compute-congress-status"
+          echo "Calling $URL"
+
+          # --fail-with-body so non-2xx responses still print the body,
+          # --max-time 65 gives Vercel's function budget plus a little slack.
+          # No --retry: the endpoint is idempotent, so let the next scheduled
+          # run pick up rather than burn another budget on the same outcome.
+          http_code=$(
+            curl --silent --show-error --fail-with-body \
+              --max-time 65 \
+              -H "Authorization: Bearer ${SECRET}" \
+              -H "Accept: application/json" \
+              -o response.json \
+              -w "%{http_code}" \
+              "$URL"
+          )
+
+          echo "HTTP $http_code"
+          echo "--- body ---"
+          cat response.json || true
+          echo
+          echo "--- end ---"
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Endpoint returned HTTP ${http_code}"
+            exit 1
+          fi

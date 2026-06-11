@@ -13,6 +13,12 @@ import {
   submitVote as submitVoteApi,
   userVoteQueryKey,
 } from "@/lib/queries/votes-client";
+import {
+  tallyRollCall,
+  rollCallOutcome,
+  voteCategoryLabel,
+  type RollCallOutcome,
+} from "@/lib/votes";
 
 function VoteBar({
   segments,
@@ -53,17 +59,49 @@ function inferChamber(rollCall: RollCallVote): string {
   return total > 200 ? "House" : "Senate";
 }
 
-function RollCallCard({ rollCall }: { rollCall: RollCallVote }) {
-  const getCount = (vote: string) =>
-    rollCall.votes.find((v) => v.vote === vote)?.count || 0;
+/**
+ * How the result line reads. We only assert Passed/Failed when the motion's
+ * threshold is known (see {@link rollCallOutcome}); for cloture and 2/3
+ * motions we name the motion so the verdict reads against the right bar, and
+ * for ambiguous/procedural votes we show the bare tally with whatever context
+ * the category gives — never a guessed verdict.
+ */
+function outcomeLine(
+  category: string | null,
+  outcome: RollCallOutcome,
+  yea: number,
+  nay: number,
+): string {
+  const tally = `${yea}-${nay}`;
 
-  // GovTrack uses "Yea"/"Nay" for Senate, "Aye"/"No" for House
-  const yea = getCount("Yea") + getCount("Aye");
-  const nay = getCount("Nay") + getCount("No");
+  if (outcome.kind === "raw") {
+    const label = category ? voteCategoryLabel(category) : null;
+    return label && label !== "Vote" ? `${label} · ${tally}` : tally;
+  }
 
-  const total = yea + nay + getCount("Present") + getCount("Not Voting");
+  const qualifier =
+    category === "cloture"
+      ? "Cloture"
+      : category === "passage_suspension"
+        ? "Suspension"
+        : category === "veto_override"
+          ? "Veto override"
+          : null;
 
-  const result = yea > nay ? "Passed" : nay > yea ? "Failed" : "Tied";
+  return qualifier
+    ? `${qualifier} ${outcome.result.toLowerCase()} · ${tally}`
+    : `${outcome.result} ${tally}`;
+}
+
+export function RollCallCard({ rollCall }: { rollCall: RollCallVote }) {
+  // Normalize Yea/Aye and Nay/No through the votes source of truth.
+  const tally = tallyRollCall(rollCall.votes);
+  const { yea, nay, present, notVoting } = tally;
+  const total = yea + nay + present + notVoting;
+
+  // Threshold-aware: a 55-45 cloture or 250-180 suspension FAILS even though
+  // yea > nay, so the verdict comes from the motion's category, not a guess.
+  const outcome = rollCallOutcome(rollCall.category, tally);
 
   const dateStr = rollCall.votedAt
     ? new Date(rollCall.votedAt).toLocaleDateString("en-US", {
@@ -90,12 +128,12 @@ function RollCallCard({ rollCall }: { rollCall: RollCallVote }) {
           { label: "No", count: nay, color: "bg-vote-nay" },
           {
             label: "Present",
-            count: getCount("Present"),
+            count: present,
             color: "bg-vote-present",
           },
           {
             label: "Not Voting",
-            count: getCount("Not Voting"),
+            count: notVoting,
             color: "bg-vote-notvoting",
           },
         ]}
@@ -115,23 +153,23 @@ function RollCallCard({ rollCall }: { rollCall: RollCallVote }) {
             No: {nay}
           </span>
         )}
-        {getCount("Present") > 0 && (
+        {present > 0 && (
           <span className="flex items-center gap-1.5">
             <span className="bg-vote-present inline-block h-2.5 w-2.5 rounded-full" />
-            Present: {getCount("Present")}
+            Present: {present}
           </span>
         )}
-        {getCount("Not Voting") > 0 && (
+        {notVoting > 0 && (
           <span className="flex items-center gap-1.5">
             <span className="bg-vote-notvoting inline-block h-2.5 w-2.5 rounded-full" />
-            Not Voting: {getCount("Not Voting")}
+            Not Voting: {notVoting}
           </span>
         )}
       </div>
 
       {total > 0 && (
         <p className="text-muted-foreground text-sm">
-          {result} {yea}-{nay}
+          {outcomeLine(rollCall.category, outcome, yea, nay)}
         </p>
       )}
     </div>
@@ -375,6 +413,9 @@ export function VoteOnBill({
                 rollCallNumber: null,
                 chamber: null,
                 votedAt: null,
+                // Legacy flat tally carries no category, so the card shows
+                // the raw numbers without asserting a pass/fail verdict.
+                category: null,
                 votes: votes!.congressionalVotes,
               } as RollCallVote;
               return (
