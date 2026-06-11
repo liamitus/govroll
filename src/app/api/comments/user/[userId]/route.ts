@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { clampLimit, clampPage } from "@/lib/pagination";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ userId: string }> },
 ) {
   const { userId } = await params;
-  const page = parseInt(request.nextUrl.searchParams.get("page") || "1");
-  const limit = parseInt(request.nextUrl.searchParams.get("limit") || "20");
+  const page = clampPage(request.nextUrl.searchParams.get("page"));
+  const limit = clampLimit(request.nextUrl.searchParams.get("limit"));
   const skip = (page - 1) * limit;
 
   try {
