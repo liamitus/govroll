@@ -124,4 +124,34 @@ describe("GET /api/cron/backfill-cosponsors", () => {
     });
     expect(rows).toHaveLength(2);
   });
+
+  it("fails loudly (503) when congress.gov is rate-limiting cosponsor fetches", async () => {
+    // A 429 used to be swallowed (logged, then continue), leaving cosponsors
+    // un-backfilled while the run reported success. It must now surface a 503.
+    const bill = await seedBill({
+      billId: "house_bill-43-119",
+      momentumTier: "ACTIVE",
+    });
+    await getTestPrisma().bill.update({
+      where: { id: bill.id },
+      data: { cosponsorCount: 5 },
+    });
+
+    server.use(
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/43/cosponsors",
+        () =>
+          new HttpResponse(null, {
+            status: 429,
+            headers: { "Retry-After": "3600" },
+          }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("congress_quota_exhausted");
+  });
 });

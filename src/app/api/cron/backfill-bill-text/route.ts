@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqualStr } from "@/lib/timing-safe-equal";
 import { prisma } from "@/lib/prisma";
 import { fetchBillTextFunction } from "@/scripts/fetch-bill-text";
+import { isQuotaError } from "@/lib/congress-api";
 import { reportError } from "@/lib/error-reporting";
 
 /**
@@ -95,22 +96,43 @@ export async function GET(request: Request) {
     take: limit,
   });
 
-  const results: Array<{ billId: string; ok: boolean; error?: string }> =
-    await runWithConcurrency(batch, CONCURRENCY, async (b) => {
-      if (Date.now() >= deadline)
-        return { billId: b.billId, ok: false, error: "timeout" };
-      try {
-        await fetchBillTextFunction(b.billId, 1);
-        return { billId: b.billId, ok: true };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { billId: b.billId, ok: false, error: msg };
+  const results: Array<{
+    billId: string;
+    ok: boolean;
+    error?: string;
+    quota?: boolean;
+  }> = await runWithConcurrency(batch, CONCURRENCY, async (b) => {
+    if (Date.now() >= deadline)
+      return { billId: b.billId, ok: false, error: "timeout" };
+    try {
+      const summary = await fetchBillTextFunction(b.billId, 1);
+      // fetchBillTextFunction swallows per-bill "no text available" cases and
+      // stamps them as attempted; a non-zero errorCount means the bill
+      // genuinely errored. Wire it through so this route's errorCount stops
+      // being dead always-0 code.
+      if (summary.errorCount > 0) {
+        return {
+          billId: b.billId,
+          ok: false,
+          error: summary.errors[0]?.error ?? "bill text fetch failed",
+        };
       }
-    });
+      return { billId: b.billId, ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        billId: b.billId,
+        ok: false,
+        error: msg,
+        quota: isQuotaError(err),
+      };
+    }
+  });
 
   const processed = results.filter((r) => r.ok).length;
   const errors = results.filter((r) => !r.ok && r.error !== "timeout");
   const timedOut = results.some((r) => r.error === "timeout");
+  const quotaExhausted = results.some((r) => r.quota);
 
   const remaining = await prisma.bill.count({
     where: {
@@ -122,8 +144,29 @@ export async function GET(request: Request) {
 
   const elapsedMs = Date.now() - started;
 
+  // Quota exhaustion is systemic — fail the run loudly (non-200 + alert) so it
+  // surfaces in GH Actions instead of looking like a green "no data" run, and
+  // let the next scheduled invocation resume once the quota window resets.
+  if (quotaExhausted) {
+    await reportError(
+      new Error("Congress.gov quota exhausted (429) during backfill-bill-text"),
+      { route: "GET /api/cron/backfill-bill-text", processed },
+    );
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "congress_quota_exhausted",
+        processed,
+        errorCount: errors.length,
+        remaining,
+        elapsedMs,
+      },
+      { status: 503 },
+    );
+  }
+
   if (errors.length > 0) {
-    reportError(new Error(`Backfill errors: ${errors.length}`), {
+    await reportError(new Error(`Backfill errors: ${errors.length}`), {
       route: "GET /api/cron/backfill-bill-text",
       errors: errors.slice(0, 10),
     });

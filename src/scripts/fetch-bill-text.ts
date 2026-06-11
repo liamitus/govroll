@@ -5,6 +5,7 @@ import {
   parseXmlIntoSections,
   fetchOfficialBillTitle,
   fetchBillMetadata,
+  isQuotaError,
 } from "../lib/congress-api";
 import type { TextVersionMeta } from "../lib/congress-api";
 import {
@@ -44,11 +45,24 @@ async function parseToFullText(
   return fullText;
 }
 
+/** Outcome of a fetchBillTextFunction run. `errorCount` counts bills whose
+ *  processing threw a genuine (non-quota) exception — NOT bills that simply
+ *  had no text available yet, which is a legitimate empty result. A quota
+ *  rejection is systemic and re-thrown rather than counted here. */
+export interface FetchBillTextSummary {
+  processed: number;
+  errorCount: number;
+  errors: Array<{ billId: string; error: string }>;
+}
+
 /**
  * Fetch bill text versions from congress.gov and store each version.
  * Also updates Bill.fullText with the latest version's text for backward compatibility.
  */
-export async function fetchBillTextFunction(targetBillId?: string, limit = 10) {
+export async function fetchBillTextFunction(
+  targetBillId?: string,
+  limit = 10,
+): Promise<FetchBillTextSummary> {
   console.log(
     `Fetching bill text for: ${targetBillId || `up to ${limit} bills without text`}`,
   );
@@ -62,6 +76,11 @@ export async function fetchBillTextFunction(targetBillId?: string, limit = 10) {
         });
 
     console.log(`Found ${bills.length} bills to process.`);
+
+    // Per-bill errors are counted and surfaced (this is what the
+    // backfill-bill-text route reports as errorCount — previously dead because
+    // this function swallowed everything internally and never threw).
+    const errors: Array<{ billId: string; error: string }> = [];
 
     for (const bill of bills) {
       // Mark this bill as attempted regardless of what happens below — a
@@ -283,24 +302,39 @@ export async function fetchBillTextFunction(targetBillId?: string, limit = 10) {
           `${bill.billId}: ${allVersions.length} versions total, ${newVersionsCount} new.`,
         );
       } catch (error: unknown) {
-        console.error(
-          `Error processing bill ${bill.billId}:`,
-          error instanceof Error ? error.message : error,
-        );
+        // A quota rejection (429) is systemic, not a property of this bill —
+        // every remaining bill will hit it too. Re-throw WITHOUT stamping the
+        // attempt clock: stamping would launder a transient outage into a
+        // multi-day text cooldown for a bill we never actually got to read.
+        if (isQuotaError(error)) throw error;
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`Error processing bill ${bill.billId}:`, msg);
         // Still stamp the attempt so a permanently-broken bill (bad billId,
         // congress.gov 5xx, XML parse crash) doesn't block the queue.
         await recordAttempt().catch(() => {});
+        errors.push({ billId: bill.billId, error: msg });
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    console.log("Finished fetching bill texts.");
+    console.log(
+      `Finished fetching bill texts: ${bills.length - errors.length} ok, ${errors.length} errored.`,
+    );
+    return {
+      processed: bills.length - errors.length,
+      errorCount: errors.length,
+      errors: errors.slice(0, 5),
+    };
   } catch (error: unknown) {
+    // Systemic failure — the batch query threw (DB down) or a per-bill quota
+    // error bubbled up. Re-throw so the cron route returns 500 + reportError
+    // instead of reporting a green {ok:true} over a broken run.
     console.error(
       "Error in fetchBillText:",
       error instanceof Error ? error.message : error,
     );
+    throw error;
   } finally {
     await prisma.$disconnect();
   }

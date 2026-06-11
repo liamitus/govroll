@@ -67,18 +67,24 @@ on:
 permissions:
   contents: read
 
-# If a scheduled run is still in flight when the next one fires (rare,
-# most runs are <60s), let them overlap rather than queue. The endpoints
-# are idempotent.
-concurrency:
-  group: ingest-${{ github.event.schedule || github.event.inputs.endpoint || github.run_id }}
-  cancel-in-progress: false
+# Concurrency is keyed PER-JOB (on the `ping` job below), not at the workflow
+# level. A workflow-level group can only read github.event.schedule (scheduled
+# runs) or github.event.inputs.endpoint (manual runs) — two DIFFERENT keys for
+# the same endpoint — so a workflow_dispatch could overlap a scheduled run of
+# the same endpoint. Resolving the endpoint in its own job and keying the ping
+# job's concurrency on that single resolved value closes the gap, with one
+# source of truth for the schedule→endpoint mapping. Overlap is still allowed
+# across DIFFERENT endpoints (each gets its own group); same-endpoint runs
+# queue rather than overlap (the endpoints are idempotent, so this is just
+# belt-and-suspenders against cursor regressions).
 
 jobs:
-  ping:
-    name: Invoke ingest endpoint
+  resolve:
+    name: Resolve endpoint
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 1
+    outputs:
+      endpoint: ${{ steps.route.outputs.endpoint }}
     steps:
       - name: Resolve endpoint
         id: route
@@ -108,6 +114,17 @@ jobs:
               ;;
           esac
 
+  ping:
+    name: Invoke ingest endpoint
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Key BOTH scheduled and manual runs on the resolved endpoint so a
+    # workflow_dispatch can't overlap a scheduled run of the same endpoint.
+    concurrency:
+      group: ingest-${{ needs.resolve.outputs.endpoint }}
+      cancel-in-progress: false
+    steps:
       - name: Validate configuration
         env:
           BASE_URL: ${{ vars.GOVROLL_BASE_URL }}

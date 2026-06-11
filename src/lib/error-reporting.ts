@@ -6,15 +6,43 @@
  *
  * Features:
  *  - Deduplicates identical errors within a 5-minute window
- *  - Rate-limits to 10 alerts per hour to prevent email floods
+ *  - Rate-limits alerts per hour to prevent email floods, with SEPARATE
+ *    budgets per source so untrusted client reports can't starve the
+ *    server-alert budget (see withinRateLimit).
  */
 
 const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+// Server-originated alerts (cron jobs, API routes) share this hourly budget.
 const MAX_ALERTS_PER_HOUR = 10;
+// Client-reported errors (POST /api/errors/report) are untrusted and
+// unauthenticated, so they get their OWN, much smaller budget. Without this,
+// anyone could POST 10 distinct messages in an hour and exhaust the global
+// budget, dropping every genuine server alert that hour — an alert-suppression
+// DoS. Keeping the budgets disjoint means client floods can only starve other
+// client reports, never the server's alerts.
+const MAX_CLIENT_ALERTS_PER_HOUR = 3;
 
 const recentErrors = new Map<string, number>();
-let alertCount = 0;
-let alertWindowStart = Date.now();
+
+type RateBucket = { count: number; windowStart: number };
+const rateBuckets = new Map<string, RateBucket>();
+
+/**
+ * Fixed-window hourly rate limit, scoped per bucket key. Returns true and
+ * consumes a slot when the alert is allowed, false when the bucket is spent.
+ */
+function withinRateLimit(bucketKey: string, maxPerHour: number): boolean {
+  const now = Date.now();
+  let bucket = rateBuckets.get(bucketKey);
+  if (!bucket || now - bucket.windowStart > HOUR_MS) {
+    bucket = { count: 0, windowStart: now };
+    rateBuckets.set(bucketKey, bucket);
+  }
+  if (bucket.count >= maxPerHour) return false;
+  bucket.count++;
+  return true;
+}
 
 function fingerprint(message: string, stack?: string): string {
   // Use first stack frame + message for dedup
@@ -46,13 +74,15 @@ export async function reportError(
     if (Date.now() - time > DEDUP_WINDOW_MS) recentErrors.delete(key);
   }
 
-  // ── Rate-limit ───────────────────────────────────────────────
-  if (Date.now() - alertWindowStart > 60 * 60 * 1000) {
-    alertCount = 0;
-    alertWindowStart = Date.now();
-  }
-  if (alertCount >= MAX_ALERTS_PER_HOUR) return;
-  alertCount++;
+  // ── Rate-limit (per-source budgets) ──────────────────────────
+  // Client-reported errors are untrusted; bucket them apart from server
+  // alerts so neither stream can suppress the other.
+  const isClient = context?.source === "client";
+  const bucketKey = isClient ? "client" : "server";
+  const maxPerHour = isClient
+    ? MAX_CLIENT_ALERTS_PER_HOUR
+    : MAX_ALERTS_PER_HOUR;
+  if (!withinRateLimit(bucketKey, maxPerHour)) return;
 
   // ── Send alert ───────────────────────────────────────────────
   const from =

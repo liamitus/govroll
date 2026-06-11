@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqualStr } from "@/lib/timing-safe-equal";
 import { prisma } from "@/lib/prisma";
-import { fetchBillActions } from "@/lib/congress-api";
+import { fetchBillActions, isQuotaError } from "@/lib/congress-api";
 import { parseBillId } from "@/lib/parse-bill-id";
 import { reconcileStatus } from "@/lib/reconcile-bill-status";
 import { reportError } from "@/lib/error-reporting";
@@ -153,6 +153,7 @@ export async function GET(request: Request) {
   let statusesReconciled = 0;
   let latestActionUpdated = 0;
   let timedOut = false;
+  let quotaExhausted = false;
   const errors: Array<{ billId: string; error: string }> = [];
 
   for (const b of batch) {
@@ -288,6 +289,15 @@ export async function GET(request: Request) {
       });
       processed++;
     } catch (err) {
+      // A quota rejection (429) is systemic — every remaining bill will hit
+      // it. Stop the batch and DON'T stamp lastActionRefreshAt: stamping
+      // would launder a transient throttle into a 6h cooldown for a bill we
+      // never actually read. The run fails loudly below; the next scheduled
+      // pass resumes once the quota window resets.
+      if (isQuotaError(err)) {
+        quotaExhausted = true;
+        break;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       errors.push({ billId: b.billId, error: msg });
       // Stamp on failure too — a bill that throws on every fetch
@@ -319,8 +329,30 @@ export async function GET(request: Request) {
 
   const elapsedMs = Date.now() - started;
 
+  if (quotaExhausted) {
+    await reportError(
+      new Error(
+        "Congress.gov quota exhausted (429) during backfill-bill-actions",
+      ),
+      { route: "GET /api/cron/backfill-bill-actions", processed },
+    );
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "congress_quota_exhausted",
+        processed,
+        statusesReconciled,
+        latestActionUpdated,
+        errorCount: errors.length,
+        remaining,
+        elapsedMs,
+      },
+      { status: 503 },
+    );
+  }
+
   if (errors.length > 0) {
-    reportError(new Error(`Action backfill errors: ${errors.length}`), {
+    await reportError(new Error(`Action backfill errors: ${errors.length}`), {
       route: "GET /api/cron/backfill-bill-actions",
       errors: errors.slice(0, 10),
     });

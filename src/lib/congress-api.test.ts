@@ -5,8 +5,19 @@ import {
   fetchAllTextVersions,
   fetchBillActions,
   fetchBillCosponsors,
+  fetchBillMetadata,
   fetchOfficialBillTitle,
+  isQuotaError,
 } from "./congress-api";
+
+// A 429 with a long Retry-After makes withRetry bail immediately (the server
+// asked for longer than we'll hold the function open), keeping these tests fast
+// while still exercising the quota path.
+const tooManyRequests = () =>
+  new HttpResponse(null, {
+    status: 429,
+    headers: { "Retry-After": "3600" },
+  });
 
 const server = setupServer();
 
@@ -308,5 +319,103 @@ describe("fetchOfficialBillTitle", () => {
 
     const title = await fetchOfficialBillTitle(119, "s", 42);
     expect(title).toBeNull();
+  });
+});
+
+describe("isQuotaError", () => {
+  it("is true for a real 429 axios rejection", async () => {
+    server.use(
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/1/text",
+        tooManyRequests,
+      ),
+    );
+    let caught: unknown;
+    try {
+      await fetchAllTextVersions(119, "hr", 1);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeDefined();
+    expect(isQuotaError(caught)).toBe(true);
+  });
+
+  it("is false for non-429 errors and non-error values", () => {
+    expect(isQuotaError(new Error("boom"))).toBe(false);
+    expect(isQuotaError(null)).toBe(false);
+    expect(isQuotaError("nope")).toBe(false);
+    expect(isQuotaError(undefined)).toBe(false);
+  });
+});
+
+describe("429 quota is surfaced, not laundered into empty results", () => {
+  // The bug this guards: a 429 used to be caught and converted to []/null,
+  // indistinguishable from "no data exists" — callers then recorded a false
+  // "attempt" and cooled the bill down for days. These wrappers must now
+  // THROW on 429 so the cron route can fail loudly instead.
+  it("fetchAllTextVersions throws on 429 instead of returning []", async () => {
+    server.use(
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/2/text",
+        tooManyRequests,
+      ),
+    );
+    await expect(fetchAllTextVersions(119, "hr", 2)).rejects.toThrow();
+  });
+
+  it("fetchBillActions throws on 429 instead of returning null", async () => {
+    server.use(
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/3/actions",
+        tooManyRequests,
+      ),
+    );
+    await expect(fetchBillActions(119, "hr", 3)).rejects.toThrow();
+  });
+
+  it("fetchBillCosponsors throws on 429 instead of returning []", async () => {
+    server.use(
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/4/cosponsors",
+        tooManyRequests,
+      ),
+    );
+    await expect(fetchBillCosponsors(119, "hr", 4)).rejects.toThrow();
+  });
+
+  it("fetchOfficialBillTitle throws on 429 instead of returning null", async () => {
+    server.use(
+      http.get("https://api.congress.gov/v3/bill/119/hr/5", tooManyRequests),
+    );
+    await expect(fetchOfficialBillTitle(119, "hr", 5)).rejects.toThrow();
+  });
+
+  it("fetchBillMetadata throws on 429 instead of returning null", async () => {
+    // The primary /bill call rejects with 429; metadata must propagate it.
+    server.use(
+      http.get("https://api.congress.gov/v3/bill/119/hr/6", tooManyRequests),
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/6/cosponsors",
+        tooManyRequests,
+      ),
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/6/summaries",
+        tooManyRequests,
+      ),
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/6/titles",
+        tooManyRequests,
+      ),
+    );
+    await expect(fetchBillMetadata(119, "hr", 6)).rejects.toThrow();
+  });
+
+  it("still returns [] for a genuine empty result (real 'no data' is not laundered into an error)", async () => {
+    server.use(
+      http.get("https://api.congress.gov/v3/bill/119/hr/7/text", () =>
+        HttpResponse.json({}),
+      ),
+    );
+    await expect(fetchAllTextVersions(119, "hr", 7)).resolves.toEqual([]);
   });
 });

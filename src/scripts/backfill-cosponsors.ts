@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { fetchBillCosponsors } from "../lib/congress-api";
+import { fetchBillCosponsors, isQuotaError } from "../lib/congress-api";
 import { parseBillId } from "../lib/parse-bill-id";
 import { createStandalonePrisma } from "../lib/prisma-standalone";
 
@@ -112,6 +112,10 @@ export async function backfillCosponsors(
       // Congress.gov allows ~1 req/sec with a key
       await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error: unknown) {
+      // A quota rejection (429) is systemic — propagate it so the caller (the
+      // cron route) can abort the batch and alert, rather than swallowing it
+      // here and silently leaving cosponsors un-backfilled.
+      if (isQuotaError(error)) throw error;
       console.error(
         `Error processing ${bill.billId}:`,
         error instanceof Error ? error.message : error,

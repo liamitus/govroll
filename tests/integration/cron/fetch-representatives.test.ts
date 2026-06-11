@@ -54,4 +54,74 @@ describe("GET /api/cron/fetch-representatives", () => {
     expect(rep?.chamber).toBe("representative");
     expect(rep?.state).toBe("CA");
   });
+
+  it("returns 500 when GovTrack roles endpoint is down", async () => {
+    server.use(
+      http.get(
+        "https://www.govtrack.us/api/v2/role",
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+  });
+
+  it("disambiguates slugs for two same-named members instead of aborting the sweep", async () => {
+    // There really are two Rep. Mike Rogers (AL-03 and MI-08). On the create
+    // path the second one collides on the unique `slug` — pre-fix that threw
+    // and (being swallowed) silently aborted the entire weekly roster sweep.
+    // Now each upsert is isolated and the slug is disambiguated by state.
+    server.use(
+      http.get("https://www.govtrack.us/api/v2/role", () =>
+        HttpResponse.json({
+          objects: [
+            {
+              state: "AL",
+              district: 3,
+              party: "Republican",
+              role_type_label: "Representative",
+              person: {
+                bioguideid: "R000575",
+                firstname: "Mike",
+                lastname: "Rogers",
+                name: "Mike Rogers",
+                link: "https://www.govtrack.us/congress/members/r000575",
+              },
+            },
+            {
+              state: "MI",
+              district: 8,
+              party: "Republican",
+              role_type_label: "Representative",
+              person: {
+                bioguideid: "R000585",
+                firstname: "Mike",
+                lastname: "Rogers",
+                name: "Mike Rogers",
+                link: "https://www.govtrack.us/congress/members/r000585",
+              },
+            },
+          ],
+          meta: { total_count: 2 },
+        }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+
+    const reps = await getTestPrisma().representative.findMany({
+      orderBy: { bioguideId: "asc" },
+    });
+    // BOTH members are stored — the collision did not abort the sweep.
+    expect(reps).toHaveLength(2);
+    const slugs = reps.map((r) => r.slug).sort();
+    expect(slugs).toEqual(["mike-rogers", "mike-rogers-mi"]);
+    // And the slugs are distinct (the unique constraint is satisfied).
+    expect(new Set(slugs).size).toBe(2);
+  });
 });

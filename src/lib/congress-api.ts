@@ -2,12 +2,71 @@ import axios from "axios";
 import dayjs from "dayjs";
 import { parseStringPromise } from "xml2js";
 import { BillXmlParser, type ParsedChunk } from "./bill-xml-parser";
+import { reportError } from "./error-reporting";
 
 const CONGRESS_API_KEY = process.env.CONGRESS_DOT_GOV_API_KEY || "DEMO_KEY";
 
+// A missing key silently degrades the ENTIRE congress.gov-backed pipeline to
+// DEMO_KEY's 30 req/hr ceiling — every bill-text / actions / cosponsor cron
+// starves, and the throttling surfaces as "no data" rather than as the
+// misconfiguration it is. We deliberately do NOT hard-throw: this module is
+// imported by the user-facing AI chat route, and crashing that is worse than
+// degraded ingest. Instead make the misconfiguration loud — log once and fire
+// a single (deduped, rate-limited) alert at module load.
+if (!process.env.CONGRESS_DOT_GOV_API_KEY) {
+  console.error(
+    "CONGRESS_DOT_GOV_API_KEY is not set — falling back to DEMO_KEY (30 req/hr). " +
+      "The legislative ingest pipeline will be severely rate-limited.",
+  );
+  void reportError(
+    new Error(
+      "CONGRESS_DOT_GOV_API_KEY missing — congress.gov calls fall back to DEMO_KEY (30 req/hr)",
+    ),
+    { context: "congress-api: missing API key" },
+  ).catch(() => {});
+}
+
 /**
- * Retry wrapper with linear backoff for transient API failures.
- * Used by cron pipeline calls — not user-facing requests.
+ * True when an error is a congress.gov rate-limit / quota rejection (HTTP 429).
+ *
+ * Callers use this to distinguish "we're throttled" from "no data exists." The
+ * latter is a legitimate empty result; the former must NOT be laundered into an
+ * empty array/null, because downstream code treats empty results as a
+ * successful "attempt" and then drops the bill into a multi-day cooldown — so a
+ * transient quota outage gets baked in as permanent "no data."
+ */
+export function isQuotaError(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 429;
+}
+
+/** Parse a Retry-After header (delta-seconds or HTTP-date) into milliseconds.
+ *  Returns null when the header is absent or unparseable. */
+function parseRetryAfterMs(error: unknown): number | null {
+  if (!axios.isAxiosError(error)) return null;
+  const headers = error.response?.headers as
+    | Record<string, unknown>
+    | undefined;
+  const raw = headers?.["retry-after"];
+  if (raw == null) return null;
+  const asString = Array.isArray(raw) ? String(raw[0]) : String(raw);
+  const seconds = Number(asString);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const dateMs = dayjs(asString).valueOf();
+  if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  return null;
+}
+
+// We won't hold a cron function open longer than this waiting on a backoff.
+// Beyond it, propagate the error so the run ends cleanly and the next
+// scheduled invocation resumes — the alternative is burning the (≤60s)
+// function budget sleeping on a near-certain repeat 429.
+const MAX_RETRY_DELAY_MS = 8_000;
+
+/**
+ * Retry wrapper with exponential backoff for transient API failures. Honors a
+ * server-sent Retry-After on 429s (capped at MAX_RETRY_DELAY_MS; bails when the
+ * server asks for longer). Used by cron pipeline calls — not user-facing
+ * requests.
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
@@ -23,7 +82,17 @@ export async function withRetry<T>(
       // delayMs of wall clock. Bail immediately.
       if (axios.isCancel(e)) throw e;
       if (i === retries) throw e;
-      await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+
+      // On a 429, prefer the server's Retry-After. If it's longer than we're
+      // willing to hold the function open, stop retrying now and let the
+      // error propagate — a near-certain repeat 429 isn't worth the budget.
+      const retryAfterMs = parseRetryAfterMs(e);
+      if (retryAfterMs != null && retryAfterMs > MAX_RETRY_DELAY_MS) throw e;
+
+      // Exponential backoff (1s, 2s, 4s, …) capped at MAX_RETRY_DELAY_MS,
+      // overridden by Retry-After when the server supplied a usable one.
+      const backoffMs = Math.min(delayMs * 2 ** i, MAX_RETRY_DELAY_MS);
+      await new Promise((r) => setTimeout(r, retryAfterMs ?? backoffMs));
     }
   }
   throw new Error("unreachable");
@@ -76,6 +145,9 @@ export async function fetchAllTextVersions(
       return dayjs(a.date).valueOf() - dayjs(b.date).valueOf();
     });
   } catch (error: unknown) {
+    // Don't launder a quota rejection into "no versions" — that would record a
+    // false attempt and cool the bill down for days. Let it propagate.
+    if (isQuotaError(error)) throw error;
     console.error(
       "Failed to fetch all text versions:",
       error instanceof Error ? error.message : error,
@@ -108,6 +180,7 @@ export async function fetchLatestTextVersion(
 
     return sorted.length > 0 ? sorted[0] : textVersions[0];
   } catch (error: unknown) {
+    if (isQuotaError(error)) throw error;
     console.error(
       "Failed to fetch text versions:",
       error instanceof Error ? error.message : error,
@@ -197,6 +270,7 @@ export async function fetchBillActions(
       return { actionDate, text, type, chamber };
     });
   } catch (error: unknown) {
+    if (isQuotaError(error)) throw error;
     console.error(
       "Failed to fetch bill actions:",
       error instanceof Error ? error.message : error,
@@ -275,6 +349,7 @@ export async function fetchOfficialBillTitle(
     );
     return response.data?.bill?.title || null;
   } catch (error: unknown) {
+    if (isQuotaError(error)) throw error;
     console.error(
       "Failed to fetch official bill title:",
       error instanceof Error ? error.message : error,
@@ -402,6 +477,7 @@ export async function fetchBillTitles(
 
     return { popularTitle, displayTitle, shortTitle };
   } catch (error: unknown) {
+    if (isQuotaError(error)) throw error;
     console.error(
       "Failed to fetch bill titles:",
       error instanceof Error ? error.message : error,
@@ -470,6 +546,7 @@ export async function fetchBillCosponsors(
       })
       .filter((c): c is BillCosponsorRecord => c !== null);
   } catch (error: unknown) {
+    if (isQuotaError(error)) throw error;
     console.error(
       "Failed to fetch bill cosponsors:",
       error instanceof Error ? error.message : error,
@@ -541,7 +618,8 @@ async function fetchBillSummary(
 
     const plain = stripHtml(latest.text);
     return plain || null;
-  } catch {
+  } catch (error: unknown) {
+    if (isQuotaError(error)) throw error;
     return null;
   }
 }
@@ -640,7 +718,8 @@ export async function fetchBillIntroducedDate(
     );
     const v = res.data?.bill?.introducedDate;
     return typeof v === "string" && v.length > 0 ? v : null;
-  } catch {
+  } catch (error: unknown) {
+    if (isQuotaError(error)) throw error;
     return null;
   }
 }
@@ -736,6 +815,7 @@ export async function fetchBillMetadata(
       shortTitle: titles?.shortTitle ?? null,
     };
   } catch (error: unknown) {
+    if (isQuotaError(error)) throw error;
     console.error(
       "Failed to fetch bill metadata:",
       error instanceof Error ? error.message : error,
