@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { reportError } from "@/lib/error-reporting";
-import { assertIpRateLimit, RateLimitError } from "@/lib/rate-limit";
+import {
+  assertIpRateLimit,
+  getClientIp,
+  RateLimitError,
+} from "@/lib/rate-limit";
 
 const SURFACES = ["explainer", "change_summary"] as const;
 type Surface = (typeof SURFACES)[number];
 
 const FEEDBACK_PER_IP_PER_HOUR = 60;
-
-function clientIp(request: NextRequest): string {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-  );
-}
 
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -42,7 +40,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    assertIpRateLimit(clientIp(request), FEEDBACK_PER_IP_PER_HOUR);
+    assertIpRateLimit(getClientIp(request), FEEDBACK_PER_IP_PER_HOUR);
   } catch (err) {
     if (err instanceof RateLimitError) {
       return NextResponse.json(err.toJSON(), {

@@ -182,6 +182,18 @@ export async function assertGlobalDailyLimit(
  */
 const ipCounts = new Map<string, { count: number; resetAt: number }>();
 
+/**
+ * Best-effort client IP from the `x-forwarded-for` chain. On Vercel the
+ * platform sets this header; the left-most entry is the originating client.
+ * Falls back to "unknown" so an unparseable request still shares a single
+ * rate-limit bucket rather than slipping the guard entirely.
+ */
+export function getClientIp(request: Request): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+  );
+}
+
 export function assertIpRateLimit(ip: string, maxPerHour: number): void {
   const now = Date.now();
   const entry = ipCounts.get(ip);
