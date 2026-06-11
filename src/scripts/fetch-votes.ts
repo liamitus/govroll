@@ -68,7 +68,13 @@ export async function fetchVotesFunction(since?: Date) {
 
     console.log("Votes fetched and stored successfully.");
   } catch (error: any) {
+    // A failure that reaches here is systemic — GovTrack is unreachable or the
+    // DB is down, which would recur on every day in the walk. Per-bill fetch
+    // failures are already swallowed+logged inside processVoteBatch and never
+    // reach this catch. Re-throw so the cron route returns 500 + fires
+    // reportError instead of laundering the outage into a green {ok:true}.
     console.error("Error fetching votes:", error.message);
+    throw error;
   } finally {
     await prisma.$disconnect();
   }

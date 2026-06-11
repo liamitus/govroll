@@ -386,4 +386,22 @@ describe("GET /api/cron/fetch-votes", () => {
     });
     expect(votes).toHaveLength(1);
   });
+
+  it("returns 500 when GovTrack is down (systemic failure is not laundered into ok)", async () => {
+    // The core regression: a GovTrack/DB outage used to be swallowed and the
+    // cron returned {ok:true}/200, so GH Actions went green over a broken run.
+    // It must now surface as a 500 so the route fires reportError and the
+    // Action fails red.
+    server.use(
+      http.get(
+        "https://www.govtrack.us/api/v2/vote_voter",
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+  });
 });

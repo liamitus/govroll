@@ -123,7 +123,9 @@ export async function GET(request: Request) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       results.push({ billId: target.billId, error: msg });
-      reportError(err, {
+      // Await: a fire-and-forget reportError can be frozen by Vercel when the
+      // function returns before the Resend fetch resolves, dropping the alert.
+      await reportError(err, {
         route: "GET /api/cron/embed-large-bills",
         billId: target.billId,
       });

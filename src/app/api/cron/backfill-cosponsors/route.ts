@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { backfillCosponsors } from "@/scripts/backfill-cosponsors";
+import { isQuotaError } from "@/lib/congress-api";
 import { reportError } from "@/lib/error-reporting";
 
 /**
@@ -70,6 +71,7 @@ export async function GET(request: Request) {
 
   let processed = 0;
   let timedOut = false;
+  let quotaExhausted = false;
   let perBillTimeouts = 0;
   const errors: Array<{ billId: string; error: string }> = [];
 
@@ -90,6 +92,12 @@ export async function GET(request: Request) {
         processed++;
       }
     } catch (err) {
+      // Quota exhaustion (429) is systemic — stop the batch and fail loudly
+      // below rather than recording every remaining bill as an error.
+      if (isQuotaError(err)) {
+        quotaExhausted = true;
+        break;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       errors.push({ billId: b.billId, error: msg });
     }
@@ -111,11 +119,35 @@ export async function GET(request: Request) {
 
   const elapsedMs = Date.now() - started;
 
+  if (quotaExhausted) {
+    await reportError(
+      new Error(
+        "Congress.gov quota exhausted (429) during backfill-cosponsors",
+      ),
+      { route: "GET /api/cron/backfill-cosponsors", processed },
+    );
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "congress_quota_exhausted",
+        processed,
+        perBillTimeouts,
+        errorCount: errors.length,
+        remaining,
+        elapsedMs,
+      },
+      { status: 503 },
+    );
+  }
+
   if (errors.length > 0) {
-    reportError(new Error(`Cosponsor backfill errors: ${errors.length}`), {
-      route: "GET /api/cron/backfill-cosponsors",
-      errors: errors.slice(0, 10),
-    });
+    await reportError(
+      new Error(`Cosponsor backfill errors: ${errors.length}`),
+      {
+        route: "GET /api/cron/backfill-cosponsors",
+        errors: errors.slice(0, 10),
+      },
+    );
   }
 
   return NextResponse.json({
