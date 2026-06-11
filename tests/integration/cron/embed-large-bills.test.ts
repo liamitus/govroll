@@ -77,6 +77,7 @@ describe("GET /api/cron/embed-large-bills", () => {
         versionType: "Introduced",
         versionDate: new Date("2026-01-01"),
         fullText: "x".repeat(50_000),
+        textLength: 50_000,
       },
     });
 
@@ -99,6 +100,7 @@ describe("GET /api/cron/embed-large-bills", () => {
         versionType: "Introduced",
         versionDate: new Date("2026-02-13"),
         fullText: "Section 1. Short title\n" + "y".repeat(500_000),
+        textLength: "Section 1. Short title\n".length + 500_000,
       },
     });
 
@@ -133,6 +135,7 @@ describe("GET /api/cron/embed-large-bills", () => {
         versionType: "Introduced",
         versionDate: new Date("2026-02-13"),
         fullText: "Section 1. Short title\n" + "y".repeat(500_000),
+        textLength: "Section 1. Short title\n".length + 500_000,
       },
     });
 
@@ -175,6 +178,7 @@ describe("GET /api/cron/embed-large-bills", () => {
         versionType: "Introduced",
         versionDate: new Date("2026-02-13"),
         fullText: "Section 1. Short title\n" + "y".repeat(500_000),
+        textLength: "Section 1. Short title\n".length + 500_000,
       },
     });
     await getTestPrisma().bill.update({
