@@ -212,6 +212,11 @@ model BillTextVersion {
   versionType       String
   versionDate       DateTime
   fullText          String?
+  // Character length of `fullText`, written at ingest alongside it. Lets
+  // size-threshold scans (e.g. the embed-large-bills candidate filter)
+  // avoid detoasting every bill's fullText just to call LENGTH() on it.
+  // Null only for rows whose fullText is null (or not yet backfilled).
+  textLength        Int?
   isSubstantive     Boolean   @default(true)
   changeSummary     String?
   // AI-generated one-sentence captions for each parsed section, used by

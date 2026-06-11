@@ -26,6 +26,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import type { PrismaClient } from "@/generated/prisma/client";
 
 import { type BillSection, parseSectionsFromFullText } from "./bill-sections";
+import { computeCostCents } from "./ai-pricing";
 import {
   voyageEmbedDocuments,
   batchTextsForVoyage,
@@ -35,8 +36,10 @@ import {
 /** Same Haiku model the rest of the codebase uses for cheap structured
  *  tasks — see `lib/ai.ts`. Pinned to the constant there in spirit; we
  *  re-declare locally rather than importing to keep this module
- *  decoupled from the chat-path constants. */
-const HAIKU_MODEL = "claude-haiku-4-5";
+ *  decoupled from the chat-path constants. Exported so the embed cron can
+ *  attribute contextual-retrieval Haiku spend to the right MODEL_PRICING
+ *  key when it records the pipeline's cost against the budget ledger. */
+export const HAIKU_MODEL = "claude-haiku-4-5";
 
 /** Pricing for cost tracking. Mirrors `lib/ai-pricing.ts`. */
 const HAIKU_INPUT_CENTS_PER_MTOK = 100;
@@ -374,10 +377,13 @@ export async function embedBill(
     const batch = batches[bi];
     if (dryRun) {
       // Mock vectors so the rest of the pipeline can dry-run end-to-end.
-      // Voyage charges ~chars/3 input tokens — match that estimate.
+      // Voyage charges ~chars/3 input tokens — match that estimate, and
+      // price it through the shared MODEL_PRICING entry (input-only) so
+      // the dry-run estimate can't drift from the rate the budget ledger
+      // bills the live path at.
       const tokens = Math.ceil(batch.reduce((sum, t) => sum + t.length, 0) / 3);
       voyageTokens += tokens;
-      voyageCostCents += Math.ceil((tokens * 18) / 1_000_000);
+      voyageCostCents += computeCostCents(VOYAGE_EMBED_MODEL, tokens, 0);
       for (let i = 0; i < batch.length; i++) {
         allEmbeddings.push(new Array(1024).fill(0));
       }
@@ -448,6 +454,25 @@ export async function embedBill(
       embeddingsCompletedAt: new Date(),
     },
   });
+
+  // Drop chunks left behind by PRIOR text versions of this bill.
+  // `persistChunks` only deletes the (billId, version.id) tuple it's
+  // about to rewrite, so a bill re-embedded at a new substantive version
+  // would otherwise keep its old version's chunks forever — they'd bloat
+  // the vector index and (absent the retrieval-side version filter) could
+  // surface provisions deleted from the current text. We delete them only
+  // AFTER the completion marker flips to `version.id`, so retrieval — which
+  // filters to `embeddingsTextVersionId` — is already serving the new
+  // chunks and never sees a window where the current version's rows are
+  // missing.
+  const prior = await prisma.billEmbeddingChunk.deleteMany({
+    where: { billId, textVersionId: { not: version.id } },
+  });
+  if (prior.count > 0) {
+    log(
+      `[embed]   cleaned up ${prior.count} stale chunk(s) from prior versions`,
+    );
+  }
 
   log(
     `[embed]   wrote ${usable.length} rows (replacedExisting=${replacedExisting}). Cost: ${(totalCostCents / 100).toFixed(2)} USD`,
