@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
+import dayjs from "dayjs";
 import { GET } from "@/app/api/cron/fetch-votes/route";
 import { server } from "../msw-server";
 import { getTestPrisma } from "../db";
@@ -49,6 +50,41 @@ function mockGovTrack(voters: VoteVoter[], bills: BillFixture[]) {
       return HttpResponse.json({
         objects: voters,
         meta: { total_count: voters.length },
+      });
+    }),
+    http.get("https://www.govtrack.us/api/v2/bill/:id", ({ params }) => {
+      const id = Number(params.id);
+      const bill = byId.get(id);
+      if (!bill) return HttpResponse.json({}, { status: 404 });
+      const { govtrackId: _govtrackId, ...payload } = bill;
+      return HttpResponse.json(payload);
+    }),
+  );
+}
+
+/**
+ * Like mockGovTrack but honors offset/limit so a >1-page voter set is served
+ * across pages. Serves the full (paginated) set for the FIRST day window the
+ * walk asks about and empty for every later day, so a multi-day route walk
+ * doesn't re-serve and double-count the same voters.
+ */
+function mockGovTrackPaginated(voters: VoteVoter[], bills: BillFixture[]) {
+  const byId = new Map(bills.map((b) => [b.govtrackId, b]));
+  let servedDay: string | null = null;
+  server.use(
+    http.get("https://www.govtrack.us/api/v2/vote_voter", ({ request }) => {
+      const url = new URL(request.url);
+      const gte = url.searchParams.get("created__gte");
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const limit = Number(url.searchParams.get("limit") ?? "600");
+      if (servedDay === null) servedDay = gte;
+      if (gte !== servedDay) {
+        return HttpResponse.json({ objects: [], meta: { total_count: 0 } });
+      }
+      const slice = voters.slice(offset, offset + limit);
+      return HttpResponse.json({
+        objects: slice,
+        meta: { total_count: voters.length, offset, limit },
       });
     }),
     http.get("https://www.govtrack.us/api/v2/bill/:id", ({ params }) => {
@@ -403,5 +439,120 @@ describe("GET /api/cron/fetch-votes", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.ok).toBe(false);
+  });
+
+  it("ingests every voter across multiple pages (no single-page cap)", async () => {
+    // A busy roll-call day: 250 roll calls × 5 senators = 1,250 voter rows,
+    // which crosses GovTrack's 600-row page boundary twice. The old
+    // single-page fetch (limit:1000) silently dropped everything past row
+    // 1,000; the paginated fetch must land all 1,250.
+    const reps = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        seedRepresentative({
+          bioguideId: `P${String(i).padStart(6, "0")}`,
+          chamber: "senator",
+        }),
+      ),
+    );
+
+    const voters: VoteVoter[] = [];
+    for (let roll = 1; roll <= 250; roll++) {
+      for (const rep of reps) {
+        voters.push(
+          makeVoter({
+            bioguideId: rep.bioguideId,
+            vote: {
+              related_bill: 500,
+              number: roll,
+              chamber: "senate",
+              created: "2026-06-09T18:00:00Z",
+              category: "passage",
+            },
+          }),
+        );
+      }
+    }
+    expect(voters).toHaveLength(1250);
+
+    mockGovTrackPaginated(voters, [
+      makeBill({ govtrackId: 500, number: 4242 }),
+    ]);
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+
+    // All 1,250 distinct (rep, bill, rollCall) rows ingested — proof the
+    // walk paged past the first 600/1,000 rows instead of stopping there.
+    expect(await getTestPrisma().representativeVote.count()).toBe(1250);
+  });
+
+  it("resumes from a stale IngestCursor and advances it (outage recovery)", async () => {
+    const db = getTestPrisma();
+    // Simulate an outage: the cursor is 5 days stale, beyond the 2-day
+    // self-heal overlap. The walk must start from the cursor, not now-2d,
+    // or every roll call in the gap is lost forever.
+    const staleCursor = dayjs().subtract(5, "day").startOf("day");
+    await db.ingestCursor.create({
+      data: { key: "fetch-votes", cursor: staleCursor.toDate() },
+    });
+
+    const requestedDays = new Set<string>();
+    server.use(
+      http.get("https://www.govtrack.us/api/v2/vote_voter", ({ request }) => {
+        const gte = new URL(request.url).searchParams.get("created__gte");
+        if (gte) requestedDays.add(gte);
+        return HttpResponse.json({ objects: [], meta: { total_count: 0 } });
+      }),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+
+    // Earliest day window requested equals the stale cursor — proof the walk
+    // resumed from it rather than the fixed 2-day lookback.
+    const earliest = [...requestedDays].sort()[0];
+    expect(earliest).toBe(staleCursor.format("YYYY-MM-DD"));
+
+    // And the cursor advanced to ~now so the next run doesn't re-walk the gap.
+    const row = await db.ingestCursor.findUnique({
+      where: { key: "fetch-votes" },
+    });
+    expect(row).not.toBeNull();
+    expect(row!.cursor.getTime()).toBeGreaterThan(
+      dayjs().subtract(1, "day").valueOf(),
+    );
+  });
+
+  it("sets congressNumber on bills it creates", async () => {
+    // Vote-created bills used to land with congressNumber=NULL, which
+    // exempted them from CONGRESS_ENDED death and sank them in feed ordering.
+    const rep = await seedRepresentative({
+      bioguideId: "S000119",
+      chamber: "senator",
+    });
+
+    mockGovTrack(
+      [makeVoter({ bioguideId: rep.bioguideId })],
+      [makeBill({ govtrackId: 99999, number: 1234, congress: 119 })],
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+
+    const bill = await getTestPrisma().bill.findUnique({
+      where: { billId: "s-1234-119" },
+    });
+    expect(bill?.congressNumber).toBe(119);
+  });
+
+  it("accepts ?since=YYYY-MM-DD and rejects a malformed value", async () => {
+    const bad = await invokeCron(GET, { search: { since: "06-2026" } });
+    expect(bad.status).toBe(400);
+
+    // A 1-day-ago start keeps the walk short and is independent of the clock.
+    const good = await invokeCron(GET, {
+      search: { since: dayjs().subtract(1, "day").format("YYYY-MM-DD") },
+    });
+    expect(good.status).toBe(200);
   });
 });

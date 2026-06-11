@@ -5,12 +5,13 @@ import { fetchVotesFunction } from "@/scripts/fetch-votes";
 import { fetchBillTextFunction } from "@/scripts/fetch-bill-text";
 import { fetchBillActionsFunction } from "@/scripts/fetch-bill-actions";
 import { generateChangeSummariesFunction } from "@/scripts/generate-change-summaries";
+import { timingSafeEqualStr } from "@/lib/timing-safe-equal";
 
 function checkAdminAuth(request: NextRequest): boolean {
   const expected = process.env.ADMIN_API_KEY;
   if (!expected) return false;
   const token = request.headers.get("x-api-key");
-  return token === expected;
+  return timingSafeEqualStr(token, expected);
 }
 
 export async function POST(request: NextRequest) {

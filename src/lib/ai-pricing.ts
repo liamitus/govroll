@@ -31,6 +31,15 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   // HAIKU_MODEL). $1/Mtok input, $5/Mtok output.
   "claude-haiku-4-5": { inputCentsPerMtok: 100, outputCentsPerMtok: 500 },
 
+  // Voyage voyage-3-large — RAG embeddings: the query side in the chat
+  // route (recordSpend({ model: VOYAGE_EMBED_MODEL })) and the document
+  // side in the embed pipeline. Key MUST equal VOYAGE_EMBED_MODEL in
+  // src/lib/voyage.ts. Embeddings are input-only — $0.18/Mtok in, no
+  // output tokens — so without this entry the chat query embedding fell
+  // through to UNKNOWN_MODEL_FALLBACK (Opus input @ 1500), over-billing
+  // embedding spend by ~80× (1500/18).
+  "voyage-3-large": { inputCentsPerMtok: 18, outputCentsPerMtok: 0 },
+
   // Sentinel for "we called a moderation endpoint that is free"
   // (src/lib/moderation/layer2.ts uses OpenAI's /moderations).
   "openai-moderation": { inputCentsPerMtok: 0, outputCentsPerMtok: 0 },

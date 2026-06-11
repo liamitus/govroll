@@ -6,6 +6,7 @@ import {
   type BillsSortBy,
 } from "@/lib/queries/bills";
 import { reportError } from "@/lib/error-reporting";
+import { clampLimit, clampPage } from "@/lib/pagination";
 
 const VALID_CHAMBERS = new Set<BillsChamber>(["both", "house", "senate"]);
 const VALID_MOMENTUM = new Set<BillsMomentum>(["live", "graveyard", "all"]);
@@ -22,8 +23,8 @@ function coerce<T extends string>(
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
 
-  const page = parseInt(searchParams.get("page") || "1", 10);
-  const limit = parseInt(searchParams.get("limit") || "20", 10);
+  const page = clampPage(searchParams.get("page"));
+  const limit = clampLimit(searchParams.get("limit"));
 
   try {
     const data = await fetchBillsPage({

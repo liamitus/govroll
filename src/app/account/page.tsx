@@ -114,27 +114,32 @@ export default function AccountPage() {
   const username = resolveUsername(user);
 
   const handleUpdateUsername = async () => {
-    if (!newUsername.trim()) return;
-    const supabase = createSupabaseBrowserClient();
-    if (!supabase) {
-      showMessage("Browser storage is disabled", "error");
+    const name = newUsername.trim();
+    if (!name) return;
+    // Authoritative, moderated write FIRST. The PATCH route runs the deny-list
+    // + AI moderation and, only on success, updates Profile.username (the public
+    // source of truth) and restamps existing comments. We must not write the
+    // name to Supabase auth metadata before this passes — metadata is
+    // client-writable and unmoderated, so it can never be the source of truth.
+    const res = await fetch("/api/account/username", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: name }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showMessage(data.error || "That username cannot be used.", "error");
       return;
     }
-    const { error } = await supabase.auth.updateUser({
-      data: { username: newUsername.trim() },
-    });
-    if (error) {
-      showMessage(error.message, "error");
-    } else {
-      // Sync display name to existing comments
-      await fetch("/api/account/username", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: newUsername.trim() }),
-      });
-      showMessage("Username updated");
-      setNewUsername("");
+    // Moderation passed. Mirror the name into auth metadata so the user's own
+    // client-side display (account header, nav) reflects it. Best-effort:
+    // Profile.username above is already the authoritative public record.
+    const supabase = createSupabaseBrowserClient();
+    if (supabase) {
+      await supabase.auth.updateUser({ data: { username: name } });
     }
+    showMessage("Username updated");
+    setNewUsername("");
   };
 
   const handleUpdateEmail = async () => {

@@ -114,3 +114,88 @@ export function voteCategoryLabel(category: string | null | undefined): string {
       return "Vote";
   }
 }
+
+export interface RollCallTally {
+  yea: number;
+  nay: number;
+  present: number;
+  notVoting: number;
+}
+
+/**
+ * Bucket a roll call's raw GovTrack vote entries into yea / nay / present /
+ * not-voting counts, normalizing the Senate "Yea/Nay" and House "Aye/No"
+ * vocabularies through {@link isYesVote}/{@link isNoVote}. Centralizing this
+ * here keeps the Aye≡Yea equivalence in one place rather than re-deriving
+ * `getCount("Yea") + getCount("Aye")` at every call site.
+ */
+export function tallyRollCall(
+  votes: { vote: string; count: number }[],
+): RollCallTally {
+  const tally: RollCallTally = { yea: 0, nay: 0, present: 0, notVoting: 0 };
+  for (const { vote, count } of votes) {
+    if (isYesVote(vote)) tally.yea += count;
+    else if (isNoVote(vote)) tally.nay += count;
+    else if (vote === "Present") tally.present += count;
+    else if (vote === "Not Voting") tally.notVoting += count;
+  }
+  return tally;
+}
+
+/**
+ * A resolved verdict means we know the motion's threshold and can say
+ * whether it carried. `raw` means we deliberately decline to: the bar is
+ * ambiguous or the vote isn't a verdict on the bill, so the UI should show
+ * the bare tally instead of risking a wrong "Passed"/"Failed".
+ */
+export type RollCallOutcome =
+  | { kind: "verdict"; result: "Passed" | "Failed" | "Tied" }
+  | { kind: "raw" };
+
+/**
+ * Decide how to describe a roll call's outcome from its GovTrack category
+ * and tally. Different motions clear at different bars, so the bare
+ * `yea > nay` heuristic the vote card used mislabels a 55-45 failed cloture
+ * (needs 60) or a 250-180 failed suspension (needs 2/3) as "Passed":
+ *
+ * - `passage`: simple majority of those voting (yea > nay), with ties noted.
+ * - `passage_suspension`, `veto_override`: two-thirds of those voting —
+ *   yea must be at least twice the nays.
+ * - `cloture`: three-fifths of the chamber's sworn membership (Senate Rule
+ *   XXII — a fixed ~60 in a full Senate, not 3/5 of turnout). We approximate
+ *   the sworn membership as every recorded position (yea/nay/present/not
+ *   voting), so 3/5 of that total lands at ~60.
+ *
+ * Everything else — amendments, procedural motions, nominations, or an
+ * unknown/missing category (e.g. a not-yet-backfilled roll call) — returns
+ * `{ kind: "raw" }`. GovTrack gives no motion text and the threshold can't
+ * be assumed, so claiming pass/fail would overclaim.
+ */
+export function rollCallOutcome(
+  category: string | null | undefined,
+  tally: RollCallTally,
+): RollCallOutcome {
+  const { yea, nay, present, notVoting } = tally;
+
+  switch (category) {
+    case "passage": {
+      if (yea > nay) return { kind: "verdict", result: "Passed" };
+      if (nay > yea) return { kind: "verdict", result: "Failed" };
+      return { kind: "verdict", result: "Tied" };
+    }
+    case "passage_suspension":
+    case "veto_override": {
+      // Two-thirds of those voting: yea/(yea+nay) >= 2/3  ⟺  yea >= 2*nay.
+      const passed = yea > 0 && yea >= 2 * nay;
+      return { kind: "verdict", result: passed ? "Passed" : "Failed" };
+    }
+    case "cloture": {
+      // Three-fifths of all recorded positions ≈ 3/5 of the sworn chamber.
+      const chamber = yea + nay + present + notVoting;
+      const passed = chamber > 0 && yea * 5 >= chamber * 3;
+      return { kind: "verdict", result: passed ? "Passed" : "Failed" };
+    }
+    default:
+      return { kind: "raw" };
+  }
+}

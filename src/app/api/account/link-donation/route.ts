@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserId } from "@/lib/auth";
 
 /**
  * POST /api/account/link-donation
@@ -10,17 +10,17 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * The token is included in the post-donation email.
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  // getAuthenticatedUserId lazily upserts the Profile row, so a brand-new
+  // user clicking the email link first thing won't trip the
+  // Donation.userId → Profile.id FK constraint below.
+  const auth = await getAuthenticatedUserId();
+  if (auth.error) {
     return NextResponse.json(
       { error: "Sign in to link a donation." },
       { status: 401 },
     );
   }
+  const userId = auth.userId;
 
   let body;
   try {
@@ -69,17 +69,28 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Link the donation to the current user and mark the token as used
-  await prisma.$transaction([
-    prisma.donation.update({
-      where: { id: linkToken.donationId },
-      data: { userId: user.id },
-    }),
-    prisma.donorLinkToken.update({
-      where: { id: linkToken.id },
+  // Atomically claim the token, then link the donation. The conditional
+  // updateMany (usedAt: null) means only one concurrent request can win the
+  // claim, closing the read-then-write TOCTOU on usedAt above.
+  const claimed = await prisma.$transaction(async (tx) => {
+    const claim = await tx.donorLinkToken.updateMany({
+      where: { id: linkToken.id, usedAt: null },
       data: { usedAt: new Date() },
-    }),
-  ]);
+    });
+    if (claim.count === 0) return false;
+    await tx.donation.updateMany({
+      where: { id: linkToken.donationId, userId: null },
+      data: { userId },
+    });
+    return true;
+  });
+
+  if (!claimed) {
+    return NextResponse.json(
+      { error: "This link has already been used." },
+      { status: 409 },
+    );
+  }
 
   return NextResponse.json({ ok: true, donationId: linkToken.donationId });
 }

@@ -72,7 +72,8 @@ export async function assertUserRateLimit(
   feature: string,
   maxPerHour: number,
 ): Promise<void> {
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const windowMs = 60 * 60 * 1000;
+  const oneHourAgo = new Date(Date.now() - windowMs);
 
   const count = await prisma.aiUsageEvent.count({
     where: {
@@ -83,9 +84,67 @@ export async function assertUserRateLimit(
   });
 
   if (count >= maxPerHour) {
+    // The trailing window unblocks once the oldest counted event ages out, so
+    // derive the wait from its timestamp. (The previous formula reduced to
+    // `60 - 60 ≈ 0`, so clients were always told to retry immediately.)
+    // Only the rare limit-exceeded path pays for this second query.
+    const oldest = await prisma.aiUsageEvent.findFirst({
+      where: { userId, feature, createdAt: { gte: oneHourAgo } },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    });
+    const retryAfterSeconds = oldest
+      ? Math.max(
+          1,
+          Math.ceil(
+            (oldest.createdAt.getTime() + windowMs - Date.now()) / 1000,
+          ),
+        )
+      : 60;
     throw new RateLimitError(
       `${maxPerHour} ${feature} requests per hour`,
-      Math.ceil(60 - (Date.now() - oneHourAgo.getTime()) / 60_000),
+      retryAfterSeconds,
+    );
+  }
+}
+
+/**
+ * Assert that the user hasn't exceeded their per-hour comment-posting cap.
+ *
+ * Counts real `Comment` rows by `userId` — deliberately decoupled from the
+ * AI/moderation spend ledger. The previous comment cap reused
+ * `assertUserRateLimit(userId, "moderation_content", …)`, which counts
+ * `AiUsageEvent` rows; but those events are written without a userId (see
+ * `recordSpend` in `@/lib/budget`), so the per-user count was always 0 and the
+ * cap never tripped. Counting comments directly is correct regardless of
+ * whether moderation ran, and it's the thing we actually want to bound.
+ */
+export async function assertUserCommentRateLimit(
+  userId: string,
+  maxPerHour: number,
+): Promise<void> {
+  const windowMs = 60 * 60 * 1000;
+  const since = new Date(Date.now() - windowMs);
+
+  // Oldest-first, bounded to the cap: if `maxPerHour` rows come back the user
+  // is at the limit, and `recent[0]` is the oldest counted comment — the one
+  // whose expiry from the trailing window frees the next slot.
+  const recent = await prisma.comment.findMany({
+    where: { userId, date: { gte: since } },
+    orderBy: { date: "asc" },
+    take: maxPerHour,
+    select: { date: true },
+  });
+
+  if (recent.length >= maxPerHour) {
+    const oldest = recent[0].date.getTime();
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil((oldest + windowMs - Date.now()) / 1000),
+    );
+    throw new RateLimitError(
+      `${maxPerHour} comments per hour`,
+      retryAfterSeconds,
     );
   }
 }
@@ -122,6 +181,18 @@ export async function assertGlobalDailyLimit(
  * DB check is the real safety net; the IP map is just a fast-reject layer.
  */
 const ipCounts = new Map<string, { count: number; resetAt: number }>();
+
+/**
+ * Best-effort client IP from the `x-forwarded-for` chain. On Vercel the
+ * platform sets this header; the left-most entry is the originating client.
+ * Falls back to "unknown" so an unparseable request still shares a single
+ * rate-limit bucket rather than slipping the guard entirely.
+ */
+export function getClientIp(request: Request): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+  );
+}
 
 export function assertIpRateLimit(ip: string, maxPerHour: number): void {
   const now = Date.now();
