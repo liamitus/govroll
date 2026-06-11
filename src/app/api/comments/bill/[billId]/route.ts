@@ -94,11 +94,14 @@ export async function GET(
       }
     }
 
-    // Paginate top-level only
+    // Paginate top-level only. `total` counts every comment (incl. replies)
+    // for the header; `topLevelTotal` is the pagination denominator since
+    // only top-level comments are paged here.
     const paginated = topLevel.slice(skip, skip + limit);
     const total = allComments.length;
+    const topLevelTotal = topLevel.length;
 
-    return NextResponse.json({ comments: paginated, total });
+    return NextResponse.json({ comments: paginated, total, topLevelTotal });
   } catch (error) {
     console.error("Error fetching comments:", error);
     return NextResponse.json(
