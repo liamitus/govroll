@@ -19,9 +19,21 @@ import { reportError } from "@/lib/error-reporting";
  *
  * Idempotent: fetchVotesFunction upserts by (representativeId,
  * billId, rollCallNumber), so overlapping windows are fine.
+ *
+ * Resumable: fetchVotesFunction reads/advances an IngestCursor row and walks
+ * from min(saved cursor, now - 2d). The default path re-walks the last ~2
+ * days (self-heal for a missed run); a cursor stalled by a longer outage is
+ * honored so no roll call in the gap is lost. Pass `?since=YYYY-MM-DD` to
+ * force a deep backfill from an explicit date — it advances the cursor
+ * per-day, so a backfill bigger than one run's budget resumes on the next.
  */
 
 export const maxDuration = 60;
+
+// Soft budget below the 60s Hobby cap. The day loop breaks cleanly between
+// days when exceeded, leaving the cursor at the last fully-ingested day, so a
+// large backfill is hard-killed neither mid-write nor without progress.
+const DEADLINE_MS = 50_000;
 
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;
@@ -34,16 +46,32 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // Optional deep-backfill start, e.g. ?since=2025-01-01 from a manual
+  // workflow_dispatch. Strict YYYY-MM-DD; anything else is a 400 so a typo
+  // doesn't silently fall back to the default window.
+  const sinceParam = new URL(request.url).searchParams.get("since");
+  let since: Date | undefined;
+  if (sinceParam !== null) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sinceParam)) {
+      return NextResponse.json(
+        { ok: false, error: `invalid since (want YYYY-MM-DD): ${sinceParam}` },
+        { status: 400 },
+      );
+    }
+    const parsed = new Date(`${sinceParam}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json(
+        { ok: false, error: `invalid since: ${sinceParam}` },
+        { status: 400 },
+      );
+    }
+    since = parsed;
+  }
+
   const start = Date.now();
-  // Hobby plan caps this function at 60s. The per-day loop inside
-  // fetchVotesFunction does 3–4 sequential DB round-trips per voter, so a
-  // 7-day re-walk regularly blew the budget. The cron fires every 30m, so
-  // a 2-day overlap is plenty to self-heal any missed runs.
-  const since = new Date();
-  since.setDate(since.getDate() - 2);
 
   try {
-    await fetchVotesFunction(since);
+    await fetchVotesFunction({ since, deadlineMs: DEADLINE_MS });
     const ms = Date.now() - start;
     console.log(`[fetch-votes cron] completed in ${ms}ms`);
     return NextResponse.json({ ok: true, ms });
