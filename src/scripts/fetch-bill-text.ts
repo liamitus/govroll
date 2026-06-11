@@ -183,6 +183,7 @@ export async function fetchBillTextFunction(targetBillId?: string, limit = 10) {
             },
             update: {
               fullText,
+              textLength: fullText.length,
               versionType: gi.versionCode,
               versionDate: new Date(),
             },
@@ -192,6 +193,7 @@ export async function fetchBillTextFunction(targetBillId?: string, limit = 10) {
               versionType: gi.versionCode,
               versionDate: new Date(),
               fullText,
+              textLength: fullText.length,
               isSubstantive: isSubstantiveVersion(gi.versionCode),
             },
           });
@@ -232,11 +234,15 @@ export async function fetchBillTextFunction(targetBillId?: string, limit = 10) {
           // Download and parse text for this version
           const fullText = await downloadAndParse(version, bill.billId);
 
-          // Upsert the version record
+          // Upsert the version record. textLength mirrors fullText: set it
+          // whenever we write text so the size-threshold scans never need
+          // to detoast fullText (downloadAndParse returns a non-empty
+          // string or null, so a truthy check is sufficient).
           await prisma.billTextVersion.upsert({
             where: { billId_versionCode: { billId: bill.id, versionCode } },
             update: {
               fullText: fullText || undefined,
+              textLength: fullText ? fullText.length : undefined,
               versionType: version.type,
               versionDate: version.date ? new Date(version.date) : new Date(),
             },
@@ -246,6 +252,7 @@ export async function fetchBillTextFunction(targetBillId?: string, limit = 10) {
               versionType: version.type,
               versionDate: version.date ? new Date(version.date) : new Date(),
               fullText,
+              textLength: fullText ? fullText.length : null,
               isSubstantive: isSubstantiveVersion(versionCode),
             },
           });

@@ -56,20 +56,26 @@ export function isRagPathEnabled(): boolean {
   return (process.env.AI_CHAT_RAG_ENABLED ?? "").trim() === "true";
 }
 
-/** Cheap existence probe — does this bill have any embedded chunks?
- *  Used to fall back to the Haiku-name-filter path when a bill is
- *  large enough to need RAG but hasn't been backfilled yet.
+/** Does this bill have a COMPLETE set of embeddings ready for retrieval?
+ *  Used by the chat path to choose RAG vs. the Haiku-name-filter fallback
+ *  for bills too large to inline.
  *
- *  Goes through the FK index, so it's a single-row read at most. */
+ *  Checks the `embeddingsTextVersionId` completion marker rather than
+ *  "any chunk row exists for the bill". `embedBill` sets that marker only
+ *  after every chunk for the version has landed (persistChunks writes in
+ *  many small non-atomic transactions), so this stays false throughout
+ *  the minutes-long (re-)embed of a bill. Without the marker check, a
+ *  single inserted chunk would flip this true and the chat path would run
+ *  RAG over a half-written index. A PK lookup on Bill — single-row read. */
 export async function billHasEmbeddings(
   prisma: PrismaClient,
   billId: number,
 ): Promise<boolean> {
-  const row = await prisma.billEmbeddingChunk.findFirst({
-    where: { billId },
-    select: { id: true },
+  const bill = await prisma.bill.findUnique({
+    where: { id: billId },
+    select: { embeddingsTextVersionId: true },
   });
-  return row != null;
+  return bill?.embeddingsTextVersionId != null;
 }
 
 export interface RagRetrievalResult {
@@ -138,10 +144,22 @@ export async function retrieveRelevantSections(
   // through Prisma's parameter binding.
   const vectorLiteral = `[${vector.join(",")}]`;
 
-  // Match the embedding model so we don't accidentally search across
-  // chunks indexed with a different (incompatible-dimension) model
-  // after a future swap. With one model in production today this is
-  // a no-op filter, but it future-proofs the code at near-zero cost.
+  // Two filters beyond the bill id:
+  //   - `embeddingModel` so we never search across chunks indexed with a
+  //     different (incompatible-dimension) model after a future swap.
+  //     A no-op with one model in production, but cheap future-proofing.
+  //   - `textVersionId = Bill.embeddingsTextVersionId` so retrieval only
+  //     ever ranks chunks from the single completed text version. When a
+  //     bill is re-embedded at a new substantive version, persistChunks
+  //     deletes only the new version's tuple, so the old version's chunks
+  //     linger until embedBill's post-completion cleanup runs — without
+  //     this filter they'd compete in cosine ranking, letting the model
+  //     quote provisions deleted from the current text and halving
+  //     effective top-K coverage with near-duplicate chunks. The marker
+  //     points at the last FULLY-embedded version, so during a re-embed
+  //     we keep serving that complete version rather than a partial new
+  //     one. If the marker is NULL (never embedded) the scalar subquery
+  //     yields NULL and the predicate matches nothing → hadResults=false.
   const rows = await prisma.$queryRawUnsafe<RawChunkRow[]>(
     `SELECT
        id,
@@ -153,6 +171,9 @@ export async function retrieveRelevantSections(
      FROM "BillEmbeddingChunk"
      WHERE "billId" = $2
        AND "embeddingModel" = $3
+       AND "textVersionId" = (
+         SELECT "embeddingsTextVersionId" FROM "Bill" WHERE id = $2
+       )
      ORDER BY embedding <=> $1::vector
      LIMIT $4`,
     vectorLiteral,
