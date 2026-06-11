@@ -337,7 +337,7 @@ model Comment {
 
   profile       Profile?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   bill          Bill          @relation(fields: [billId], references: [id], onDelete: Cascade)
-  parentComment Comment?      @relation("CommentToReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  parentComment Comment?      @relation("CommentToReplies", fields: [parentCommentId], references: [id], onDelete: SetNull)
   replies       Comment[]     @relation("CommentToReplies")
   commentVotes  CommentVote[]
 

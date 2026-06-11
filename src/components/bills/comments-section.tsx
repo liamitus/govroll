@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
@@ -11,27 +15,33 @@ function Comment({
   comment,
   onReply,
   onDelete,
+  onVote,
   userId,
 }: {
   comment: CommentData;
   onReply: (parentId: number, content: string) => Promise<void>;
   onDelete: (commentId: number) => Promise<void>;
+  onVote: (commentId: number, voteType: number) => Promise<void>;
   userId: string | null;
 }) {
   const [showReply, setShowReply] = useState(false);
   const [replyContent, setReplyContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [voting, setVoting] = useState(false);
 
   const isOwner = userId !== null && comment.userId === userId;
 
   const handleVote = async (voteType: number) => {
-    if (!userId) return;
-    await fetch("/api/comment-votes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commentId: comment.id, voteType }),
-    });
+    if (!userId || voting) return;
+    setVoting(true);
+    try {
+      await onVote(comment.id, voteType);
+    } catch {
+      // Vote failures are low-stakes; the count simply won't update.
+    } finally {
+      setVoting(false);
+    }
   };
 
   const handleReply = async () => {
@@ -48,7 +58,7 @@ function Comment({
     const replyCount = comment.replies?.length ?? 0;
     const message =
       replyCount > 0
-        ? `Delete this comment? Its ${replyCount} ${replyCount === 1 ? "reply" : "replies"} will also be removed.`
+        ? `Delete this comment? Its ${replyCount} ${replyCount === 1 ? "reply" : "replies"} will remain as separate comments.`
         : "Delete this comment? This cannot be undone.";
     if (!window.confirm(message)) return;
     setDeleting(true);
@@ -71,16 +81,16 @@ function Comment({
       <div className="mt-1 flex items-center gap-2">
         <button
           onClick={() => handleVote(1)}
-          className="text-muted-foreground hover:text-foreground text-sm"
-          disabled={!userId}
+          className="text-muted-foreground hover:text-foreground text-sm disabled:opacity-50"
+          disabled={!userId || voting}
         >
           +
         </button>
         <span className="text-sm font-medium">{comment.voteCount}</span>
         <button
           onClick={() => handleVote(-1)}
-          className="text-muted-foreground hover:text-foreground text-sm"
-          disabled={!userId}
+          className="text-muted-foreground hover:text-foreground text-sm disabled:opacity-50"
+          disabled={!userId || voting}
         >
           -
         </button>
@@ -123,11 +133,18 @@ function Comment({
           comment={reply}
           onReply={onReply}
           onDelete={onDelete}
+          onVote={onVote}
           userId={userId}
         />
       ))}
     </div>
   );
+}
+
+interface BillCommentsPage {
+  comments: CommentData[];
+  total: number;
+  topLevelTotal: number;
 }
 
 export function CommentsSection({
@@ -140,24 +157,35 @@ export function CommentsSection({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [newComment, setNewComment] = useState("");
-  const [page, setPage] = useState(1);
   const [sort, setSort] = useState<"new" | "best">("new");
 
-  const queryKey = ["bill-comments-page", billId, page, sort] as const;
-  const { data } = useQuery<{ comments: CommentData[]; total: number }>({
-    queryKey,
-    queryFn: async ({ signal }) => {
-      const res = await fetch(
-        `/api/comments/bill/${billId}?page=${page}&sort=${sort}`,
-        { signal },
-      );
-      if (!res.ok) throw new Error("Failed to load comments");
-      return res.json();
-    },
-    staleTime: 15_000,
-  });
-  const comments = data?.comments ?? [];
-  const total = data?.total ?? 0;
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery<BillCommentsPage>({
+      queryKey: ["bill-comments-page", billId, sort],
+      queryFn: async ({ pageParam, signal }) => {
+        const res = await fetch(
+          `/api/comments/bill/${billId}?page=${pageParam}&sort=${sort}`,
+          { signal },
+        );
+        if (!res.ok) throw new Error("Failed to load comments");
+        return res.json() as Promise<BillCommentsPage>;
+      },
+      initialPageParam: 1,
+      getNextPageParam: (lastPage, allPages) => {
+        // Only top-level comments are paged (replies are nested inside them),
+        // so compare top-level loaded against the top-level total.
+        const loaded = allPages.reduce((n, p) => n + p.comments.length, 0);
+        return loaded < lastPage.topLevelTotal
+          ? allPages.length + 1
+          : undefined;
+      },
+      staleTime: 15_000,
+    });
+  const comments = useMemo(
+    () => data?.pages.flatMap((p) => p.comments) ?? [],
+    [data],
+  );
+  const total = data?.pages[0]?.total ?? 0;
 
   const mutation = useMutation({
     mutationFn: async ({
@@ -179,8 +207,8 @@ export function CommentsSection({
       if (!res.ok) throw new Error("Failed to post comment");
     },
     onSuccess: () => {
-      // Invalidate every (page, sort) combo for this bill so the new
-      // comment shows up regardless of which tab is visible.
+      // Invalidate every (sort) combo for this bill so the new comment shows
+      // up regardless of which tab is visible.
       queryClient.invalidateQueries({
         queryKey: ["bill-comments-page", billId],
       });
@@ -196,6 +224,29 @@ export function CommentsSection({
       if (!res.ok) throw new Error("Failed to delete comment");
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["bill-comments-page", billId],
+      });
+    },
+  });
+
+  const voteMutation = useMutation({
+    mutationFn: async ({
+      commentId,
+      voteType,
+    }: {
+      commentId: number;
+      voteType: number;
+    }) => {
+      const res = await fetch("/api/comment-votes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentId, voteType }),
+      });
+      if (!res.ok) throw new Error("Failed to record vote");
+    },
+    onSuccess: () => {
+      // Re-fetch so the server-computed voteCount reflects the new vote.
       queryClient.invalidateQueries({
         queryKey: ["bill-comments-page", billId],
       });
@@ -280,20 +331,24 @@ export function CommentsSection({
               onDelete={async (commentId) =>
                 deleteMutation.mutateAsync(commentId)
               }
+              onVote={async (commentId, voteType) =>
+                voteMutation.mutateAsync({ commentId, voteType })
+              }
               userId={user?.id || null}
             />
           ))}
         </div>
       )}
 
-      {total > comments.length && (
+      {hasNextPage && (
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setPage((p) => p + 1)}
+          onClick={() => fetchNextPage()}
+          disabled={isFetchingNextPage}
           className="w-full"
         >
-          Load more comments
+          {isFetchingNextPage ? "Loading..." : "Load more comments"}
         </Button>
       )}
     </div>
