@@ -32,6 +32,7 @@ export async function GET(
           rollCallNumber: true,
           chamber: true,
           votedAt: true,
+          category: true,
         },
       }),
       prisma.billTextVersion.findFirst({
@@ -57,6 +58,7 @@ export async function GET(
               rollCallNumber: true,
               chamber: true,
               votedAt: true,
+              category: true,
             },
           });
 
@@ -67,6 +69,7 @@ export async function GET(
         rollCallNumber: number | null;
         chamber: string | null;
         votedAt: Date | null;
+        category: string | null;
         votes: Record<string, number>;
       }
     >();
@@ -81,6 +84,9 @@ export async function GET(
           rollCallNumber: cv.rollCallNumber,
           chamber: cv.chamber,
           votedAt: cv.votedAt,
+          // Every rep vote in one roll call shares its category; the card
+          // needs it to pick the right pass/fail threshold.
+          category: cv.category,
           votes: {},
         });
       }
@@ -98,6 +104,7 @@ export async function GET(
         rollCallNumber: rc.rollCallNumber,
         chamber: rc.chamber,
         votedAt: rc.votedAt?.toISOString() || null,
+        category: rc.category,
         votes: Object.entries(rc.votes).map(([vote, count]) => ({
           vote,
           count,
