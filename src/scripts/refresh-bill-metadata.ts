@@ -8,56 +8,49 @@ const prisma = createStandalonePrisma();
 /**
  * Fast metadata-only refresh. Unlike fetch-bill-text.ts this does NOT download
  * bill XML — it only calls Congress.gov's metadata + summaries endpoints, so
- * each bill takes ~2-3s instead of 5-15s. Safe to run from the daily cron with
- * a larger batch than fetch-bill-text can sustain.
+ * each bill takes ~2-3s instead of 5-15s. Safe to run from the cron with a
+ * larger batch than fetch-bill-text can sustain.
  *
- * Prioritizes bills that have never been backfilled (sponsor IS NULL), then
- * bills missing CRS summaries that haven't been refreshed recently. Newest
- * bills first so the listing page always shows enriched data on recent
- * legislation.
+ * Selection mirrors the other backfill crons (backfill-bill-text,
+ * backfill-bill-actions): pick bills that still have a metadata gap — no
+ * sponsor, no sponsorBioguideId (older rows have sponsor text but predate the
+ * column), or no CRS summary (shortText) — and process the least-recently-
+ * refreshed first via `lastMetadataRefreshAt ASC NULLS FIRST`. The
+ * `introducedDate DESC` tiebreak surfaces recent legislation first among the
+ * never-refreshed bills so the listing page enriches new bills promptly.
  *
- * Cooldown rules (see `SUMMARY_RETRY_DAYS` vs `NO_SUMMARY_RETRY_DAYS`):
- * - If we fetched a CRS summary, stamp lastMetadataRefreshAt and skip the bill
- *   for 14 days — we already have what we came for.
- * - If the summary is still unpublished, *don't* stamp the clock. CRS often
- *   publishes weeks after introduction, so under a single long cooldown the
- *   bill gets locked out of the pool (that's how we ended up with 92% of
- *   ACTIVE bills missing shortText pre-fix). The route's sponsor-nulls-first
- *   ordering protects against re-hammering a single bill — once sponsor is
- *   populated the bill falls to the tail of the queue behind truly new bills.
+ * CRITICAL: every successful Congress.gov call stamps `lastMetadataRefreshAt`,
+ * even when the CRS summary is still unpublished. That timestamp is the cursor
+ * the NULLS-FIRST ordering rotates on — a processed bill drops to the back of
+ * the queue so the cron advances through the whole corpus. A previous version
+ * stamped only when a summary arrived; combined with an `ORDER BY sponsor ASC
+ * NULLS FIRST` that was dead (zero bills have a null sponsor — ingest fills it
+ * at creation), that collapsed to alphabetical-by-sponsor and pinned the cron
+ * on the same handful of summary-less territorial-delegate bills every run. It
+ * stamped nothing and never advanced, leaving 96% of the corpus permanently
+ * unrefreshed. Freshly-introduced bills whose summary is still being drafted
+ * are NOT locked out by always stamping: they keep matching the
+ * `shortText IS NULL` gap and get retried on a later tick, once the
+ * never-refreshed backlog ahead of them has cleared.
  */
-const SUMMARY_RETRY_DAYS = 14;
-
 export async function refreshBillMetadataFunction(limit = 25) {
-  const cooldownCutoff = new Date(
-    Date.now() - SUMMARY_RETRY_DAYS * 24 * 60 * 60 * 1000,
-  );
-
   const bills = await prisma.bill.findMany({
     where: {
       OR: [
         { sponsor: null },
-        // Bills that already have sponsor text but predate the
-        // sponsorBioguideId column. The cron picks them up and fills
-        // in the bioguideId so the rep card can match the sponsor to
-        // the user's reps.
-        { AND: [{ sponsor: { not: null } }, { sponsorBioguideId: null }] },
-        {
-          AND: [
-            { shortText: null },
-            {
-              OR: [
-                { lastMetadataRefreshAt: null },
-                { lastMetadataRefreshAt: { lt: cooldownCutoff } },
-              ],
-            },
-          ],
-        },
+        // Older rows have sponsor *text* but predate the sponsorBioguideId
+        // column. Refetch fills in the id so the rep card can match the
+        // sponsor to the user's reps.
+        { sponsorBioguideId: null },
+        // Missing CRS summary — keep it eligible until the summary publishes.
+        // No cooldown branch is needed: always-stamping + the NULLS-FIRST
+        // cursor below rotate a just-fetched bill to the back of the queue.
+        { shortText: null },
       ],
     },
     select: { id: true, billId: true },
     orderBy: [
-      { sponsor: { sort: "asc", nulls: "first" } },
+      { lastMetadataRefreshAt: { sort: "asc", nulls: "first" } },
       { introducedDate: "desc" },
     ],
     take: limit,
@@ -84,12 +77,6 @@ export async function refreshBillMetadataFunction(limit = 25) {
         failed++;
         continue;
       }
-      // Only stamp the cooldown clock when the CRS summary actually arrived.
-      // Otherwise we'd lock a freshly-introduced bill out of the refresh pool
-      // for 14 days while its summary is still being drafted — that's how we
-      // ended up with 92% of ACTIVE bills missing shortText pre-fix.
-      const gotSummary =
-        meta.shortText != null && meta.shortText.trim().length > 0;
       await prisma.bill.update({
         where: { id: bill.id },
         data: {
@@ -106,7 +93,12 @@ export async function refreshBillMetadataFunction(limit = 25) {
           popularTitle: meta.popularTitle,
           displayTitle: meta.displayTitle,
           shortTitle: meta.shortTitle,
-          ...(gotSummary ? { lastMetadataRefreshAt: new Date() } : {}),
+          // Always stamp — see the CRITICAL note on the function above. This is
+          // the cursor the NULLS-FIRST ordering rotates on, so a bill that
+          // fetched OK but still lacks a summary moves to the back of the queue
+          // instead of re-running every tick. It stays eligible (shortText is
+          // still null) and gets retried once the backlog ahead of it clears.
+          lastMetadataRefreshAt: new Date(),
         },
       });
       ok++;
