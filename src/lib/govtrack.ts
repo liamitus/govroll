@@ -31,26 +31,39 @@ export async function fetchGovTrackRoles(params: Record<string, unknown>) {
   return response.data.objects;
 }
 
-// GovTrack paginates the vote_voter endpoint and caps page size server-side
-// (documented max is 600; requesting more is silently clamped). A single
-// House roll call is ~430 voter rows and a busy day stacks several roll
-// calls, so one unpaginated page drops every voter past the cap — and those
-// rows are never recoverable on a re-walk because the same first page comes
-// back. PAGE_SIZE stays at/below the documented cap; MAX_PAGES is a runaway
-// backstop (100 * 600 = 60k rows, far beyond any real day's voting).
+// Lists roll-call votes (the /vote resource), not individual voter rows. A
+// day has at most a few dozen roll calls, so a single page (limit owned by the
+// caller) covers any real window and the offset never approaches GovTrack's
+// 1000 cap. fetch-votes uses this to enumerate a day's roll calls, then pulls
+// each roll call's voters separately via fetchGovTrackVoteVoters.
+export async function fetchGovTrackVotes(params: Record<string, unknown>) {
+  const response = await withRetry(() =>
+    govtrackClient.get("/vote", { params }),
+  );
+  return response.data.objects;
+}
+
+// GovTrack caps vote_voter page size at 600 (documented; larger is clamped)
+// AND rejects any offset > 1000 outright ("Offset > 1000 is not permitted",
+// HTTP 400). So a single query can never reach past ~1600 rows — but a busy
+// day has 3k+ voter rows across several roll calls, far beyond that. Callers
+// MUST therefore scope each query to a single roll call (all of whose voters
+// share one `created` second, <=435 rows), never a whole day; within that
+// scope the offset never climbs past 0–600 and the cap is untouched.
+// PAGE_SIZE stays at the documented ceiling; MAX_PAGES is a runaway backstop.
 const VOTE_VOTER_PAGE_SIZE = 600;
 const VOTE_VOTER_MAX_PAGES = 100;
 
 /**
  * Fetch every vote_voter row matching `params`, walking offsets until the
  * endpoint is exhausted. `params` should carry only the filter/order fields
- * (e.g. created__gte / created__lt / order_by) — limit and offset are owned
- * here so callers can't accidentally reintroduce the single-page cap bug.
+ * (e.g. created__gte / created__lt) — limit and offset are owned here.
  *
- * Termination is driven by `meta.total_count` (authoritative) with a
- * short/empty-page fallback, so it stays correct even if the server returns
- * a different page size than requested. Offset advances by the number of
- * rows actually returned, not the requested limit.
+ * Scope `params` to a single roll call (a ~1s created window); see the note
+ * above on GovTrack's offset>1000 cap. Termination is driven by
+ * `meta.total_count` (authoritative) with a short/empty-page fallback, so it
+ * stays correct even if the server returns a different page size than
+ * requested. Offset advances by the number of rows actually returned.
  */
 export async function fetchGovTrackVoteVoters(
   params: Record<string, unknown>,
