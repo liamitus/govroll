@@ -105,7 +105,11 @@ export async function GET(request: Request) {
     if (Date.now() >= deadline)
       return { billId: b.billId, ok: false, error: "timeout" };
     try {
-      const summary = await fetchBillTextFunction(b.billId, 1);
+      // Inject the long-lived pooled client so all 3 concurrent workers share
+      // one connection lifecycle. fetchBillTextFunction must not disconnect a
+      // client it didn't create — otherwise the first worker to finish would
+      // tear the pool out from under its siblings still mid-query.
+      const summary = await fetchBillTextFunction(b.billId, 1, prisma);
       // fetchBillTextFunction swallows per-bill "no text available" cases and
       // stamps them as attempted; a non-zero errorCount means the bill
       // genuinely errored. Wire it through so this route's errorCount stops

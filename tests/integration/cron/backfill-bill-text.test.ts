@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { GET } from "@/app/api/cron/backfill-bill-text/route";
+import { prisma } from "@/lib/prisma";
 import { server } from "../msw-server";
 import { getTestPrisma } from "../db";
 import { seedBill } from "../fixtures";
@@ -75,5 +76,50 @@ describe("GET /api/cron/backfill-bill-text", () => {
       where: { id: bill.id },
     });
     expect(after?.textFetchAttemptedAt).toBeNull();
+  });
+
+  it("runs a concurrent batch on one shared client without disconnecting it", async () => {
+    // Seed more eligible bills than CONCURRENCY (3) so the route's workers
+    // genuinely overlap on the single pooled client they now share. Each is
+    // missing fullText with no text versions — exactly what the route targets.
+    // Parseable house_bill IDs so the real fetch path runs; the default MSW
+    // handlers 404 every upstream, so each fetch is a graceful no-op (no text
+    // found → attempt stamped, not an error).
+    await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        seedBill({
+          billId: `house_bill-${600 + i}-119`,
+          momentumTier: "ACTIVE",
+          fullText: undefined,
+        }),
+      ),
+    );
+
+    // The cron injects @/lib/prisma into fetchBillTextFunction. The fix's core
+    // invariant: that borrowed client is never disconnected, so the first
+    // worker to finish can't tear the pool out from under its siblings
+    // mid-query. Before the fix, fetchBillTextFunction $disconnect()ed a
+    // shared module-level client in its finally block on every call.
+    const disconnectSpy = vi.spyOn(prisma, "$disconnect");
+
+    try {
+      const res = await invokeCron(GET, { search: { limit: "6" } });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+
+      expect(body.ok).toBe(true);
+      // 404s are graceful no-ops, not errors — so the only way errorCount
+      // goes non-zero here is an infra/connection failure, which is exactly
+      // the disconnect race this fix removes.
+      expect(body.errorCount).toBe(0);
+      expect(body.errors).toEqual([]);
+      // The shared client was borrowed, never disconnected...
+      expect(disconnectSpy).not.toHaveBeenCalled();
+      // ...and it stayed usable: the route's own post-fetch count query ran on
+      // it and still sees all 6 bills (none got text).
+      expect(body.remaining).toBe(6);
+    } finally {
+      disconnectSpy.mockRestore();
+    }
   });
 });
