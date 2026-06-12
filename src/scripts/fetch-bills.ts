@@ -18,6 +18,10 @@ const prisma = createStandalonePrisma();
 // not just a cooperative time check that an in-flight request can overrun.
 const WINDOW_HOURS = 12;
 const LOOKBACK_HOURS = 48;
+// When the saved cursor is further behind than this, skip the LOOKBACK_HOURS
+// rewind entirely (see fetchBillsFunction). Sized one window past the rewind so
+// we never flap between rewind / no-rewind around the boundary.
+const CATCHUP_THRESHOLD_HOURS = LOOKBACK_HOURS + WINDOW_HOURS;
 const BACKSTOP_DAYS = 14;
 const DEADLINE_MS = 50_000;
 const UPSERT_CONCURRENCY = 8;
@@ -107,13 +111,28 @@ export async function fetchBillsFunction(
   const cursorRow = await prisma.ingestCursor.findUnique({
     where: { key: CURSOR_KEY },
   });
-  // Always rewind LOOKBACK_HOURS from the saved cursor. Congress.gov
+  // Normally rewind LOOKBACK_HOURS from the saved cursor. Congress.gov
   // re-surfaces a bill into the updateDate feed when ANY field changes,
   // and those edits commonly land hours after the bill first appeared.
   // Without the rewind, we'd miss the late-arriving update and never
   // re-check that window.
+  //
+  // EXCEPT while catching up from a large gap (e.g. after an ingest outage).
+  // A single 50s run only clears ~LOOKBACK_HOURS worth of dense, in-session
+  // windows, so the rewind exactly cancels the forward progress and the cursor
+  // livelocks — it re-walks the same 48h every run and never crosses the gap.
+  // When the cursor is more than CATCHUP_THRESHOLD_HOURS behind, drop the
+  // rewind so every run moves strictly forward; it resumes automatically once
+  // we're back within the threshold (late-update capture matters again, and the
+  // sparse current feed clears many windows per run, so there's no livelock).
+  const caughtUp =
+    !cursorRow ||
+    dayjs(cursorRow.cursor).isAfter(
+      now.subtract(CATCHUP_THRESHOLD_HOURS, "hour"),
+    );
+  const lookbackHours = caughtUp ? LOOKBACK_HOURS : 0;
   let windowStart: Dayjs = cursorRow
-    ? dayjs(cursorRow.cursor).subtract(LOOKBACK_HOURS, "hour")
+    ? dayjs(cursorRow.cursor).subtract(lookbackHours, "hour")
     : now.subtract(BACKSTOP_DAYS, "day");
 
   let processed = 0;
