@@ -7,8 +7,9 @@ import { reportError } from "@/lib/error-reporting";
  * GET /api/cron/refresh-bill-metadata
  *
  * Fast metadata-only refresh — sponsor, policyArea, latestAction, CRS
- * summary. No XML downloads. ~2-3s per bill. Prioritizes bills that have
- * never been backfilled (sponsor IS NULL) then bills missing CRS summaries.
+ * summary. No XML downloads. ~2-3s per bill. Targets bills with a metadata
+ * gap (missing sponsor, sponsorBioguideId, or CRS summary), least-recently-
+ * refreshed first — see refreshBillMetadataFunction for the cursor rationale.
  *
  * Query params:
  *   - limit (default 25, max 50) — how many bills to process this invocation
