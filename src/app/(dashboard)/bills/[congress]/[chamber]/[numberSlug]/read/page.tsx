@@ -2,9 +2,8 @@ import { notFound, permanentRedirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { prisma } from "@/lib/prisma";
-import { parseSectionsFromFullText } from "@/lib/bill-sections";
 import { pickBillHeadline } from "@/lib/bill-headline";
-import { sectionSlugsForBill, pathFromHeading } from "@/lib/section-slug";
+import { buildReaderSections } from "@/lib/bills/reader-sections";
 import { maybeFetchBillTextInBackground } from "@/lib/on-demand-bill-text";
 import {
   billReadHref,
@@ -19,11 +18,9 @@ import {
 } from "@/components/bills/reader/reader-header-meta";
 import { TextNotAvailable } from "@/components/bills/reader/text-not-available";
 import type {
-  ReaderSection,
   ReaderVersionListEntry,
   ReaderVersionMeta,
 } from "@/components/bills/reader/reader-types";
-import type { SectionCaption } from "@/lib/section-caption";
 
 /**
  * Bill text reader at `/bills/[congress]/[chamber]/[numberSlug]/read`.
@@ -49,6 +46,22 @@ import type { SectionCaption } from "@/lib/section-caption";
 // non-canonical URL renders, hits permanentRedirect, and the 308
 // response is what gets cached for that URL.
 export const revalidate = 3600;
+
+// Opt this dynamic-param route into on-demand ISR. A dynamic route only
+// honors `revalidate` when it also exports `generateStaticParams` — without
+// it the route is plain per-request SSR and the heavy fullText query above
+// would run on every hit. Returning `[]` prerenders nothing at build (the
+// bill set is huge and Vercel's build can't reach Postgres), while
+// `dynamicParams` (default true) still generates each path on first request
+// and caches it for `revalidate` seconds — the egress win this route exists
+// for.
+export function generateStaticParams(): {
+  congress: string;
+  chamber: string;
+  numberSlug: string;
+}[] {
+  return [];
+}
 
 type RouteParams = Promise<{
   congress: string;
@@ -127,13 +140,10 @@ export async function generateMetadata({
 
 export default async function BillReaderPage({
   params,
-  searchParams,
 }: {
   params: RouteParams;
-  searchParams: Promise<{ section?: string; v?: string }>;
 }) {
   const { congress, chamber, numberSlug } = await params;
-  const { section: initialSlug, v: requestedVersionCode } = await searchParams;
 
   const parsed = parseBillPath([congress, chamber, numberSlug]);
   if (!parsed) notFound();
@@ -145,45 +155,33 @@ export default async function BillReaderPage({
   );
   if (!billIdKey) notFound();
 
-  // Three parallel queries — bill metadata, the version we'll render
-  // (either the `?v=` pick or the latest text-bearing), and the slim
-  // version list for the picker. We keep the picker list separate so
-  // we don't pay for every version's `fullText` just to render the
-  // dropdown labels.
+  // Three parallel queries — bill metadata, the latest text-bearing
+  // version we'll render, and the slim version list for the picker. We
+  // keep the picker list separate so we don't pay for every version's
+  // `fullText` just to render the dropdown labels.
   //
   // Bill.fullText is intentionally omitted from the bill query: the
   // text-bearing payload comes from BillTextVersion, and the legacy
   // path that still uses Bill.fullText fetches it lazily below.
-  const renderVersionQuery = requestedVersionCode
-    ? prisma.billTextVersion.findFirst({
-        where: {
-          bill: { billId: billIdKey },
-          versionCode: requestedVersionCode,
-          fullText: { not: null },
-        },
-        select: {
-          id: true,
-          versionCode: true,
-          versionType: true,
-          versionDate: true,
-          fullText: true,
-          sectionCaptions: true,
-          isSubstantive: true,
-        },
-      })
-    : prisma.billTextVersion.findFirst({
-        where: { bill: { billId: billIdKey }, fullText: { not: null } },
-        orderBy: { versionDate: "desc" },
-        select: {
-          id: true,
-          versionCode: true,
-          versionType: true,
-          versionDate: true,
-          fullText: true,
-          sectionCaptions: true,
-          isSubstantive: true,
-        },
-      });
+  //
+  // We always render the *latest* version. Older versions load
+  // client-side in <BillReader> via `?v=`, so this page reads no
+  // searchParams and the whole route stays full-route ISR-cacheable
+  // (the `revalidate = 3600` above). The `id` desc tiebreak keeps
+  // "latest" deterministic when two versions share a versionDate.
+  const renderVersionQuery = prisma.billTextVersion.findFirst({
+    where: { bill: { billId: billIdKey }, fullText: { not: null } },
+    orderBy: [{ versionDate: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      versionCode: true,
+      versionType: true,
+      versionDate: true,
+      fullText: true,
+      sectionCaptions: true,
+      isSubstantive: true,
+    },
+  });
 
   const [bill, renderVersion, pickerVersions] = await Promise.all([
     prisma.bill.findUnique({
@@ -205,11 +203,6 @@ export default async function BillReaderPage({
         shortTitle: true,
         displayTitle: true,
         aiShortDescription: true,
-        _count: {
-          select: {
-            textVersions: { where: { fullText: { not: null } } },
-          },
-        },
       },
     }),
     renderVersionQuery,
@@ -228,26 +221,7 @@ export default async function BillReaderPage({
     }),
   ]);
 
-  // If the reader explicitly asked for a version that doesn't exist,
-  // fall back to the latest text-bearing version transparently — the
-  // user typically got here from an older link.
-  const latestVersion =
-    renderVersion ??
-    (requestedVersionCode
-      ? await prisma.billTextVersion.findFirst({
-          where: { bill: { billId: billIdKey }, fullText: { not: null } },
-          orderBy: { versionDate: "desc" },
-          select: {
-            id: true,
-            versionCode: true,
-            versionType: true,
-            versionDate: true,
-            fullText: true,
-            sectionCaptions: true,
-            isSubstantive: true,
-          },
-        })
-      : null);
+  const latestVersion = renderVersion;
 
   if (!bill) notFound();
 
@@ -281,35 +255,30 @@ export default async function BillReaderPage({
   }
 
   if (!renderableText) {
+    // Only this rare no-text path needs the version count, so compute it
+    // here with a cheap targeted COUNT. Previously this rode along as a
+    // `_count` aggregate on the main bill query above, which scanned the
+    // BillTextVersion table on every single reader render (~16% of DB time).
+    const textVersionsWithText = await prisma.billTextVersion.count({
+      where: { billId: bill.id, fullText: { not: null } },
+    });
     maybeFetchBillTextInBackground({
       id: bill.id,
       billId: bill.billId,
       title: bill.title,
-      hasFullText: bill._count.textVersions > 0,
+      hasFullText: textVersionsWithText > 0,
       textFetchAttemptedAt: bill.textFetchAttemptedAt,
     });
     return <TextNotAvailable bill={{ ...bill, headline }} />;
   }
 
-  const parsedSections = parseSectionsFromFullText(renderableText);
-  if (parsedSections.length === 0) {
+  const sections = buildReaderSections(
+    renderableText,
+    latestVersion?.sectionCaptions ?? null,
+  );
+  if (sections.length === 0) {
     return <TextNotAvailable bill={{ ...bill, headline }} />;
   }
-
-  const slugs = sectionSlugsForBill(parsedSections);
-  const captions: SectionCaption[] = Array.isArray(
-    latestVersion?.sectionCaptions,
-  )
-    ? (latestVersion.sectionCaptions as unknown as SectionCaption[])
-    : [];
-  const captionMap = new Map(captions.map((c) => [c.sectionId, c.caption]));
-
-  const sections: ReaderSection[] = parsedSections.map((s, i) => ({
-    ...s,
-    slug: slugs[i],
-    depth: pathFromHeading(s.heading).length,
-    caption: captionMap.get(slugs[i]) ?? null,
-  }));
 
   // Build the version meta passed to the shell. If the only text we
   // have is the legacy Bill.fullText, synthesize a minimal version
@@ -358,10 +327,10 @@ export default async function BillReaderPage({
         congressLabel: congressOrdinal(parsed.congress),
         detailHref,
       }}
-      version={versionMeta}
+      initialVersion={versionMeta}
       availableVersions={availableVersions}
-      sections={sections}
-      initialSlug={initialSlug ?? null}
+      initialSections={sections}
+      latestVersionCode={versionMeta.versionCode}
     />
   );
 }
