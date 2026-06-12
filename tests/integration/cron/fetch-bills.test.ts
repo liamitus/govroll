@@ -5,6 +5,10 @@ import { server } from "../msw-server";
 import { getTestPrisma } from "../db";
 import { invokeCron } from "../invoke";
 
+// Mirrors toCongressIso() in fetch-bills.ts: Congress.gov's documented
+// "YYYY-MM-DDTHH:mm:ssZ", milliseconds stripped.
+const congressIso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+
 describe("GET /api/cron/fetch-bills", () => {
   it("rejects missing auth", async () => {
     const res = await invokeCron(GET, { auth: null });
@@ -172,5 +176,56 @@ describe("GET /api/cron/fetch-bills", () => {
     expect(stored?.currentStatus).toBe("pass_over_senate");
     expect(stored?.sponsor).toBe("Sen. Jane Doe (D-XX)");
     expect(stored?.shortText).toBe("A CRS summary that took weeks to write.");
+  });
+
+  it("skips the lookback rewind when the cursor is far behind (catch-up)", async () => {
+    // After an outage the cursor can sit days behind. The 48h rewind plus a 50s
+    // budget that only clears ~48h of dense in-session windows would livelock
+    // the cursor in place — it re-walks the same 48h every run and never
+    // advances. A badly-behind cursor must therefore start its first window AT
+    // the cursor, with no rewind, guaranteeing forward progress.
+    const cursorDate = new Date(Date.now() - 9 * 24 * 60 * 60 * 1000);
+    await getTestPrisma().ingestCursor.create({
+      data: { key: "fetch-bills", cursor: cursorDate },
+    });
+
+    const fromDateTimes: string[] = [];
+    server.use(
+      http.get("https://api.congress.gov/v3/bill", ({ request }) => {
+        const from = new URL(request.url).searchParams.get("fromDateTime");
+        if (from) fromDateTimes.push(from);
+        return HttpResponse.json({ bills: [], pagination: { count: 0 } });
+      }),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+    // First window starts exactly at the cursor — no 48h rewind.
+    expect(fromDateTimes[0]).toBe(congressIso(cursorDate));
+  });
+
+  it("applies the lookback rewind when the cursor is recent (steady state)", async () => {
+    // Within the catch-up threshold the feed is sparse, so a run clears many
+    // windows and reaches `now` regardless — here the 48h rewind is pure upside
+    // (re-checks recent windows for late-arriving Congress.gov edits).
+    const cursorDate = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    await getTestPrisma().ingestCursor.create({
+      data: { key: "fetch-bills", cursor: cursorDate },
+    });
+
+    const fromDateTimes: string[] = [];
+    server.use(
+      http.get("https://api.congress.gov/v3/bill", ({ request }) => {
+        const from = new URL(request.url).searchParams.get("fromDateTime");
+        if (from) fromDateTimes.push(from);
+        return HttpResponse.json({ bills: [], pagination: { count: 0 } });
+      }),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+    // First window starts 48h before the cursor — the rewind is in effect.
+    const rewound = new Date(cursorDate.getTime() - 48 * 60 * 60 * 1000);
+    expect(fromDateTimes[0]).toBe(congressIso(rewound));
   });
 });
