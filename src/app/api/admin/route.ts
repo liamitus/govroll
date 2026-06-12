@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { fetchBillsFunction } from "@/scripts/fetch-bills";
 import { fetchRepresentativesFunction } from "@/scripts/fetch-representatives";
 import { fetchVotesFunction } from "@/scripts/fetch-votes";
@@ -47,7 +48,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ message: "Votes fetched successfully." });
 
       case "fetch-bill-text":
-        await fetchBillTextFunction(billId);
+        // Borrow the long-lived pooled client; the standalone-client path is
+        // reserved for the CLI entrypoint.
+        await fetchBillTextFunction(billId, undefined, prisma);
         return NextResponse.json({
           message: "Bill text fetched successfully.",
         });

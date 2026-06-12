@@ -65,7 +65,10 @@ export function maybeFetchBillTextInBackground(bill: {
       });
       if (claimed.count === 0) return;
 
-      await fetchBillTextFunction(bill.billId, 1);
+      // Share the request's long-lived pooled client — this can race the cron
+      // over the same shared client, so fetchBillTextFunction must not
+      // disconnect a client it didn't create.
+      await fetchBillTextFunction(bill.billId, 1, prisma);
       revalidatePath(billHref({ billId: bill.billId, title: bill.title }));
     } catch {
       // Swallow — the failure is already logged by fetchBillTextFunction,

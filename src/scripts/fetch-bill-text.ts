@@ -16,8 +16,6 @@ import { parseBillId } from "../lib/parse-bill-id";
 import { createStandalonePrisma } from "../lib/prisma-standalone";
 import { fetchBillTextFromGovInfo } from "../lib/govinfo";
 
-const prisma = createStandalonePrisma();
-
 /**
  * Parse raw XML or text into a consolidated fullText string.
  */
@@ -62,10 +60,21 @@ export interface FetchBillTextSummary {
 export async function fetchBillTextFunction(
   targetBillId?: string,
   limit = 10,
+  injectedClient?: ReturnType<typeof createStandalonePrisma>,
 ): Promise<FetchBillTextSummary> {
   console.log(
     `Fetching bill text for: ${targetBillId || `up to ${limit} bills without text`}`,
   );
+  // Borrow an injected client when a long-lived caller provides one — the
+  // cron route, on-demand fetch, and admin route all pass @/lib/prisma so a
+  // single pooled client is shared across calls. We must NOT disconnect a
+  // client we didn't create: the cron runs this with bounded concurrency over
+  // one shared client, and a per-call $disconnect() would tear the pool out
+  // from under sibling calls still mid-query (and churn connect/disconnect).
+  // Only the CLI path (no injected client) owns the client it creates and is
+  // responsible for disconnecting it.
+  const prisma = injectedClient ?? createStandalonePrisma();
+  const ownsClient = injectedClient === undefined;
   try {
     const bills = targetBillId
       ? await prisma.bill.findMany({ where: { billId: targetBillId }, take: 1 })
@@ -336,7 +345,7 @@ export async function fetchBillTextFunction(
     );
     throw error;
   } finally {
-    await prisma.$disconnect();
+    if (ownsClient) await prisma.$disconnect();
   }
 }
 
