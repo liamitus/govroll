@@ -1,4 +1,14 @@
 import { getBudgetSnapshot, type BudgetSnapshot } from "@/lib/budget";
+import {
+  readCachedSnapshot,
+  writeCachedSnapshot,
+  invalidateAiGateCache,
+} from "@/lib/ai-gate-cache";
+
+// Re-export so existing call sites (Stripe webhook, evaluate-budget cron) keep
+// importing the invalidator from the gate module even though the cache itself
+// now lives in `ai-gate-cache` to avoid a cycle with `budget`.
+export { invalidateAiGateCache };
 
 /**
  * Thrown by `assertAiEnabled` when AI features are currently unavailable.
@@ -37,23 +47,19 @@ export class AiDisabledError extends Error {
 }
 
 /**
- * In-process cache of the latest budget read. The hourly cron is authoritative;
- * this cache is a backstop so API routes don't hit the DB on every AI call.
+ * Reads the budget snapshot through the in-process cache (see
+ * `ai-gate-cache`). The cron and `recordSpend` keep the underlying
+ * `aiEnabled` flag fresh; this cache is a backstop so API routes don't hit
+ * the DB on every AI call, and it's dropped immediately on income/spend
+ * events so a paused gate flips within one request, not one TTL.
  */
-let cache: { snapshot: BudgetSnapshot; fetchedAt: number } | null = null;
-const CACHE_TTL_MS = 60_000; // 1 minute
-
 async function readSnapshot(): Promise<BudgetSnapshot> {
   const now = Date.now();
-  if (cache && now - cache.fetchedAt < CACHE_TTL_MS) return cache.snapshot;
+  const cached = readCachedSnapshot(now);
+  if (cached) return cached;
   const snapshot = await getBudgetSnapshot();
-  cache = { snapshot, fetchedAt: now };
+  writeCachedSnapshot(snapshot, now);
   return snapshot;
-}
-
-/** Force the next read to hit the database. Call after webhook income ticks. */
-export function invalidateAiGateCache() {
-  cache = null;
 }
 
 /**

@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { computeCostCents, type CacheTokenBreakdown } from "@/lib/ai-pricing";
+import { invalidateAiGateCache } from "@/lib/ai-gate-cache";
+
+/** A Prisma client or an interactive-transaction client. Income writes accept
+ *  one so the increment can commit atomically with the caller's dedupe row
+ *  (the Donation, or the ProcessedStripeEvent claim in the webhook). */
+type LedgerClient = Prisma.TransactionClient | typeof prisma;
 
 /**
  * Govroll runs on reader contributions. AI features are the largest variable
@@ -90,11 +97,14 @@ export async function trailingMonthsSpendCents(
  * donations roll forward across the month boundary. `aiEnabled` starts true;
  * the cron flips it off later if cumulative spend overshoots.
  */
-export async function getOrCreateLedger(period = currentPeriod()) {
-  const existing = await prisma.budgetLedger.findUnique({ where: { period } });
+export async function getOrCreateLedger(
+  period = currentPeriod(),
+  client: LedgerClient = prisma,
+) {
+  const existing = await client.budgetLedger.findUnique({ where: { period } });
   if (existing) return existing;
 
-  const prev = await prisma.budgetLedger.findUnique({
+  const prev = await client.budgetLedger.findUnique({
     where: { period: previousPeriodOf(period) },
     select: {
       carryoverCents: true,
@@ -115,7 +125,7 @@ export async function getOrCreateLedger(period = currentPeriod()) {
 
   // Upsert (not create) so two concurrent first-of-month requests can't both
   // race past the unique-constraint check; whoever wins keeps their carryover.
-  return prisma.budgetLedger.upsert({
+  return client.budgetLedger.upsert({
     where: { period },
     create: {
       period,
@@ -152,11 +162,21 @@ export async function getBudgetSnapshot(
 
 /**
  * Record income from a successful Stripe charge. Called from the webhook.
- * Idempotent at the caller level — the webhook must dedupe on payment id.
+ *
+ * This is NOT idempotent on its own — the caller must dedupe. Pass `client`
+ * (an interactive-transaction client) so the increment commits atomically
+ * with the caller's dedupe write, so a mid-handler crash can neither
+ * double-count (the dedupe row already exists on retry) nor lose income (the
+ * increment rolled back with everything else). See the Stripe webhook.
  */
-export async function recordIncome(cents: number, period = currentPeriod()) {
-  await getOrCreateLedger(period);
-  return prisma.budgetLedger.update({
+export async function recordIncome(
+  cents: number,
+  opts: { client?: LedgerClient; period?: string } = {},
+) {
+  const period = opts.period ?? currentPeriod();
+  const client = opts.client ?? prisma;
+  await getOrCreateLedger(period, client);
+  return client.budgetLedger.update({
     where: { period },
     data: { incomeCents: { increment: cents } },
   });
@@ -188,7 +208,7 @@ export async function recordSpend(event: UsageInput) {
   const period = currentPeriod();
   await getOrCreateLedger(period);
 
-  await prisma.$transaction([
+  const [, ledger] = await prisma.$transaction([
     prisma.aiUsageEvent.create({
       data: {
         userId: event.userId ?? null,
@@ -204,6 +224,23 @@ export async function recordSpend(event: UsageInput) {
       data: { spendCents: { increment: costCents } },
     }),
   ]);
+
+  // Spend only ever pushes the period toward negative. The instant cumulative
+  // spend overtakes carryover + income, flip `aiEnabled` off and drop the
+  // in-process gate cache so the very next AI request on this instance is
+  // refused — instead of serving for up to a full cron interval (the cron is
+  // the slow backstop; this is the fast path). Re-enabling stays the cron's
+  // job, since fresh income arrives there. The `aiEnabled` guard keeps this to
+  // a single flip at the crossing rather than on every subsequent spend.
+  const availableCents =
+    ledger.carryoverCents +
+    ledger.incomeCents -
+    ledger.spendCents -
+    ledger.reserveCents;
+  if (ledger.aiEnabled && availableCents <= 0) {
+    await evaluateAiEnabled(period);
+    invalidateAiGateCache();
+  }
 
   return costCents;
 }

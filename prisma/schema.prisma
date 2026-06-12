@@ -470,6 +470,27 @@ model DonorLinkToken {
   @@index([token])
 }
 
+// Idempotency ledger for Stripe webhook delivery. Stripe guarantees
+// at-least-once delivery and retries any event we don't ack with a 2xx
+// (including on timeout), so the same `event.id` can arrive multiple times.
+// The webhook claims the id here — in the same transaction that records the
+// event's income — so a duplicate delivery hits the primary key and is acked
+// without double-counting, while a mid-handler failure rolls the claim back
+// and lets Stripe's retry re-apply it cleanly.
+//
+// This is the only dedupe key the recurring-renewal path has: a renewal
+// (invoice.payment_succeeded) creates no Donation row, so without this row
+// every redelivery of a renewal invoice would increment incomeCents again.
+// The one-time/first-charge path dedupes on Donation.stripePaymentId instead.
+//
+// Rows are write-once and safe to prune after Stripe's retry window (~3 days);
+// kept indefinitely for now given the low event volume.
+model ProcessedStripeEvent {
+  id          String   @id // Stripe event id, e.g. "evt_..."
+  type        String // event type, retained for auditing/debugging
+  processedAt DateTime @default(now())
+}
+
 model BudgetLedger {
   id               String   @id @default(cuid())
   // YYYY-MM identifier for the budget period. One row per month.

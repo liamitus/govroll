@@ -634,6 +634,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Drive the stream to completion server-side regardless of whether the
+    // client stays connected. Without this, a client that disconnects
+    // mid-stream can prevent `onFinish` from firing — the tokens are billed by
+    // Anthropic but recorded as 0 spend, which lets a deliberate connect/abort
+    // loop run the model for free past the daily cents cap. We intentionally do
+    // NOT await: the response below still streams to connected clients; this
+    // just guarantees generation + the spend-recording onFinish run to
+    // completion in the background. `consumeStream` swallows errors (already
+    // surfaced via the stream's onError), so no unhandled rejection.
+    void streamResult.consumeStream();
+
     return streamResult.toUIMessageStreamResponse<
       UIMessage<ChatMessageMetadata>
     >({
