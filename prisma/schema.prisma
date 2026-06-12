@@ -203,6 +203,9 @@ model RepresentativeVote {
   @@unique([representativeId, billId, rollCallNumber])
   @@index([billId, chamber])
   @@index([billId, rollCallNumber])
+  // Serves the vote-recency signal (vote-recency.ts): newest vote per
+  // chamber, queried every 10 min. chamber is stored lowercase.
+  @@index([chamber, votedAt(sort: Desc)])
 }
 
 model BillTextVersion {
@@ -317,6 +320,8 @@ model Vote {
 
   @@unique([userId, billId])
   @@index([userId])
+  // Covering index for the Vote.billId FK (flagged by the Supabase advisor).
+  @@index([billId])
 }
 
 model VoteHistory {
@@ -353,6 +358,9 @@ model Comment {
   @@index([userId])
   @@index([billId])
   @@index([billId, parentCommentId])
+  // Covers the parentCommentId FK on its own (the composite above leads
+  // with billId, so it can't serve parent-only lookups or cascade deletes).
+  @@index([parentCommentId])
 }
 
 model CommentVote {

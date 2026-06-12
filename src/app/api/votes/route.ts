@@ -39,10 +39,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Bill not found" }, { status: 404 });
     }
 
-    // Find the latest text version for this bill
+    // Find the latest text version for this bill. Only the id is used
+    // (stored on the vote), so select just that — the row's fullText is
+    // multi-MB and detoasting it here was pure waste. The `id` desc
+    // tiebreak keeps "latest" deterministic when two versions share a
+    // versionDate (same-day eh+pcs), which otherwise flaps the isStale
+    // banner against the read side in votes/[billId]/user.
     const latestVersion = await prisma.billTextVersion.findFirst({
       where: { billId },
-      orderBy: { versionDate: "desc" },
+      orderBy: [{ versionDate: "desc" }, { id: "desc" }],
+      select: { id: true },
     });
 
     const [vote] = await prisma.$transaction([

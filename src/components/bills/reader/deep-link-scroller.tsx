@@ -21,11 +21,7 @@ import { useEffect } from "react";
  * would leave the target with zero layout and the browser with
  * nowhere to scroll to.
  */
-export function DeepLinkScroller({
-  initialSlug,
-}: {
-  initialSlug: string | null;
-}) {
+export function DeepLinkScroller() {
   useEffect(() => {
     function expandAncestorDetails(el: Element | null): void {
       let node: Element | null = el;
@@ -48,6 +44,12 @@ export function DeepLinkScroller({
       });
     }
 
+    // `?section=<slug>` is the canonical shareable deep link. Read it
+    // client-side: the reader route is statically cached now, so the
+    // server render no longer sees searchParams.
+    const initialSlug = new URLSearchParams(window.location.search).get(
+      "section",
+    );
     if (initialSlug) scrollToSlug(initialSlug);
 
     function handleHashChange(): void {
@@ -82,7 +84,7 @@ export function DeepLinkScroller({
       window.removeEventListener("hashchange", handleHashChange);
       document.removeEventListener("click", handleAnchorClick);
     };
-  }, [initialSlug]);
+  }, []);
 
   return null;
 }
