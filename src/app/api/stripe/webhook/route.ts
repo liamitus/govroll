@@ -6,6 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { recordIncome } from "@/lib/budget";
 import { invalidateAiGateCache } from "@/lib/ai-gate";
 import { moderateName } from "@/lib/moderation/pipeline";
+import { generateCitizenId } from "@/lib/citizen-id";
 import { randomBytes } from "crypto";
 import { reportError } from "@/lib/error-reporting";
 
@@ -180,8 +181,12 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         where: { id: userId },
         update: { email: session.customer_details?.email ?? undefined },
         create: {
+          // Safe, non-user-controlled seed. getAuthenticatedUser() no longer
+          // overwrites Profile.username on later requests, so a donor-first row
+          // would otherwise stay "Anonymous" forever. The real display name is
+          // set later through the moderated PATCH /api/account/username route.
           id: userId,
-          username: "Anonymous",
+          username: generateCitizenId(userId),
           email: session.customer_details?.email ?? null,
         },
       });

@@ -23,34 +23,39 @@ export async function DELETE() {
   }
 
   try {
-    // 1. Anonymize comments — preserve content for thread continuity
-    await prisma.comment.updateMany({
-      where: { userId: user.id },
-      data: { userId: null, username: "Deleted User" },
-    });
-
-    // 2. Delete private data
+    // Atomically scrub every DB row tied to this user. One transaction means
+    // a mid-deletion failure can't leave the account half-deleted (e.g.
+    // votes gone but the profile and AI-usage rows still linked). The
+    // Supabase auth user is removed afterward — it's an external service and
+    // can't participate in a DB transaction.
     await prisma.$transaction([
+      // Anonymize comments — preserve content for thread continuity
+      prisma.comment.updateMany({
+        where: { userId: user.id },
+        data: { userId: null, username: "Deleted User" },
+      }),
+      // Delete private data
       prisma.commentVote.deleteMany({ where: { userId: user.id } }),
       prisma.voteHistory.deleteMany({ where: { userId: user.id } }),
       prisma.vote.deleteMany({ where: { userId: user.id } }),
+      // Conversations + messages (messages cascade from conversation)
+      prisma.conversation.deleteMany({ where: { userId: user.id } }),
+      // Nullify donation userId — keep records for accounting
+      prisma.donation.updateMany({
+        where: { userId: user.id },
+        data: { userId: null },
+      }),
+      // Nullify AI usage events — keep the aggregate logs, drop the user link
+      prisma.aiUsageEvent.updateMany({
+        where: { userId: user.id },
+        data: { userId: null },
+      }),
+      // Delete Profile — deleteMany so a missing row (very old accounts)
+      // doesn't abort the transaction the way delete() would
+      prisma.profile.deleteMany({ where: { id: user.id } }),
     ]);
 
-    // Delete conversations + messages (messages cascade from conversation)
-    await prisma.conversation.deleteMany({ where: { userId: user.id } });
-
-    // 3. Nullify donation userId — keep records for accounting
-    await prisma.donation.updateMany({
-      where: { userId: user.id },
-      data: { userId: null },
-    });
-
-    // 4. Delete Profile
-    await prisma.profile.delete({ where: { id: user.id } }).catch(() => {
-      // Profile may not exist for very old accounts
-    });
-
-    // 5. Delete Supabase auth user
+    // Delete the Supabase auth user (external service — outside the DB tx)
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       serviceRoleKey,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
+import dayjs from "dayjs";
 import { GET } from "@/app/api/cron/fetch-votes/route";
 import { server } from "../msw-server";
 import { getTestPrisma } from "../db";
@@ -32,23 +33,49 @@ type BillFixture = {
 };
 
 /**
- * Wire up MSW so GovTrack returns `voters` on the first vote_voter call and
- * empty on subsequent calls (the route walks ~2 days; we only want data
- * on the first pass). Bills resolve out of the supplied fixture map by
- * GovTrack id; anything else 404s.
+ * Wire up MSW for the two-step fetch the route performs: it lists a day's roll
+ * calls via /vote, then pulls each roll call's voters via /vote_voter scoped to
+ * that roll call's `created` second. We group the supplied voters into roll
+ * calls by their shared `vote.created`, serve those as /vote objects, and
+ * answer each /vote_voter query by matching its created__gte. Bills resolve out
+ * of the supplied fixture map by GovTrack id; anything else 404s.
+ *
+ * /vote serves the roll calls on the FIRST call and empty afterwards, so a
+ * multi-day route walk doesn't re-serve and double-count the same voters.
  */
 function mockGovTrack(voters: VoteVoter[], bills: BillFixture[]) {
   const byId = new Map(bills.map((b) => [b.govtrackId, b]));
-  let voterCalls = 0;
+  const rollCallByStart = new Map<string, VoteVoter[]>();
+  for (const v of voters) {
+    const list = rollCallByStart.get(v.vote.created) ?? [];
+    list.push(v);
+    rollCallByStart.set(v.vote.created, list);
+  }
+
+  let voteListCalls = 0;
   server.use(
-    http.get("https://www.govtrack.us/api/v2/vote_voter", () => {
-      voterCalls++;
-      if (voterCalls > 1) {
+    http.get("https://www.govtrack.us/api/v2/vote", () => {
+      voteListCalls++;
+      if (voteListCalls > 1) {
         return HttpResponse.json({ objects: [], meta: { total_count: 0 } });
       }
+      const objects = [...rollCallByStart.entries()].map(([created, vs]) => ({
+        created,
+        chamber: vs[0].vote.chamber,
+        number: vs[0].vote.number,
+        congress: 119,
+      }));
       return HttpResponse.json({
-        objects: voters,
-        meta: { total_count: voters.length },
+        objects,
+        meta: { total_count: objects.length },
+      });
+    }),
+    http.get("https://www.govtrack.us/api/v2/vote_voter", ({ request }) => {
+      const gte = new URL(request.url).searchParams.get("created__gte");
+      const vs = (gte && rollCallByStart.get(gte)) || [];
+      return HttpResponse.json({
+        objects: vs,
+        meta: { total_count: vs.length },
       });
     }),
     http.get("https://www.govtrack.us/api/v2/bill/:id", ({ params }) => {
@@ -385,5 +412,200 @@ describe("GET /api/cron/fetch-votes", () => {
       where: { billId: preexisting.id },
     });
     expect(votes).toHaveLength(1);
+  });
+
+  it("returns 500 when GovTrack is down (systemic failure is not laundered into ok)", async () => {
+    // The core regression: a GovTrack/DB outage used to be swallowed and the
+    // cron returned {ok:true}/200, so GH Actions went green over a broken run.
+    // It must now surface as a 500 so the route fires reportError and the
+    // Action fails red. /vote returns a roll call so the walk reaches the
+    // voter fetch — the call that fails here.
+    server.use(
+      http.get("https://www.govtrack.us/api/v2/vote", () =>
+        HttpResponse.json({
+          objects: [
+            {
+              created: "2026-06-09T18:00:00",
+              chamber: "senate",
+              number: 1,
+              congress: 119,
+            },
+          ],
+          meta: { total_count: 1 },
+        }),
+      ),
+      http.get(
+        "https://www.govtrack.us/api/v2/vote_voter",
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+  });
+
+  it("survives GovTrack's offset>1000 cap on a busy day (per-roll-call fetch)", async () => {
+    // Reproduce prod exactly: GovTrack rejects vote_voter offset>1000 with a
+    // 400 ("Offset > 1000 is not permitted"). A busy day's voter rows (3k+ in
+    // prod) blow past that under a date-windowed offset walk, 400ing the run
+    // and — because the cursor only advances on success — wedging the cron on
+    // that day. Pulling each roll call separately keeps every query's offset at
+    // 0, so the cap is never approached.
+    const reps = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        seedRepresentative({
+          bioguideId: `C${String(i).padStart(6, "0")}`,
+          chamber: "senator",
+        }),
+      ),
+    );
+
+    // 12 roll calls at distinct timestamps × 6 reps = 72 voter rows. A
+    // date-windowed walk would request them as one growing offset; per-roll-call
+    // keeps each query at offset 0.
+    const rollCalls = Array.from({ length: 12 }, (_, i) => ({
+      created: `2026-06-09T${String(8 + Math.floor(i / 6)).padStart(2, "0")}:${String((i % 6) * 10).padStart(2, "0")}:00`,
+      number: i + 1,
+    }));
+    const votersByStart = new Map(
+      rollCalls.map((rc) => [
+        rc.created,
+        reps.map((r) =>
+          makeVoter({
+            bioguideId: r.bioguideId,
+            vote: {
+              related_bill: 700,
+              number: rc.number,
+              chamber: "senate",
+              created: rc.created,
+              category: "passage",
+            },
+          }),
+        ),
+      ]),
+    );
+
+    let listCalls = 0;
+    let pagedPastCap = false;
+    server.use(
+      http.get("https://www.govtrack.us/api/v2/vote", () => {
+        listCalls++;
+        if (listCalls > 1) {
+          return HttpResponse.json({ objects: [], meta: { total_count: 0 } });
+        }
+        return HttpResponse.json({
+          objects: rollCalls.map((rc) => ({
+            created: rc.created,
+            chamber: "senate",
+            number: rc.number,
+            congress: 119,
+          })),
+          meta: { total_count: rollCalls.length },
+        });
+      }),
+      http.get("https://www.govtrack.us/api/v2/vote_voter", ({ request }) => {
+        const url = new URL(request.url);
+        if (Number(url.searchParams.get("offset") ?? "0") > 1000) {
+          pagedPastCap = true;
+          return new HttpResponse("Offset > 1000 is not permitted.", {
+            status: 400,
+          });
+        }
+        const gte = url.searchParams.get("created__gte");
+        const vs = (gte && votersByStart.get(gte)) || [];
+        return HttpResponse.json({
+          objects: vs,
+          meta: { total_count: vs.length },
+        });
+      }),
+      http.get("https://www.govtrack.us/api/v2/bill/:id", ({ params }) => {
+        if (Number(params.id) !== 700) {
+          return HttpResponse.json({}, { status: 404 });
+        }
+        const { govtrackId: _g, ...payload } = makeBill({
+          govtrackId: 700,
+          number: 7000,
+        });
+        return HttpResponse.json(payload);
+      }),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+    // Never tripped the offset cap, and every roll call landed.
+    expect(pagedPastCap).toBe(false);
+    expect(await getTestPrisma().representativeVote.count()).toBe(72);
+  });
+
+  it("resumes from a stale IngestCursor and advances it (outage recovery)", async () => {
+    const db = getTestPrisma();
+    // Simulate an outage: the cursor is 5 days stale, beyond the 2-day
+    // self-heal overlap. The walk must start from the cursor, not now-2d,
+    // or every roll call in the gap is lost forever.
+    const staleCursor = dayjs().subtract(5, "day").startOf("day");
+    await db.ingestCursor.create({
+      data: { key: "fetch-votes", cursor: staleCursor.toDate() },
+    });
+
+    const requestedDays = new Set<string>();
+    server.use(
+      http.get("https://www.govtrack.us/api/v2/vote", ({ request }) => {
+        const gte = new URL(request.url).searchParams.get("created__gte");
+        if (gte) requestedDays.add(gte);
+        return HttpResponse.json({ objects: [], meta: { total_count: 0 } });
+      }),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+
+    // Earliest day window requested equals the stale cursor — proof the walk
+    // resumed from it rather than the fixed 2-day lookback.
+    const earliest = [...requestedDays].sort()[0];
+    expect(earliest).toBe(staleCursor.format("YYYY-MM-DD"));
+
+    // And the cursor advanced to ~now so the next run doesn't re-walk the gap.
+    const row = await db.ingestCursor.findUnique({
+      where: { key: "fetch-votes" },
+    });
+    expect(row).not.toBeNull();
+    expect(row!.cursor.getTime()).toBeGreaterThan(
+      dayjs().subtract(1, "day").valueOf(),
+    );
+  });
+
+  it("sets congressNumber on bills it creates", async () => {
+    // Vote-created bills used to land with congressNumber=NULL, which
+    // exempted them from CONGRESS_ENDED death and sank them in feed ordering.
+    const rep = await seedRepresentative({
+      bioguideId: "S000119",
+      chamber: "senator",
+    });
+
+    mockGovTrack(
+      [makeVoter({ bioguideId: rep.bioguideId })],
+      [makeBill({ govtrackId: 99999, number: 1234, congress: 119 })],
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+
+    const bill = await getTestPrisma().bill.findUnique({
+      where: { billId: "s-1234-119" },
+    });
+    expect(bill?.congressNumber).toBe(119);
+  });
+
+  it("accepts ?since=YYYY-MM-DD and rejects a malformed value", async () => {
+    const bad = await invokeCron(GET, { search: { since: "06-2026" } });
+    expect(bad.status).toBe(400);
+
+    // A 1-day-ago start keeps the walk short and is independent of the clock.
+    const good = await invokeCron(GET, {
+      search: { since: dayjs().subtract(1, "day").format("YYYY-MM-DD") },
+    });
+    expect(good.status).toBe(200);
   });
 });

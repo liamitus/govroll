@@ -137,6 +137,11 @@ export interface RollCallVote {
   rollCallNumber: number | null;
   chamber: string | null;
   votedAt: string | null;
+  /** Raw GovTrack vote category ("passage", "cloture", "passage_suspension",
+   * "amendment", …) or null. The card needs it to apply the right pass/fail
+   * threshold — a 55-45 cloture fails (needs 60) but looks like a simple
+   * majority. See {@link rollCallOutcome} in src/lib/votes.ts. */
+  category: string | null;
   votes: { vote: string; count: number }[];
 }
 

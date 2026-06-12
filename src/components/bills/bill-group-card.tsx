@@ -2,12 +2,12 @@
 
 import Link, { useLinkStatus } from "next/link";
 import { useState } from "react";
-import dayjs from "dayjs";
 import type { BillSummary, VoteType } from "@/types";
 import { getTopicForPolicyArea } from "@/lib/topic-mapping";
 import { formatBillNumber } from "@/lib/bill-grouping";
 import { billHref } from "@/lib/bills/url";
 import { pickBillHeadline } from "@/lib/bill-headline";
+import { formatJourneyDate } from "@/lib/bill-helpers";
 import { voteChipStyle } from "./bill-card";
 
 // Swaps the chevron for a spinner while this specific sub-row's Link is
@@ -212,7 +212,7 @@ export function BillGroupCard({
               </span>
             )}
             <span className="text-muted-foreground text-xs">
-              {dayjs(displayDate).format("MMM D, YYYY")}
+              {displayDate ? formatJourneyDate(displayDate, "long") : null}
             </span>
           </div>
         </div>

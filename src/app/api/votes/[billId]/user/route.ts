@@ -29,7 +29,10 @@ export async function GET(
       }),
       prisma.billTextVersion.findFirst({
         where: { billId: id },
-        orderBy: { versionDate: "desc" },
+        // Match the write side's deterministic ordering (votes/route.ts)
+        // so both ends agree on "latest" and the isStale banner is stable
+        // across same-day versions that share a versionDate.
+        orderBy: [{ versionDate: "desc" }, { id: "desc" }],
         select: {
           id: true,
           versionCode: true,

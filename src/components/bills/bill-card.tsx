@@ -1,8 +1,8 @@
 "use client";
 
 import Link, { useLinkStatus } from "next/link";
-import dayjs from "dayjs";
 import type { BillSummary, MomentumTier, DeathReason, VoteType } from "@/types";
+import { formatJourneyDate } from "@/lib/bill-helpers";
 import { getTopicForPolicyArea } from "@/lib/topic-mapping";
 import { billHref } from "@/lib/bills/url";
 import { formatBillNumber } from "@/lib/bill-grouping";
@@ -290,7 +290,7 @@ export function BillCard({
               </span>
             )}
             <span className="text-muted-foreground text-xs">
-              {dayjs(displayDate).format("MMM D, YYYY")}
+              {displayDate ? formatJourneyDate(displayDate, "long") : null}
             </span>
             {treatment.silenceNote && (
               <span className="text-muted-foreground/70 text-xs italic">

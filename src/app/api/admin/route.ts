@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { fetchBillsFunction } from "@/scripts/fetch-bills";
 import { fetchRepresentativesFunction } from "@/scripts/fetch-representatives";
 import { fetchVotesFunction } from "@/scripts/fetch-votes";
 import { fetchBillTextFunction } from "@/scripts/fetch-bill-text";
 import { fetchBillActionsFunction } from "@/scripts/fetch-bill-actions";
 import { generateChangeSummariesFunction } from "@/scripts/generate-change-summaries";
+import { timingSafeEqualStr } from "@/lib/timing-safe-equal";
 
 function checkAdminAuth(request: NextRequest): boolean {
   const expected = process.env.ADMIN_API_KEY;
   if (!expected) return false;
   const token = request.headers.get("x-api-key");
-  return token === expected;
+  return timingSafeEqualStr(token, expected);
 }
 
 export async function POST(request: NextRequest) {
@@ -46,7 +48,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ message: "Votes fetched successfully." });
 
       case "fetch-bill-text":
-        await fetchBillTextFunction(billId);
+        // Borrow the long-lived pooled client; the standalone-client path is
+        // reserved for the CLI entrypoint.
+        await fetchBillTextFunction(billId, undefined, prisma);
         return NextResponse.json({
           message: "Bill text fetched successfully.",
         });

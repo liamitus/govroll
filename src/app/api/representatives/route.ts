@@ -5,6 +5,16 @@ import {
   summarizeChamberPassage,
   type ChamberPassage,
 } from "@/lib/passage-summary";
+import {
+  assertIpRateLimit,
+  getClientIp,
+  RateLimitError,
+} from "@/lib/rate-limit";
+
+/** Per-IP ceiling on address lookups per hour. Matches the by-address route —
+ *  each distinct address is a fresh billed geocode (repeats hit the in-process
+ *  cache), so this bounds a single source looping addresses. */
+const MAX_REP_LOOKUPS_PER_IP_PER_HOUR = 60;
 
 export async function POST(request: NextRequest) {
   let body;
@@ -23,6 +33,18 @@ export async function POST(request: NextRequest) {
       { error: "Address and billId are required" },
       { status: 400 },
     );
+  }
+
+  try {
+    assertIpRateLimit(getClientIp(request), MAX_REP_LOOKUPS_PER_IP_PER_HOUR);
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      return NextResponse.json(err.toJSON(), {
+        status: 429,
+        headers: { "Retry-After": String(err.retryAfterSeconds) },
+      });
+    }
+    throw err;
   }
 
   try {

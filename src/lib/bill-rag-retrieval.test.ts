@@ -73,20 +73,34 @@ describe("isRagPathEnabled", () => {
 });
 
 describe("billHasEmbeddings", () => {
-  it("returns true when at least one chunk exists for the bill", async () => {
+  it("returns true when the bill's completed-embeddings marker is set", async () => {
     const fakePrisma = {
-      billEmbeddingChunk: {
-        findFirst: vi.fn().mockResolvedValue({ id: 42 }),
+      bill: {
+        findUnique: vi.fn().mockResolvedValue({ embeddingsTextVersionId: 991 }),
       },
     } as unknown as Parameters<typeof billHasEmbeddings>[0];
     expect(await billHasEmbeddings(fakePrisma, 18630)).toBe(true);
   });
 
-  it("returns false when no chunks exist for the bill", async () => {
+  it("returns false when the completion marker is null (never embedded or mid-rewrite)", async () => {
+    // The marker is set only after every chunk for the version lands, so a
+    // bill whose (re-)embed is still in flight reads as "no embeddings" —
+    // the chat path uses the Haiku fallback rather than running RAG over a
+    // half-written index. Probing for "any chunk exists" would flip true
+    // on the first inserted row mid-rewrite.
     const fakePrisma = {
-      billEmbeddingChunk: {
-        findFirst: vi.fn().mockResolvedValue(null),
+      bill: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ embeddingsTextVersionId: null }),
       },
+    } as unknown as Parameters<typeof billHasEmbeddings>[0];
+    expect(await billHasEmbeddings(fakePrisma, 18630)).toBe(false);
+  });
+
+  it("returns false when the bill row is missing", async () => {
+    const fakePrisma = {
+      bill: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as Parameters<typeof billHasEmbeddings>[0];
     expect(await billHasEmbeddings(fakePrisma, 18630)).toBe(false);
   });
@@ -166,6 +180,26 @@ describe("retrieveRelevantSections", () => {
     expect(args[2]).toBe(18630);
     expect(args[3]).toBe(VOYAGE_EMBED_MODEL);
     expect(args[4]).toBe(DEFAULT_RAG_TOP_K);
+  });
+
+  it("scopes the cosine search to the bill's completed text version", async () => {
+    // Re-embedding at a new substantive version leaves the prior version's
+    // chunks in the table until embedBill's post-completion cleanup runs.
+    // Retrieval must filter on Bill.embeddingsTextVersionId so stale-version
+    // chunks can't compete in cosine ranking (quoting deleted provisions,
+    // halving effective top-K with near-duplicates).
+    mockVoyage();
+    const sqlSpy = vi.fn().mockResolvedValue([]);
+    const fakePrisma = {
+      $queryRawUnsafe: sqlSpy,
+    } as unknown as Parameters<typeof retrieveRelevantSections>[0];
+
+    await retrieveRelevantSections(fakePrisma, 18630, "question");
+
+    const sql = sqlSpy.mock.calls[0][0] as string;
+    expect(sql).toMatch(
+      /"textVersionId"\s*=\s*\(\s*SELECT\s+"embeddingsTextVersionId"\s+FROM\s+"Bill"\s+WHERE\s+id\s*=\s*\$2\s*\)/i,
+    );
   });
 
   it("respects an explicit top-K override", async () => {

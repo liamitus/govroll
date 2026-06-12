@@ -10,8 +10,10 @@ import type { Chamber, Signal } from "./types";
  *   < 8h   → `in_session` (gaveled in today, between votes)
  *   else   → null         (waterfall falls through to calendar)
  *
- * Chamber filtering: `RepresentativeVote.chamber` is stored as the raw
- * congress.gov value ("Senate" / "House"), case-insensitive match below.
+ * Chamber filtering: `RepresentativeVote.chamber` is normalized to
+ * lowercase ("house" / "senate") at write time (fetch-votes.ts), so we
+ * match it exactly — letting the (chamber, "votedAt" DESC) index serve
+ * this every-10-min query instead of a full scan under ILIKE.
  *
  * This runs against our own DB and is the only signal guaranteed to work
  * — scrapers can 403, calendars go stale. It also has the desirable
@@ -27,11 +29,10 @@ export async function getVoteRecencySignal(
   chamber: Chamber,
   now: Date = new Date(),
 ): Promise<Signal | null> {
-  const chamberPattern = chamber === "house" ? "House" : "Senate";
   const rows = await prisma.$queryRaw<{ votedAt: Date | null }[]>`
     SELECT "votedAt"
     FROM "RepresentativeVote"
-    WHERE "chamber" ILIKE ${chamberPattern}
+    WHERE "chamber" = ${chamber}
       AND "votedAt" IS NOT NULL
     ORDER BY "votedAt" DESC
     LIMIT 1

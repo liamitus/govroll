@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { unstable_cache } from "next/cache";
 import { LiveFeed } from "./live-feed";
 import { DonorGrid } from "./donor-grid";
 import Link from "next/link";
@@ -9,8 +10,14 @@ export const metadata = {
     "Govroll is funded by supporters. Meet the people keeping civic transparency alive.",
 };
 
+// The donor lists tolerate a 5-minute stale window, so they're cached in
+// the Data Cache (getMadePossibleData) rather than running all six queries
+// on every request. The route stays dynamic: Vercel's build can't reach
+// Postgres (README "Database migrations"), so a build-time prerender — which
+// a bare `revalidate` triggers on a paramless route — would fail. (This page
+// previously set BOTH force-dynamic and revalidate; force-dynamic always won,
+// so the intended cache never applied.)
 export const dynamic = "force-dynamic";
-export const revalidate = 300; // 5 min cache
 
 /** Deterministic daily shuffle so the order is stable for a day but fair over time. */
 function dailyShuffle<T>(arr: T[]): T[] {
@@ -46,9 +53,73 @@ function twentyFourHoursAgo(): Date {
   return new Date(Date.now() - 24 * 60 * 60 * 1000);
 }
 
-export default async function MadePossibleByPage() {
-  const since = twentyFourHoursAgo();
+const getMadePossibleData = unstable_cache(
+  async () => {
+    const since = twentyFourHoursAgo();
+    return Promise.all([
+      // Live feed — last 24h, max 10
+      prisma.donation.findMany({
+        where: {
+          moderationStatus: "APPROVED",
+          hiddenAt: null,
+          createdAt: { gte: since },
+        },
+        orderBy: { createdAt: "desc" },
+        select: DONOR_SELECT,
+        take: 10,
+      }),
+      // Sustainers — active recurring donors
+      prisma.donation.findMany({
+        where: {
+          moderationStatus: "APPROVED",
+          hiddenAt: null,
+          isRecurring: true,
+          recurringStatus: { in: ["ACTIVE", "GRACE"] },
+          displayMode: { not: "ANONYMOUS" },
+        },
+        select: DONOR_SELECT,
+      }),
+      // Named one-time supporters
+      prisma.donation.findMany({
+        where: {
+          moderationStatus: "APPROVED",
+          hiddenAt: null,
+          isRecurring: false,
+          displayMode: "NAMED",
+        },
+        select: DONOR_SELECT,
+      }),
+      // Tribute donations
+      prisma.donation.findMany({
+        where: {
+          moderationStatus: "APPROVED",
+          hiddenAt: null,
+          displayMode: "TRIBUTE",
+        },
+        select: DONOR_SELECT,
+      }),
+      // Anonymous count
+      prisma.donation.count({
+        where: {
+          moderationStatus: { in: ["APPROVED", "PENDING"] },
+          hiddenAt: null,
+          displayMode: "ANONYMOUS",
+        },
+      }),
+      // Total count
+      prisma.donation.count({
+        where: {
+          moderationStatus: { in: ["APPROVED", "PENDING"] },
+          hiddenAt: null,
+        },
+      }),
+    ]);
+  },
+  ["made-possible-by-data"],
+  { revalidate: 300 },
+);
 
+export default async function MadePossibleByPage() {
   const [
     recentDonors,
     sustainers,
@@ -56,64 +127,7 @@ export default async function MadePossibleByPage() {
     tributes,
     anonCount,
     totalCount,
-  ] = await Promise.all([
-    // Live feed — last 24h, max 10
-    prisma.donation.findMany({
-      where: {
-        moderationStatus: "APPROVED",
-        hiddenAt: null,
-        createdAt: { gte: since },
-      },
-      orderBy: { createdAt: "desc" },
-      select: DONOR_SELECT,
-      take: 10,
-    }),
-    // Sustainers — active recurring donors
-    prisma.donation.findMany({
-      where: {
-        moderationStatus: "APPROVED",
-        hiddenAt: null,
-        isRecurring: true,
-        recurringStatus: { in: ["ACTIVE", "GRACE"] },
-        displayMode: { not: "ANONYMOUS" },
-      },
-      select: DONOR_SELECT,
-    }),
-    // Named one-time supporters
-    prisma.donation.findMany({
-      where: {
-        moderationStatus: "APPROVED",
-        hiddenAt: null,
-        isRecurring: false,
-        displayMode: "NAMED",
-      },
-      select: DONOR_SELECT,
-    }),
-    // Tribute donations
-    prisma.donation.findMany({
-      where: {
-        moderationStatus: "APPROVED",
-        hiddenAt: null,
-        displayMode: "TRIBUTE",
-      },
-      select: DONOR_SELECT,
-    }),
-    // Anonymous count
-    prisma.donation.count({
-      where: {
-        moderationStatus: { in: ["APPROVED", "PENDING"] },
-        hiddenAt: null,
-        displayMode: "ANONYMOUS",
-      },
-    }),
-    // Total count
-    prisma.donation.count({
-      where: {
-        moderationStatus: { in: ["APPROVED", "PENDING"] },
-        hiddenAt: null,
-      },
-    }),
-  ]);
+  ] = await getMadePossibleData();
 
   const shuffledSustainers = dailyShuffle(sustainers);
   const shuffledSupporters = dailyShuffle(supporters);

@@ -415,4 +415,37 @@ describe("GET /api/cron/backfill-bill-actions", () => {
     expect(body.priorityProcessed).toBe(0);
     expect(body.processed).toBe(1);
   });
+
+  it("fails loudly (503) on congress.gov quota exhaustion and leaves the bill re-selectable", async () => {
+    // A 429 used to be laundered into null actions, the bill got stamped
+    // lastActionRefreshAt, and it dropped into a 6h cooldown over a transient
+    // throttle. The run must now 503 and NOT stamp the bill.
+    const bill = await seedBill({
+      billId: "house_bill-42-119",
+      billType: "house_bill",
+      momentumTier: "ACTIVE",
+    });
+
+    server.use(
+      http.get(
+        "https://api.congress.gov/v3/bill/119/hr/42/actions",
+        () =>
+          new HttpResponse(null, {
+            status: 429,
+            headers: { "Retry-After": "3600" },
+          }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("congress_quota_exhausted");
+
+    const after = await getTestPrisma().bill.findUnique({
+      where: { id: bill.id },
+    });
+    expect(after?.lastActionRefreshAt).toBeNull();
+  });
 });

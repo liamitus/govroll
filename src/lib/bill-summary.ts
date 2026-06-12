@@ -3,6 +3,7 @@ import { generateChangeSummary } from "@/lib/ai";
 import { recordSpend } from "@/lib/budget";
 import { assertAiEnabled, AiDisabledError } from "@/lib/ai-gate";
 import { reportError } from "@/lib/error-reporting";
+import { RateLimitError } from "@/lib/rate-limit";
 
 const BASELINE_SUMMARY = "Initial version of the bill as introduced.";
 const TEXT_UNAVAILABLE =
@@ -12,6 +13,18 @@ const TEXT_UNAVAILABLE =
 // (e.g. the Fluid instance crashed mid-generation) and let the next caller
 // retry instead of showing the user a perpetual spinner.
 const STALE_PENDING_MS = 2 * 60_000;
+
+/**
+ * Fleet-wide ceiling on how many on-demand summary generations the public
+ * endpoint may kick off per UTC day. This is the real safety net against an
+ * unauthenticated script draining the ~12k-bill backlog (~$0.10/version): the
+ * per-IP limit only slows a single source, but a SummaryJob row is the durable,
+ * cross-instance record of "the endpoint started a generation today". The cron
+ * writes `changeSummary` directly without a SummaryJob, so this count reflects
+ * on-demand triggers only. Sized for the current ~7-user scale (≈$20/day max);
+ * raise it as real reader demand grows.
+ */
+const ONDEMAND_SUMMARY_DAILY_CAP = 200;
 
 export type SummaryState =
   | {
@@ -40,6 +53,16 @@ export type SummaryState =
       versionDate: string;
     }
   | {
+      // A substantive version exists but no summary has been generated and no
+      // job is actively running. Returned by the read-only path (`GET` /
+      // `readSummaryState`) so a crawler never kicks off paid generation — a
+      // real reader's `POST` is what transitions this to "pending".
+      status: "not_generated";
+      versionCode: string;
+      versionType: string;
+      versionDate: string;
+    }
+  | {
       status: "none";
     };
 
@@ -56,6 +79,77 @@ async function loadLatestSubstantiveVersion(billId: number) {
       fullText: true,
     },
   });
+}
+
+/**
+ * Read the current summary state for a bill **without any side effects** — no
+ * job row, no budget read, no AI call. Used by the `GET` path so crawlers /
+ * link-prefetchers can't trigger paid generation, and by `POST` to decide
+ * whether a request is a cheap poll (`ready`/`pending`/`none`) or the one
+ * request that would actually start a generation (`not_generated`).
+ */
+export async function readSummaryState(billId: number): Promise<SummaryState> {
+  const version = await loadLatestSubstantiveVersion(billId);
+  if (!version) return { status: "none" };
+
+  if (version.changeSummary) {
+    return {
+      status: "ready",
+      summary: version.changeSummary,
+      versionCode: version.versionCode,
+      versionType: version.versionType,
+      versionDate: version.versionDate.toISOString(),
+    };
+  }
+
+  const existing = await prisma.summaryJob.findUnique({
+    where: { versionId: version.id },
+  });
+  const isStalePending =
+    existing?.status === "pending" &&
+    Date.now() - existing.startedAt.getTime() > STALE_PENDING_MS;
+
+  if (existing?.status === "pending" && !isStalePending) {
+    return {
+      status: "pending",
+      versionCode: version.versionCode,
+      versionType: version.versionType,
+      versionDate: version.versionDate.toISOString(),
+      startedAt: existing.startedAt.toISOString(),
+    };
+  }
+
+  // Has a substantive version but no summary and no live job (covers no job,
+  // a stale-pending one, and a prior error). A reader's POST re-triggers via
+  // ensureSummaryJob; a crawler's GET just sees "not generated".
+  return {
+    status: "not_generated",
+    versionCode: version.versionCode,
+    versionType: version.versionType,
+    versionDate: version.versionDate.toISOString(),
+  };
+}
+
+/**
+ * Throw `RateLimitError` once the public endpoint has already started
+ * `ONDEMAND_SUMMARY_DAILY_CAP` generations today. Counts SummaryJob rows by
+ * `startedAt` (set fresh on every trigger, including stale-job retries), so the
+ * cap reflects real spend regardless of which serverless instance served each
+ * request. Like the other helpers in rate-limit.ts this is a soft check —
+ * concurrent triggers can overshoot by the instance width — which is fine as a
+ * budget backstop layered behind the per-IP fast-reject.
+ */
+export async function assertOndemandSummaryDailyCap(): Promise<void> {
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+
+  const count = await prisma.summaryJob.count({
+    where: { startedAt: { gte: todayStart } },
+  });
+
+  if (count >= ONDEMAND_SUMMARY_DAILY_CAP) {
+    throw new RateLimitError("on-demand bill summaries per day", 3600);
+  }
 }
 
 /**

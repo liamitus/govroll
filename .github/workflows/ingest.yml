@@ -21,8 +21,10 @@ on:
     # is usually within a few minutes of the scheduled time but can be
     # delayed under heavy GitHub load. Don't design anything that needs
     # sub-15-min precision here — add overlap into the endpoint window.
+    # compute-congress-status moved to its own workflow (congress-status.yml):
+    # its */10 schedule collided with the crons below at :00/:20/:30/:50 and
+    # GitHub coalesced the overlapping triggers, starving the status refresh.
     - cron: "*/30 * * * *" # fetch-votes                (every 30m)
-    - cron: "*/10 * * * *" # compute-congress-status    (every 10m)
     - cron: "15 * * * *" # compute-momentum           (hourly)
     - cron: "45 * * * *" # backfill-bill-text         (hourly, small batch)
     # Was every 2h, bumped to every 30m. This cron now reconciles
@@ -37,6 +39,7 @@ on:
     - cron: "0 * * * *" # evaluate-budget            (hourly, on the hour)
     - cron: "0 10 * * 1" # fetch-representatives      (weekly, Mon 10:00 UTC)
     - cron: "20,50 * * * *" # embed-large-bills          (every 30m, offset)
+    - cron: "30 3 * * *" # cleanup-expired-cache      (daily 03:30 UTC)
 
   workflow_dispatch:
     inputs:
@@ -46,7 +49,6 @@ on:
         type: choice
         options:
           - fetch-votes
-          - compute-congress-status
           - compute-momentum
           - backfill-bill-text
           - backfill-bill-actions
@@ -56,24 +58,35 @@ on:
           - evaluate-budget
           - fetch-representatives
           - embed-large-bills
+          - cleanup-expired-cache
+      since:
+        description: "fetch-votes only — deep-backfill start date YYYY-MM-DD (optional)"
+        required: false
+        type: string
 
 # The whole workflow doesn't need write scopes — we only call an
 # authenticated HTTP endpoint on govroll.com.
 permissions:
   contents: read
 
-# If a scheduled run is still in flight when the next one fires (rare,
-# most runs are <60s), let them overlap rather than queue. The endpoints
-# are idempotent.
-concurrency:
-  group: ingest-${{ github.event.schedule || github.event.inputs.endpoint || github.run_id }}
-  cancel-in-progress: false
+# Concurrency is keyed PER-JOB (on the `ping` job below), not at the workflow
+# level. A workflow-level group can only read github.event.schedule (scheduled
+# runs) or github.event.inputs.endpoint (manual runs) — two DIFFERENT keys for
+# the same endpoint — so a workflow_dispatch could overlap a scheduled run of
+# the same endpoint. Resolving the endpoint in its own job and keying the ping
+# job's concurrency on that single resolved value closes the gap, with one
+# source of truth for the schedule→endpoint mapping. Overlap is still allowed
+# across DIFFERENT endpoints (each gets its own group); same-endpoint runs
+# queue rather than overlap (the endpoints are idempotent, so this is just
+# belt-and-suspenders against cursor regressions).
 
 jobs:
-  ping:
-    name: Invoke ingest endpoint
+  resolve:
+    name: Resolve endpoint
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 1
+    outputs:
+      endpoint: ${{ steps.route.outputs.endpoint }}
     steps:
       - name: Resolve endpoint
         id: route
@@ -88,7 +101,6 @@ jobs:
           fi
           case "${SCHEDULE}" in
             "*/30 * * * *")  echo "endpoint=fetch-votes"               >> "$GITHUB_OUTPUT" ;;
-            "*/10 * * * *")  echo "endpoint=compute-congress-status"   >> "$GITHUB_OUTPUT" ;;
             "15 * * * *")    echo "endpoint=compute-momentum"          >> "$GITHUB_OUTPUT" ;;
             "45 * * * *")    echo "endpoint=backfill-bill-text"        >> "$GITHUB_OUTPUT" ;;
             "5,35 * * * *")  echo "endpoint=backfill-bill-actions"     >> "$GITHUB_OUTPUT" ;;
@@ -98,16 +110,29 @@ jobs:
             "0 * * * *")     echo "endpoint=evaluate-budget"           >> "$GITHUB_OUTPUT" ;;
             "0 10 * * 1")    echo "endpoint=fetch-representatives"     >> "$GITHUB_OUTPUT" ;;
             "20,50 * * * *") echo "endpoint=embed-large-bills"         >> "$GITHUB_OUTPUT" ;;
+            "30 3 * * *")    echo "endpoint=cleanup-expired-cache"     >> "$GITHUB_OUTPUT" ;;
             *)
               echo "::error::No endpoint mapped for schedule '${SCHEDULE}'"
               exit 1
               ;;
           esac
 
+  ping:
+    name: Invoke ingest endpoint
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Key BOTH scheduled and manual runs on the resolved endpoint so a
+    # workflow_dispatch can't overlap a scheduled run of the same endpoint.
+    concurrency:
+      group: ingest-${{ needs.resolve.outputs.endpoint }}
+      cancel-in-progress: false
+    steps:
       - name: Validate configuration
         env:
           BASE_URL: ${{ vars.GOVROLL_BASE_URL }}
           SECRET: ${{ secrets.CRON_SECRET }}
+          ENDPOINT: ${{ needs.resolve.outputs.endpoint }}
         run: |
           if [ -z "${BASE_URL:-}" ]; then
             echo "::error::Repo variable GOVROLL_BASE_URL is not set."
@@ -117,15 +142,32 @@ jobs:
             echo "::error::Repo secret CRON_SECRET is not set."
             exit 1
           fi
+          # An empty endpoint means the resolve job's output didn't reach this
+          # job (e.g. a steps.route vs needs.resolve mix-up). Fail with a clear
+          # message instead of curling /api/cron/ and getting an opaque 404.
+          if [ -z "${ENDPOINT:-}" ]; then
+            echo "::error::Endpoint did not resolve (resolve job output empty)."
+            exit 1
+          fi
 
-      - name: Invoke ${{ steps.route.outputs.endpoint }}
+      - name: Invoke ${{ needs.resolve.outputs.endpoint }}
         env:
           BASE_URL: ${{ vars.GOVROLL_BASE_URL }}
           SECRET: ${{ secrets.CRON_SECRET }}
-          ENDPOINT: ${{ steps.route.outputs.endpoint }}
+          ENDPOINT: ${{ needs.resolve.outputs.endpoint }}
+          SINCE: ${{ github.event.inputs.since }}
         run: |
           set -euo pipefail
           URL="${BASE_URL%/}/api/cron/${ENDPOINT}"
+          # Optional deep-backfill start for fetch-votes. The endpoint
+          # validates the format and 400s on anything but YYYY-MM-DD.
+          if [ -n "${SINCE:-}" ]; then
+            if [ "${ENDPOINT}" = "fetch-votes" ]; then
+              URL="${URL}?since=${SINCE}"
+            else
+              echo "::warning::'since' only applies to fetch-votes; ignoring for ${ENDPOINT}"
+            fi
+          fi
           echo "Calling $URL"
 
           # --fail-with-body so non-2xx responses still print the body,

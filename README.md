@@ -141,18 +141,19 @@ fresher data (recorded floor votes in ~30 minutes, not ~24 hours), the
 data pipeline is scheduled by **GitHub Actions** (`.github/workflows/ingest.yml`),
 which calls idempotent, CRON_SECRET-gated endpoints on govroll.com.
 
-| Endpoint                            | Cadence              | Purpose                                    |
-| ----------------------------------- | -------------------- | ------------------------------------------ |
-| `/api/cron/compute-congress-status` | every 10 min         | In-session / recess / break detector       |
-| `/api/cron/fetch-votes`             | every 30 min         | Recorded roll-call votes (last 7d window)  |
-| `/api/cron/compute-momentum`        | hourly               | Recomputes alive/dormant/dead signal       |
-| `/api/cron/backfill-bill-text`      | hourly               | Fills missing bill text (small batch)      |
-| `/api/cron/backfill-bill-actions`   | every 2h             | Status / action history for active bills   |
-| `/api/cron/backfill-cosponsors`     | every 2h             | Individual cosponsor rows                  |
-| `/api/cron/fetch-bills`             | every 3h             | New bills since our latest                 |
-| `/api/cron/refresh-bill-metadata`   | every 6h             | Sponsor / policyArea / CRS summary refresh |
-| `/api/cron/evaluate-budget`         | daily 00:00 UTC      | Recomputes AI budget gate                  |
-| `/api/cron/fetch-representatives`   | weekly Mon 10:00 UTC | Member roster refresh                      |
+| Endpoint                            | Cadence              | Purpose                                        |
+| ----------------------------------- | -------------------- | ---------------------------------------------- |
+| `/api/cron/compute-congress-status` | every 10 min         | In-session / recess / break detector           |
+| `/api/cron/fetch-votes`             | every 30 min         | Recorded roll-call votes (cursor + 2d overlap) |
+| `/api/cron/compute-momentum`        | hourly               | Recomputes alive/dormant/dead signal           |
+| `/api/cron/backfill-bill-text`      | hourly               | Fills missing bill text (small batch)          |
+| `/api/cron/backfill-bill-actions`   | every 2h             | Status / action history for active bills       |
+| `/api/cron/backfill-cosponsors`     | every 2h             | Individual cosponsor rows                      |
+| `/api/cron/fetch-bills`             | every 3h             | New bills since our latest                     |
+| `/api/cron/refresh-bill-metadata`   | every 6h             | Sponsor / policyArea / CRS summary refresh     |
+| `/api/cron/evaluate-budget`         | daily 00:00 UTC      | Recomputes AI budget gate                      |
+| `/api/cron/cleanup-expired-cache`   | daily 03:30 UTC      | Sweeps expired AiResponseCache rows            |
+| `/api/cron/fetch-representatives`   | weekly Mon 10:00 UTC | Member roster refresh                          |
 
 The AI precompute crons (`generate-change-summaries`, `generate-bill-explainers`,
 `generate-section-captions`) exist as endpoints but are not on any schedule —
@@ -166,6 +167,11 @@ features now runs lazily on user action.
 
 **Manual trigger:** `Actions → ingest → Run workflow → pick endpoint`. Useful
 for one-off backfills or forcing fresh data after a deploy.
+
+`fetch-votes` also takes an optional `since` (YYYY-MM-DD) input for a deep
+backfill — it walks day-by-day from that date and advances its `IngestCursor`
+per day, so a backfill larger than one run's budget resumes on the next run
+(the regular 30-min cron continues it until it catches up to the present).
 
 **Why not Vercel cron?** Hobby allows 100 crons but only at daily minimum
 interval (`0 */4 * * *` fails to deploy). GH Actions cron is free, supports

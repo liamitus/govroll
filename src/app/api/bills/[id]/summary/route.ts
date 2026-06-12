@@ -3,7 +3,14 @@ import { after } from "next/server";
 import {
   ensureSummaryJob,
   generateSummaryForVersion,
+  readSummaryState,
+  assertOndemandSummaryDailyCap,
 } from "@/lib/bill-summary";
+import {
+  assertIpRateLimit,
+  getClientIp,
+  RateLimitError,
+} from "@/lib/rate-limit";
 
 /**
  * POST /api/bills/[id]/summary
@@ -15,29 +22,68 @@ import {
  * background. Subsequent calls are safe, cheap status-polls.
  *
  * Response shapes:
- *   { status: "ready",    summary, versionCode, versionType, versionDate }
- *   { status: "pending",  versionCode, versionType, versionDate, startedAt }
- *   { status: "disabled", reason: "budget" | "manual" }
- *   { status: "error",    error, versionCode, versionType, versionDate }
+ *   { status: "ready",         summary, versionCode, versionType, versionDate }
+ *   { status: "pending",       versionCode, versionType, versionDate, startedAt }
+ *   { status: "not_generated", versionCode, versionType, versionDate }
+ *   { status: "disabled",      reason: "budget" | "manual" }
+ *   { status: "error",         error, versionCode, versionType, versionDate }
  *   { status: "none" }  — bill has no substantive version
  *
- * Public: no auth required. The work is budget-gated at the AI layer, and
- * job dedup means repeated polls don't cost anything after the first.
+ * Public: no auth required so the bill-reading UX works for anyone. Spend is
+ * bounded three ways: the per-version SummaryJob dedup, a per-IP throttle plus
+ * a fleet-wide daily cap on *new* generations (a paid Haiku call costs ~$0.10
+ * per version and the backlog is ~12k bills), and the budget gate at the AI
+ * layer. Only the `not_generated → trigger` path spends money; polls of an
+ * already-ready/pending summary skip the throttles entirely.
  */
+
+/** Per-IP ceiling on *new* generations per hour. Polls don't count — only the
+ *  request that actually starts a generation does — so this is generous for a
+ *  reader opening many backlog bills yet tight against a single abuser (≈30
+ *  generations/hr ≈ $3/hr). */
+const MAX_SUMMARY_TRIGGERS_PER_IP_PER_HOUR = 30;
 
 export const maxDuration = 60;
 
+function invalidBillId() {
+  return NextResponse.json(
+    { status: "error", error: "invalid bill id" },
+    { status: 400 },
+  );
+}
+
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
   const billId = parseInt(id, 10);
-  if (Number.isNaN(billId)) {
-    return NextResponse.json(
-      { status: "error", error: "invalid bill id" },
-      { status: 400 },
+  if (Number.isNaN(billId)) return invalidBillId();
+
+  // Read current state with no side effects so a poll never spends money and
+  // we can tell a poll apart from the one request that would start generation.
+  const state = await readSummaryState(billId);
+
+  // ready / pending / none are cheap reads — return them untouched.
+  if (state.status !== "not_generated") {
+    return NextResponse.json(state);
+  }
+
+  // This request would start a paid generation: gate it.
+  try {
+    assertIpRateLimit(
+      getClientIp(request),
+      MAX_SUMMARY_TRIGGERS_PER_IP_PER_HOUR,
     );
+    await assertOndemandSummaryDailyCap();
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      return NextResponse.json(err.toJSON(), {
+        status: 429,
+        headers: { "Retry-After": String(err.retryAfterSeconds) },
+      });
+    }
+    throw err;
   }
 
   const outcome = await ensureSummaryJob(billId);
@@ -52,12 +98,17 @@ export async function POST(
   return NextResponse.json(outcome.state);
 }
 
-// GET mirrors POST — some clients (browser prefetch, link sharing) will GET
-// the URL. Behaving identically means we don't show a stale summary just
-// because the caller chose a different verb.
+// GET is read-only. Browser prefetch, link unfurlers, and crawlers will GET
+// this URL; they must never trigger a paid generation, so GET only reports the
+// current persisted state. The bill page's client polls with POST to generate.
 export async function GET(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  return POST(request, context);
+  const { id } = await context.params;
+  const billId = parseInt(id, 10);
+  if (Number.isNaN(billId)) return invalidBillId();
+
+  const state = await readSummaryState(billId);
+  return NextResponse.json(state);
 }

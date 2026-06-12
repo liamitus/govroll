@@ -1,13 +1,42 @@
 import "dotenv/config";
 import {
+  fetchGovTrackVotes,
   fetchGovTrackVoteVoters,
   fetchGovTrackBill,
   delay,
 } from "../lib/govtrack";
 import { createStandalonePrisma } from "../lib/prisma-standalone";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
 
 const prisma = createStandalonePrisma();
+
+// Resumable-ingest plumbing. The cursor records the high-water mark of
+// contiguous day-by-day ingestion so an outage longer than OVERLAP_DAYS
+// doesn't silently drop every roll call in the gap (a fixed now-2d lookback
+// did exactly that). Mirrors the fetch-bills cursor pattern.
+const CURSOR_KEY = "fetch-votes";
+// Re-walk at least this many days on every run so a healthy cursor still
+// self-heals a missed cron tick; the overlap is free thanks to skipDuplicates.
+const OVERLAP_DAYS = 2;
+// A single day's roll-call count is tiny (tens at most), so one /vote page
+// covers it and the offset never approaches GovTrack's 1000 cap. 600 is the
+// documented page-size ceiling.
+const ROLL_CALLS_PAGE_SIZE = 600;
+
+export interface FetchVotesOptions {
+  /**
+   * Explicit start date (deep backfill). When set, overrides the cursor and
+   * walks forward from here. The per-day cursor advance still applies, so a
+   * backfill that exceeds the deadline resumes on the next run.
+   */
+  since?: Date;
+  /**
+   * Soft wall-clock budget. The day loop breaks cleanly between days once
+   * exceeded, leaving the cursor at the last fully-ingested day so the next
+   * invocation resumes there instead of being hard-killed mid-write.
+   */
+  deadlineMs?: number;
+}
 
 interface GovTrackBillData {
   bill_type: string;
@@ -32,46 +61,132 @@ type VoteRecord = {
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-export async function fetchVotesFunction(since?: Date) {
-  try {
-    // Use explicit parameter, then env var, then default to 2 years ago
-    const startDate = since
-      ? dayjs(since)
-      : process.env.VOTES_LAST_FETCHED
-        ? dayjs(process.env.VOTES_LAST_FETCHED)
-        : dayjs().subtract(2, "year");
+export async function fetchVotesFunction(opts: FetchVotesOptions = {}) {
+  const started = Date.now();
+  const deadlineMs = opts.deadlineMs ?? Number.POSITIVE_INFINITY;
 
-    const endDate = dayjs();
-    let currentDate = startDate;
+  try {
+    const now = dayjs();
+    const startDate = await resolveStartDate(opts.since, now);
+    const endDate = now;
+    let currentDate: Dayjs = startDate;
     const billCache = new Map<number, GovTrackBillData>();
 
     while (currentDate.isBefore(endDate)) {
+      // Break between days (never mid-write) once the budget is spent. The
+      // cursor is already at the last completed day, so the next run resumes.
+      if (Date.now() - started > deadlineMs) {
+        console.log(
+          `[fetch-votes] deadline reached at ${currentDate.format("YYYY-MM-DD")}; resuming next run`,
+        );
+        break;
+      }
+
       const nextDate = currentDate.add(1, "day");
-      const voteVoters = await fetchGovTrackVoteVoters({
-        created__gte: currentDate.format("YYYY-MM-DD"),
+      const dayLabel = currentDate.format("YYYY-MM-DD");
+
+      // Enumerate the day's roll calls, then pull each one's voters in its
+      // own query. We can't just page /vote_voter by date: GovTrack rejects
+      // offsets > 1000 ("Offset > 1000 is not permitted", HTTP 400), and a
+      // busy day stacks several roll calls (a House roll call alone is ~435
+      // voter rows), so a date-windowed walk marches past the cap and 400s —
+      // which, because the cursor only advances after a day's writes, would
+      // wedge the cron on that day forever. A single roll call is always
+      // under the cap, and all its voters share one `created` second, so a
+      // [created, created+1s) window isolates exactly that roll call.
+      const rollCalls = await fetchGovTrackVotes({
+        created__gte: dayLabel,
         created__lt: nextDate.format("YYYY-MM-DD"),
-        limit: 1000,
-        order_by: "-created",
+        order_by: "created",
+        limit: ROLL_CALLS_PAGE_SIZE,
       });
 
+      // Distinct start seconds — two roll calls in the same second (rare) get
+      // one window, so we never fetch the same voters twice.
+      const rollCallStarts = [
+        ...new Set(
+          (rollCalls as any[])
+            .map((rc) => rc?.created)
+            .filter((c: unknown): c is string => typeof c === "string"),
+        ),
+      ];
+
+      const voteVoters: any[] = [];
+      let abandonedDay = false;
+      for (const startedAt of rollCallStarts) {
+        // Budget can run out mid-day on a deep backfill. Drop this day's
+        // partial work and stop without advancing the cursor, so the next run
+        // re-walks the whole day (idempotent) rather than skipping the roll
+        // calls we hadn't fetched yet.
+        if (Date.now() - started > deadlineMs) {
+          console.log(
+            `[fetch-votes] deadline reached mid-day at ${dayLabel}; redoing it next run`,
+          );
+          abandonedDay = true;
+          break;
+        }
+        const voters = await fetchGovTrackVoteVoters({
+          created__gte: startedAt,
+          created__lt: dayjs(startedAt)
+            .add(1, "second")
+            .format("YYYY-MM-DDTHH:mm:ss"),
+        });
+        voteVoters.push(...(voters as any[]));
+        await delay(250);
+      }
+      if (abandonedDay) break;
+
       console.log(
-        `Fetched ${voteVoters.length} votes from ${currentDate.format("YYYY-MM-DD")}`,
+        `Fetched ${voteVoters.length} votes from ${dayLabel} across ${rollCallStarts.length} roll calls`,
       );
 
       if (voteVoters.length > 0) {
         await processVoteBatch(voteVoters, billCache);
       }
 
+      // Advance the cursor only after the day's writes succeed. If a later
+      // day throws, the cursor stays at the last fully-ingested day rather
+      // than jumping to now and stranding the gap. Errors propagate so the
+      // caller (cron route) surfaces a 500 instead of a false success.
+      await prisma.ingestCursor.upsert({
+        where: { key: CURSOR_KEY },
+        update: { cursor: nextDate.toDate() },
+        create: { key: CURSOR_KEY, cursor: nextDate.toDate() },
+      });
+
       await delay(500);
       currentDate = nextDate;
     }
 
     console.log("Votes fetched and stored successfully.");
-  } catch (error: any) {
-    console.error("Error fetching votes:", error.message);
   } finally {
     await prisma.$disconnect();
   }
+}
+
+/**
+ * Where to start the day-by-day walk.
+ *
+ *   - Explicit `since` (manual/admin deep backfill) wins outright.
+ *   - Otherwise walk from min(saved cursor, now - OVERLAP_DAYS): a healthy
+ *     cursor still re-walks the overlap window (self-heal), while a cursor
+ *     stalled by an outage is honored so the whole gap is recovered.
+ *   - No cursor yet (first run): just the overlap window.
+ */
+async function resolveStartDate(
+  since: Date | undefined,
+  now: Dayjs,
+): Promise<Dayjs> {
+  if (since) return dayjs(since);
+
+  const overlapStart = now.subtract(OVERLAP_DAYS, "day");
+  const cursorRow = await prisma.ingestCursor.findUnique({
+    where: { key: CURSOR_KEY },
+  });
+  if (cursorRow && dayjs(cursorRow.cursor).isBefore(overlapStart)) {
+    return dayjs(cursorRow.cursor);
+  }
+  return overlapStart;
 }
 
 /**
@@ -161,6 +276,7 @@ async function processVoteBatch(
       currentStatusDate: Date;
       introducedDate: Date;
       link: string;
+      congressNumber: number;
     }
   >();
   for (const govtrackId of uniqueGovtrackIds) {
@@ -178,6 +294,12 @@ async function processVoteBatch(
       currentStatusDate: new Date(b.current_status_date),
       introducedDate: new Date(b.introduced_date),
       link: b.link,
+      // The congress is in hand here (GovTrack returns it on the bill). Set
+      // it so vote-created bills aren't exempted from CONGRESS_ENDED death in
+      // momentum.ts (its prior-congress override requires congressNumber !==
+      // null) and don't sort to the bottom of feeds (bills.ts orders
+      // congressNumber desc nulls last).
+      congressNumber: b.congress,
     });
   }
   if (billPayloadByCanonicalId.size === 0) return;
@@ -215,7 +337,9 @@ async function processVoteBatch(
       billId: billRowId,
       vote: r.voteValue,
       rollCallNumber: r.rollCallNumber,
-      chamber: r.chamber,
+      // Normalize casing at write time so the every-10-min vote-recency
+      // query (vote-recency.ts) can use an exact-match index, not ILIKE.
+      chamber: r.chamber ? r.chamber.toLowerCase() : null,
       votedAt: r.votedAt,
       category: r.category,
     });
@@ -245,5 +369,11 @@ function isUsableBill(data: unknown): data is GovTrackBillData {
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 if (require.main === module) {
-  fetchVotesFunction();
+  // Optional CLI arg: a YYYY-MM-DD start date for a manual deep backfill.
+  const sinceArg = process.argv[2];
+  const since = sinceArg ? new Date(`${sinceArg}T00:00:00Z`) : undefined;
+  fetchVotesFunction({ since }).catch((err) => {
+    console.error("fetch-votes failed:", err);
+    process.exitCode = 1;
+  });
 }

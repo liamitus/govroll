@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import {
   resolveOverall,
   effectiveStatus,
+  freshness,
   labelFor,
   chamberHintFor,
   type Resolved,
@@ -91,7 +92,7 @@ export function CongressStatus() {
           aria-live="polite"
           className="inline-flex items-center gap-1.5 text-white/80 group-hover:text-white"
         >
-          <StatusDot status={resolved.status} />
+          <StatusDot status={resolved.status} stale={resolved.stale} />
           <span className="font-medium">{label}</span>
           {chamberHint && (
             <span className="hidden text-white/50 sm:inline">
@@ -198,9 +199,12 @@ function ChamberRow({
   const statusLabel = labelFor(status);
   const detail = payload?.detail;
   const nextLabel = payload?.nextTransitionLabel;
+  // Past the freshness ceiling we still show the last-known status, just dimmed
+  // and tagged "as of Xm ago" — never a blunt "Status unavailable" on real data.
+  const isStale = freshness(payload) === "stale";
 
   return (
-    <li className="flex items-start gap-2">
+    <li className={cn("flex items-start gap-2", isStale && "opacity-65")}>
       {/* Chamber color swatch — ties this row to its bars in the calendar
           below and serves as the grid's legend. */}
       <span
@@ -210,14 +214,22 @@ function ChamberRow({
           chamber === "house" ? "bg-house" : "bg-senate",
         )}
       >
-        {status === "voting" && (
+        {status === "voting" && !isStale && (
           <span className="size-1 animate-ping rounded-full bg-white/90 motion-reduce:hidden" />
         )}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-foreground text-sm font-medium">{label}</span>
-          <span className="text-muted-foreground text-xs">{statusLabel}</span>
+          <span className="text-muted-foreground shrink-0 text-xs">
+            {statusLabel}
+            {isStale && payload?.lastCheckedAt && (
+              <span className="text-muted-foreground/70">
+                {" "}
+                · as of {formatAgo(payload.lastCheckedAt)}
+              </span>
+            )}
+          </span>
         </div>
         {detail && (
           <p className="text-muted-foreground truncate text-xs">{detail}</p>
