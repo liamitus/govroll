@@ -2,12 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { recordIncome } from "@/lib/budget";
 import { invalidateAiGateCache } from "@/lib/ai-gate";
 import { moderateName } from "@/lib/moderation/pipeline";
 import { generateCitizenId } from "@/lib/citizen-id";
 import { randomBytes } from "crypto";
 import { reportError } from "@/lib/error-reporting";
+
+/** True for Prisma's unique/primary-key violation. The webhook uses it to
+ *  detect a duplicate Stripe delivery racing on the ProcessedStripeEvent
+ *  claim and ack it instead of 500ing. */
+function isDuplicateKeyError(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002"
+  );
+}
 
 /**
  * POST /api/stripe/webhook
@@ -50,7 +60,10 @@ export async function POST(request: NextRequest) {
         break;
 
       case "invoice.payment_succeeded":
-        await handleInvoiceSucceeded(event.data.object as Stripe.Invoice);
+        await handleInvoiceSucceeded(
+          event.data.object as Stripe.Invoice,
+          event,
+        );
         break;
 
       case "customer.subscription.deleted":
@@ -189,43 +202,51 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     }
   }
 
-  const donation = await prisma.donation.create({
-    data: {
-      stripePaymentId,
-      stripeCustomerId: (session.customer as string) ?? null,
-      userId: safeUserId,
-      amountCents,
-      currency: session.currency ?? "usd",
-      isRecurring,
-      recurringStatus: isRecurring ? "ACTIVE" : null,
-      displayMode,
-      displayName:
-        finalStatus === "APPROVED" ? (nameMod.displayName ?? null) : null,
-      displayNameRaw,
-      tributeName:
-        finalStatus === "APPROVED" ? (tributeMod.displayName ?? null) : null,
-      tributeNameRaw,
-      moderationStatus: finalStatus,
-      moderationNotes: notes,
-      regionCode,
-      email: session.customer_details?.email ?? null,
-    },
-  });
-
-  // Create a link token so the donor can attach this to their account later
-  if (!userId && donation.email) {
-    await prisma.donorLinkToken.create({
+  // Create the Donation row, its optional link token, and the income
+  // increment in ONE transaction. The Donation row is this path's dedupe
+  // key (the findUnique above short-circuits a retry), so it must not exist
+  // without the matching income recorded — otherwise a crash between the two
+  // would have the retry early-return and silently drop the income. Either
+  // all three commit, or the retry redoes all three.
+  await prisma.$transaction(async (tx) => {
+    const donation = await tx.donation.create({
       data: {
-        donationId: donation.id,
-        token: randomBytes(32).toString("hex"),
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        stripePaymentId,
+        stripeCustomerId: (session.customer as string) ?? null,
+        userId: safeUserId,
+        amountCents,
+        currency: session.currency ?? "usd",
+        isRecurring,
+        recurringStatus: isRecurring ? "ACTIVE" : null,
+        displayMode,
+        displayName:
+          finalStatus === "APPROVED" ? (nameMod.displayName ?? null) : null,
+        displayNameRaw,
+        tributeName:
+          finalStatus === "APPROVED" ? (tributeMod.displayName ?? null) : null,
+        tributeNameRaw,
+        moderationStatus: finalStatus,
+        moderationNotes: notes,
+        regionCode,
+        email: session.customer_details?.email ?? null,
       },
     });
-    // TODO: send email with link token (Phase 6)
-  }
 
-  // Record income to the budget ledger
-  await recordIncome(amountCents);
+    // Link token so a logged-out donor can attach this to their account later.
+    if (!userId && donation.email) {
+      await tx.donorLinkToken.create({
+        data: {
+          donationId: donation.id,
+          token: randomBytes(32).toString("hex"),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        },
+      });
+      // TODO: send email with link token (Phase 6)
+    }
+
+    await recordIncome(amountCents, { client: tx });
+  });
+
   invalidateAiGateCache();
 }
 
@@ -235,25 +256,56 @@ function getSubscriptionId(invoice: Stripe.Invoice): string | null {
   return typeof sub === "string" ? sub : sub.id;
 }
 
-async function handleInvoiceSucceeded(invoice: Stripe.Invoice) {
-  // Recurring payment renewal — record income but don't create a new Donation row
-  // (the original subscription Donation is the canonical record)
+async function handleInvoiceSucceeded(
+  invoice: Stripe.Invoice,
+  event: Stripe.Event,
+) {
+  // A brand-new subscription emits BOTH checkout.session.completed and this
+  // invoice.payment_succeeded (billing_reason "subscription_create") for the
+  // same first charge. handleCheckoutCompleted already recorded that income and
+  // created the canonical Donation row, so recording it again here would
+  // double-count the first month. Renewals arrive as "subscription_cycle".
+  if (invoice.billing_reason === "subscription_create") return;
+
+  // Recurring renewal — record income but don't create a new Donation row
+  // (the original subscription Donation is the canonical record).
   const amountCents = invoice.amount_paid ?? 0;
   if (amountCents <= 0) return;
 
-  // Update the recurring donation's status if it was in grace
   const subscriptionId = getSubscriptionId(invoice);
-  if (subscriptionId) {
-    await prisma.donation.updateMany({
-      where: {
-        stripePaymentId: subscriptionId,
-        recurringStatus: { in: ["GRACE", "LAPSED"] },
-      },
-      data: { recurringStatus: "ACTIVE" },
+
+  // Claim the event id and record the income in one transaction. This path
+  // creates no Donation row, so ProcessedStripeEvent is its ONLY dedupe key:
+  // Stripe delivers at-least-once and retries on timeout/5xx, so a redelivered
+  // renewal would otherwise increment income again. A duplicate hits the
+  // primary key, rolls back, and is acked below; a transient failure rolls the
+  // claim back too, so the retry re-applies cleanly.
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.processedStripeEvent.create({
+        data: { id: event.id, type: event.type },
+      });
+
+      // Clear any grace/lapsed flag now that a renewal has succeeded.
+      if (subscriptionId) {
+        await tx.donation.updateMany({
+          where: {
+            stripePaymentId: subscriptionId,
+            recurringStatus: { in: ["GRACE", "LAPSED"] },
+          },
+          data: { recurringStatus: "ACTIVE" },
+        });
+      }
+
+      await recordIncome(amountCents, { client: tx });
     });
+  } catch (err) {
+    // Duplicate delivery — this event id was already processed. Ack it so
+    // Stripe stops retrying instead of surfacing a 500.
+    if (isDuplicateKeyError(err)) return;
+    throw err;
   }
 
-  await recordIncome(amountCents);
   invalidateAiGateCache();
 }
 

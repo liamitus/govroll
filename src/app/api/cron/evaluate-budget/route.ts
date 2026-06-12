@@ -5,12 +5,16 @@ import { invalidateAiGateCache } from "@/lib/ai-gate";
 import { reportError } from "@/lib/error-reporting";
 
 /**
- * Hourly Vercel cron. Recomputes `aiEnabled` for the current period and
- * invalidates the in-process gate cache on this instance (other serverless
- * instances will pick up the change on their own TTL expiry).
+ * Hourly cron, invoked by the GitHub Actions `ingest` workflow (see
+ * `.github/workflows/ingest.yml`). Recomputes `aiEnabled` for the current
+ * period and invalidates the in-process gate cache on this instance (other
+ * serverless instances pick up the change on their own TTL expiry).
  *
- * Protected by `CRON_SECRET` — Vercel cron invocations include the secret in
- * the Authorization header automatically when configured in project settings.
+ * This is the backstop that re-enables AI once fresh income restores the
+ * budget. The fast *disable* path lives in `recordSpend`, which flips the flag
+ * the instant a spend tips the period negative rather than waiting for this.
+ *
+ * Protected by `CRON_SECRET` — the workflow sends it as a Bearer token.
  */
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;
