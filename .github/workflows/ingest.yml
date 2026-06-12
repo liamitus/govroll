@@ -129,6 +129,7 @@ jobs:
         env:
           BASE_URL: ${{ vars.GOVROLL_BASE_URL }}
           SECRET: ${{ secrets.CRON_SECRET }}
+          ENDPOINT: ${{ needs.resolve.outputs.endpoint }}
         run: |
           if [ -z "${BASE_URL:-}" ]; then
             echo "::error::Repo variable GOVROLL_BASE_URL is not set."
@@ -138,12 +139,19 @@ jobs:
             echo "::error::Repo secret CRON_SECRET is not set."
             exit 1
           fi
+          # An empty endpoint means the resolve job's output didn't reach this
+          # job (e.g. a steps.route vs needs.resolve mix-up). Fail with a clear
+          # message instead of curling /api/cron/ and getting an opaque 404.
+          if [ -z "${ENDPOINT:-}" ]; then
+            echo "::error::Endpoint did not resolve (resolve job output empty)."
+            exit 1
+          fi
 
-      - name: Invoke ${{ steps.route.outputs.endpoint }}
+      - name: Invoke ${{ needs.resolve.outputs.endpoint }}
         env:
           BASE_URL: ${{ vars.GOVROLL_BASE_URL }}
           SECRET: ${{ secrets.CRON_SECRET }}
-          ENDPOINT: ${{ steps.route.outputs.endpoint }}
+          ENDPOINT: ${{ needs.resolve.outputs.endpoint }}
           SINCE: ${{ github.event.inputs.since }}
         run: |
           set -euo pipefail
