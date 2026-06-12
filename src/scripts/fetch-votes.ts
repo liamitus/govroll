@@ -337,7 +337,9 @@ async function processVoteBatch(
       billId: billRowId,
       vote: r.voteValue,
       rollCallNumber: r.rollCallNumber,
-      chamber: r.chamber,
+      // Normalize casing at write time so the every-10-min vote-recency
+      // query (vote-recency.ts) can use an exact-match index, not ILIKE.
+      chamber: r.chamber ? r.chamber.toLowerCase() : null,
       votedAt: r.votedAt,
       category: r.category,
     });

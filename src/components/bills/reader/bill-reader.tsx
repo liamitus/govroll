@@ -1,3 +1,6 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
 import { SectionRenderer } from "./section-renderer";
@@ -19,55 +22,139 @@ import type {
 } from "./reader-types";
 
 /**
- * Layout shell for the bill reader. Day 5 scope:
- *   - Sticky breadcrumb at the top tracks the active section path
- *     via `useScrollSpy`.
- *   - Outline rail (desktop only, ≥1024px) shows every section as a
- *     nested list with active-row highlighting + auto-scroll.
- *   - Bill text body in the center, ~72ch measure, Gelasio body.
+ * Client shell for the bill reader.
  *
- * Day 6+ will add: selection-explain popover, mobile bottom action
- * bar + outline sheet, chat drawer reuse.
+ * The RSC page server-renders the *latest* text-bearing version into this
+ * component's initial props, so the full bill text is in the initial HTML
+ * (SEO) and the whole route stays full-route ISR-cacheable — the page no
+ * longer reads `searchParams`, which previously opted it into dynamic
+ * rendering and defeated the documented 1-hour cache.
+ *
+ * Version switching (`?v=`) and the section deep link (`?section=`) are
+ * handled here on the client:
+ *   - The version picker fetches the chosen version's sections from
+ *     `/api/bills/[id]/text-versions/[versionCode]` and swaps them in,
+ *     pushing the URL so it stays shareable and the back button steps
+ *     through versions — all without a server round-trip.
+ *   - A `?v=` present on first load (a shared older-version link) is read
+ *     on mount and fetched, since the server rendered the latest.
+ *   - `?section=` is read client-side by <DeepLinkScroller>.
  */
 export function BillReader({
   bill,
-  version,
+  initialVersion,
   availableVersions,
-  sections,
-  initialSlug,
+  initialSections,
+  latestVersionCode,
 }: {
   bill: ReaderBillMeta;
-  version: ReaderVersionMeta;
+  initialVersion: ReaderVersionMeta;
   availableVersions: ReaderVersionListEntry[];
-  sections: ReaderSection[];
-  initialSlug: string | null;
+  initialSections: ReaderSection[];
+  /** versionCode of the server-rendered latest version — the canonical
+   *  URL carries no `?v=`, every other version does. */
+  latestVersionCode: string;
 }) {
-  const slugsInOrder = sections.map((s) => s.slug);
-  const outlineEntries = sections.map((s) => ({
-    slug: s.slug,
-    heading: s.heading,
-    depth: s.depth,
-    caption: s.caption,
-  }));
-  const breadcrumbSections = sections.map((s) => ({
-    slug: s.slug,
-    heading: s.heading,
-  }));
-  const minutes = readingMinutes(sections);
-  const groups = groupByTopLevel(sections);
-  const autoExpandAll = shouldAutoExpand(sections);
+  const [sections, setSections] = useState(initialSections);
+  const [version, setVersion] = useState(initialVersion);
+  const [loadingVersionCode, setLoadingVersionCode] = useState<string | null>(
+    null,
+  );
+
+  const loadVersion = useCallback(
+    async (versionCode: string, pushHistory: boolean) => {
+      if (versionCode === version.versionCode) return;
+      setLoadingVersionCode(versionCode);
+      try {
+        const res = await fetch(
+          `/api/bills/${bill.id}/text-versions/${encodeURIComponent(versionCode)}`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          version: Omit<ReaderVersionMeta, "versionDate"> & {
+            versionDate: string;
+          };
+          sections: ReaderSection[];
+        };
+        setSections(data.sections);
+        setVersion({
+          ...data.version,
+          versionDate: new Date(data.version.versionDate),
+        });
+
+        if (pushHistory) {
+          // Keep the URL shareable + back/forward-navigable without a
+          // server round-trip. Latest is the canonical URL (no ?v=).
+          const url = new URL(window.location.href);
+          if (versionCode === latestVersionCode) {
+            url.searchParams.delete("v");
+          } else {
+            url.searchParams.set("v", versionCode);
+          }
+          // The deep-link anchor is version-specific; drop it on a switch.
+          url.searchParams.delete("section");
+          window.history.pushState(null, "", url);
+        }
+      } catch {
+        // Leave the current version in place on failure — the reader stays
+        // usable and the picker re-enables in `finally`.
+      } finally {
+        setLoadingVersionCode(null);
+      }
+    },
+    [bill.id, latestVersionCode, version.versionCode],
+  );
+
+  // A `?v=` on first load points at a non-latest version (the server
+  // rendered the latest), so fetch and swap it in once on mount.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("v");
+    if (requested && requested !== latestVersionCode) {
+      void loadVersion(requested, false);
+    }
+    // Mount-only: re-running on loadVersion identity would re-fetch on
+    // every successful swap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Back/forward through version history: re-load whatever `?v=` the URL
+  // now carries (or the latest when it's gone).
+  useEffect(() => {
+    function onPopState() {
+      const requested =
+        new URLSearchParams(window.location.search).get("v") ??
+        latestVersionCode;
+      void loadVersion(requested, false);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [loadVersion, latestVersionCode]);
+
+  const slugsInOrder = useMemo(() => sections.map((s) => s.slug), [sections]);
+  const outlineEntries = useMemo(
+    () =>
+      sections.map((s) => ({
+        slug: s.slug,
+        heading: s.heading,
+        depth: s.depth,
+        caption: s.caption,
+      })),
+    [sections],
+  );
+  const breadcrumbSections = useMemo(
+    () => sections.map((s) => ({ slug: s.slug, heading: s.heading })),
+    [sections],
+  );
+  const minutes = useMemo(() => readingMinutes(sections), [sections]);
+  const groups = useMemo(() => groupByTopLevel(sections), [sections]);
+  const autoExpandAll = useMemo(() => shouldAutoExpand(sections), [sections]);
+
   const congressGovUrl = congressGovBillTextUrl({ billId: bill.billId });
   const govtrackUrl = bill.govtrackUrl;
-  // If a deep link targets a specific section, the group containing
-  // that section must render open on the server — otherwise a brief
-  // flash of collapsed content precedes the client-side expansion.
-  const initialOpenGroupSlug = initialSlug
-    ? findContainingGroupSlug(groups, initialSlug)
-    : null;
 
   return (
     <ScrollSpyProvider slugsInOrder={slugsInOrder}>
-      <DeepLinkScroller initialSlug={initialSlug} />
+      <DeepLinkScroller />
       <SelectionPopover billId={bill.id} sections={breadcrumbSections} />
 
       <ReaderInteractive
@@ -100,6 +187,8 @@ export function BillReader({
                 availableVersions={availableVersions}
                 sectionCount={sections.length}
                 readingMinutes={minutes}
+                onVersionChange={(code) => loadVersion(code, true)}
+                pending={loadingVersionCode !== null}
                 expandCollapseSlot={
                   groups.length > 1 ? <ExpandCollapseAll /> : null
                 }
@@ -117,14 +206,12 @@ export function BillReader({
                       <SectionRenderer key={section.slug} section={section} />
                     ));
                   }
-                  const defaultOpen =
-                    autoExpandAll || initialOpenGroupSlug === group.head.slug;
                   return (
                     <CollapsibleTopSection
                       key={group.head.slug}
                       head={group.head}
                       body={group.body}
-                      defaultOpen={defaultOpen}
+                      defaultOpen={autoExpandAll}
                     />
                   );
                 })}
@@ -259,22 +346,4 @@ function shouldAutoExpand(sections: ReaderSection[]): boolean {
   if (topLevelCount === 0) return true;
   if (topLevelCount <= 12) return true;
   return countWords(sections) <= 3000;
-}
-
-/**
- * Find the slug of the depth-1 group that contains the given section.
- * Used to force a specific group open on the server when the page
- * loads targeting a nested subsection.
- */
-function findContainingGroupSlug(
-  groups: TopLevelGroup[],
-  targetSlug: string,
-): string | null {
-  for (const group of groups) {
-    if (group.head?.slug === targetSlug) return group.head.slug;
-    if (group.body.some((s) => s.slug === targetSlug)) {
-      return group.head?.slug ?? null;
-    }
-  }
-  return null;
 }

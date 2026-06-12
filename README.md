@@ -152,6 +152,7 @@ which calls idempotent, CRON_SECRET-gated endpoints on govroll.com.
 | `/api/cron/fetch-bills`             | every 3h             | New bills since our latest                     |
 | `/api/cron/refresh-bill-metadata`   | every 6h             | Sponsor / policyArea / CRS summary refresh     |
 | `/api/cron/evaluate-budget`         | daily 00:00 UTC      | Recomputes AI budget gate                      |
+| `/api/cron/cleanup-expired-cache`   | daily 03:30 UTC      | Sweeps expired AiResponseCache rows            |
 | `/api/cron/fetch-representatives`   | weekly Mon 10:00 UTC | Member roster refresh                          |
 
 The AI precompute crons (`generate-change-summaries`, `generate-bill-explainers`,

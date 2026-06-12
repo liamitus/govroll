@@ -15,9 +15,9 @@ import { VersionPicker } from "./version-picker";
  * what they're looking at, whether it's law yet, and who wrote it,
  * without clicking away to the detail page.
  *
- * Separated from `<BillReader>` so it can stay a pure server component
- * (no client hooks), while `<VersionPicker>` is the one piece of it
- * that needs client interactivity.
+ * Kept free of client hooks itself — version-switch interactivity is
+ * delegated up to `<BillReader>` via `onVersionChange`, which the
+ * `<VersionPicker>` select calls.
  */
 export function ReaderHeaderMeta({
   bill,
@@ -25,6 +25,8 @@ export function ReaderHeaderMeta({
   availableVersions,
   sectionCount,
   readingMinutes,
+  onVersionChange,
+  pending,
   expandCollapseSlot,
 }: {
   bill: ReaderBillMeta;
@@ -32,6 +34,10 @@ export function ReaderHeaderMeta({
   availableVersions: ReaderVersionListEntry[];
   sectionCount: number;
   readingMinutes: number;
+  /** Switch to another text version (client-side fetch in <BillReader>). */
+  onVersionChange?: (versionCode: string) => void;
+  /** True while a version swap is in flight — disables the picker. */
+  pending?: boolean;
   /**
    * The `<ExpandCollapseAll>` toggle. Rendered by the parent because
    * it's a client component and its availability depends on group
@@ -96,6 +102,8 @@ export function ReaderHeaderMeta({
         detailHref={bill.detailHref}
         current={version}
         versions={availableVersions}
+        onVersionChange={onVersionChange}
+        pending={pending}
       />
     </header>
   );

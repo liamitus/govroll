@@ -8,6 +8,7 @@ import {
   totalMonthlyCostCents,
 } from "@/lib/site-costs";
 import { prisma } from "@/lib/prisma";
+import { unstable_cache } from "next/cache";
 import { DonateForm } from "./donate-form";
 import { BudgetThermometer } from "./budget-thermometer";
 import Link from "next/link";
@@ -18,19 +19,35 @@ export const metadata = {
     "Govroll is supported by citizens, not lobbyists. See exactly what it costs to run each month — and chip in if you want to.",
 };
 
+// The budget + donor counts tolerate a 5-minute stale window, so they're
+// cached in the Data Cache (getSupportData) instead of running on every
+// request. The route stays dynamic: Vercel's build can't reach Postgres
+// (README "Database migrations"), so a build-time prerender — which a bare
+// `revalidate` triggers on a paramless route — would fail. (This page
+// previously set BOTH force-dynamic and revalidate; force-dynamic always
+// won, so the intended cache never applied.)
 export const dynamic = "force-dynamic";
-export const revalidate = 300; // 5 min cache
+
+const getSupportData = unstable_cache(
+  async () => {
+    const [snapshot, typicalCents, donorCount, trailingSpends] =
+      await Promise.all([
+        getBudgetSnapshot(),
+        getTypicalDonationCents(),
+        prisma.donation.count({
+          where: { moderationStatus: { in: ["APPROVED", "PENDING"] } },
+        }),
+        trailingMonthsSpendCents(TRAILING_WINDOW_MONTHS),
+      ]);
+    return { snapshot, typicalCents, donorCount, trailingSpends };
+  },
+  ["support-page-data"],
+  { revalidate: 300 },
+);
 
 export default async function SupportPage() {
-  const [snapshot, typicalCents, donorCount, trailingSpends] =
-    await Promise.all([
-      getBudgetSnapshot(),
-      getTypicalDonationCents(),
-      prisma.donation.count({
-        where: { moderationStatus: { in: ["APPROVED", "PENDING"] } },
-      }),
-      trailingMonthsSpendCents(TRAILING_WINDOW_MONTHS),
-    ]);
+  const { snapshot, typicalCents, donorCount, trailingSpends } =
+    await getSupportData();
 
   const totalCostCents = totalMonthlyCostCents(
     snapshot.spendCents,

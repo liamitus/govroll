@@ -1,8 +1,5 @@
 "use client";
 
-import { useRouter, usePathname } from "next/navigation";
-import { useTransition } from "react";
-
 import type { ReaderVersionListEntry, ReaderVersionMeta } from "./reader-types";
 
 /**
@@ -29,23 +26,25 @@ function formatVersionDate(date: Date): string {
  * reader silently defaulting to "latest" hides that the reader might
  * want an earlier version.
  *
- * Version switching is done via a `?v={versionCode}` query param.
- * The server page reads it to pick the matching version; we push
- * navigation so the URL stays copy/pasteable and the back button works.
+ * Version switching is delegated to the parent (<BillReader>) via
+ * `onVersionChange`: it fetches the chosen version's sections and swaps
+ * them in client-side, keeping the URL's `?v=` in sync. This is what
+ * lets the reader route stay full-route ISR-cacheable (no server-side
+ * `searchParams` read). `pending` disables the select mid-swap.
  */
 export function VersionPicker({
-  detailHref,
   current,
   versions,
+  detailHref,
+  onVersionChange,
+  pending = false,
 }: {
-  detailHref: string;
   current: ReaderVersionMeta;
   versions: ReaderVersionListEntry[];
+  detailHref: string;
+  onVersionChange?: (versionCode: string) => void;
+  pending?: boolean;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [pending, startTransition] = useTransition();
-
   const versionDateLabel = formatVersionDate(current.versionDate);
   const cleanType = cleanVersionType(current.versionType);
 
@@ -68,15 +67,7 @@ export function VersionPicker({
         id="reader-version-picker"
         disabled={pending}
         value={current.versionCode}
-        onChange={(event) => {
-          const next = event.target.value;
-          const params = new URLSearchParams();
-          if (next) params.set("v", next);
-          const qs = params.toString();
-          startTransition(() => {
-            router.push(qs ? `${pathname}?${qs}` : pathname);
-          });
-        }}
+        onChange={(event) => onVersionChange?.(event.target.value)}
         className="border-border/70 bg-background hover:bg-muted/60 text-foreground rounded-md border px-1.5 py-0.5 text-xs transition-colors disabled:opacity-60"
       >
         {versions.map((v) => (
