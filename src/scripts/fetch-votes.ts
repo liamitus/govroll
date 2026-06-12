@@ -1,5 +1,6 @@
 import "dotenv/config";
 import {
+  fetchGovTrackVotes,
   fetchGovTrackVoteVoters,
   fetchGovTrackBill,
   delay,
@@ -17,6 +18,10 @@ const CURSOR_KEY = "fetch-votes";
 // Re-walk at least this many days on every run so a healthy cursor still
 // self-heals a missed cron tick; the overlap is free thanks to skipDuplicates.
 const OVERLAP_DAYS = 2;
+// A single day's roll-call count is tiny (tens at most), so one /vote page
+// covers it and the offset never approaches GovTrack's 1000 cap. 600 is the
+// documented page-size ceiling.
+const ROLL_CALLS_PAGE_SIZE = 600;
 
 export interface FetchVotesOptions {
   /**
@@ -78,18 +83,65 @@ export async function fetchVotesFunction(opts: FetchVotesOptions = {}) {
       }
 
       const nextDate = currentDate.add(1, "day");
-      const voteVoters = await fetchGovTrackVoteVoters({
-        created__gte: currentDate.format("YYYY-MM-DD"),
+      const dayLabel = currentDate.format("YYYY-MM-DD");
+
+      // Enumerate the day's roll calls, then pull each one's voters in its
+      // own query. We can't just page /vote_voter by date: GovTrack rejects
+      // offsets > 1000 ("Offset > 1000 is not permitted", HTTP 400), and a
+      // busy day stacks several roll calls (a House roll call alone is ~435
+      // voter rows), so a date-windowed walk marches past the cap and 400s —
+      // which, because the cursor only advances after a day's writes, would
+      // wedge the cron on that day forever. A single roll call is always
+      // under the cap, and all its voters share one `created` second, so a
+      // [created, created+1s) window isolates exactly that roll call.
+      const rollCalls = await fetchGovTrackVotes({
+        created__gte: dayLabel,
         created__lt: nextDate.format("YYYY-MM-DD"),
-        order_by: "-created",
+        order_by: "created",
+        limit: ROLL_CALLS_PAGE_SIZE,
       });
 
+      // Distinct start seconds — two roll calls in the same second (rare) get
+      // one window, so we never fetch the same voters twice.
+      const rollCallStarts = [
+        ...new Set(
+          (rollCalls as any[])
+            .map((rc) => rc?.created)
+            .filter((c: unknown): c is string => typeof c === "string"),
+        ),
+      ];
+
+      const voteVoters: any[] = [];
+      let abandonedDay = false;
+      for (const startedAt of rollCallStarts) {
+        // Budget can run out mid-day on a deep backfill. Drop this day's
+        // partial work and stop without advancing the cursor, so the next run
+        // re-walks the whole day (idempotent) rather than skipping the roll
+        // calls we hadn't fetched yet.
+        if (Date.now() - started > deadlineMs) {
+          console.log(
+            `[fetch-votes] deadline reached mid-day at ${dayLabel}; redoing it next run`,
+          );
+          abandonedDay = true;
+          break;
+        }
+        const voters = await fetchGovTrackVoteVoters({
+          created__gte: startedAt,
+          created__lt: dayjs(startedAt)
+            .add(1, "second")
+            .format("YYYY-MM-DDTHH:mm:ss"),
+        });
+        voteVoters.push(...(voters as any[]));
+        await delay(250);
+      }
+      if (abandonedDay) break;
+
       console.log(
-        `Fetched ${voteVoters.length} votes from ${currentDate.format("YYYY-MM-DD")}`,
+        `Fetched ${voteVoters.length} votes from ${dayLabel} across ${rollCallStarts.length} roll calls`,
       );
 
       if (voteVoters.length > 0) {
-        await processVoteBatch(voteVoters as any[], billCache);
+        await processVoteBatch(voteVoters, billCache);
       }
 
       // Advance the cursor only after the day's writes succeed. If a later
