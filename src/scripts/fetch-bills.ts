@@ -9,21 +9,23 @@ import dayjs, { type Dayjs } from "dayjs";
 
 const prisma = createStandalonePrisma();
 
-// Tunables for the cursor-driven chunked ingest, sized so a single run fits
-// comfortably under Vercel's Hobby 60s cap: 12-hour windows (small enough that
+// Tunables for the cursor-driven chunked ingest, sized to fit under the cron
+// route's 300s Fluid Compute maxDuration: 6-hour windows (small enough that
 // each window's fetch + upserts finish quickly and the cursor advances after
-// every window, so a slow Congress.gov patch can't wedge progress mid-run), a
-// 48-hour rewind on each run so late-arriving updates don't slip the cursor,
-// and a 50s deadline enforced as a hard AbortSignal — see fetchBillsFunction —
-// not just a cooperative time check that an in-flight request can overrun.
-const WINDOW_HOURS = 12;
+// every window, so a slow Congress.gov patch — or a dense backlog window full
+// of brand-new bills, each needing a detail call — can't wedge progress
+// mid-run), a 48-hour rewind on each run so late-arriving updates don't slip
+// the cursor, and a 280s deadline enforced as a hard AbortSignal — see
+// fetchBillsFunction — not just a cooperative time check an in-flight request
+// can overrun.
+const WINDOW_HOURS = 6;
 const LOOKBACK_HOURS = 48;
 // When the saved cursor is further behind than this, skip the LOOKBACK_HOURS
 // rewind entirely (see fetchBillsFunction). Sized one window past the rewind so
 // we never flap between rewind / no-rewind around the boundary.
 const CATCHUP_THRESHOLD_HOURS = LOOKBACK_HOURS + WINDOW_HOURS;
 const BACKSTOP_DAYS = 14;
-const DEADLINE_MS = 50_000;
+const DEADLINE_MS = 280_000;
 const UPSERT_CONCURRENCY = 8;
 const CURSOR_KEY = "fetch-bills";
 
@@ -99,12 +101,12 @@ export async function fetchBillsFunction(
   const started = Date.now();
   const now = dayjs();
 
-  // Enforce the 50s budget as a hard AbortSignal, not just the cooperative
+  // Enforce the 280s budget as a hard AbortSignal, not just the cooperative
   // `Date.now()` checks below. Those checks only fire BETWEEN network calls, so
   // a single slow window fetch (15s axios timeout × up to 3 withRetry attempts
-  // ≈ 48s) could run past the 60s Vercel cap before the next check — that's the
-  // intermittent 504 the ingest cron hit. Aborting in-flight Congress.gov
-  // requests at the deadline caps that tail so we always return under the cap.
+  // ≈ 48s) could run past the 300s Fluid maxDuration before the next check.
+  // Aborting in-flight Congress.gov requests at the deadline caps that tail so
+  // we always return under the cap.
   const controller = new AbortController();
   const deadlineTimer = setTimeout(() => controller.abort(), DEADLINE_MS);
 
