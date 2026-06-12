@@ -15,7 +15,11 @@ import { reportError } from "@/lib/error-reporting";
  * Protected by CRON_SECRET (Authorization: Bearer <secret>).
  */
 
-export const maxDuration = 60;
+// Fluid Compute caps at 300s; the script's internal deadline (280s) bails
+// first. The headroom matters for catch-up: a dense backlog window is full of
+// brand-new bills, each needing a Congress.gov detail call, so one window can
+// blow the old 60s cap — which livelocked the cursor after the ingest outage.
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;
@@ -30,11 +34,10 @@ export async function GET(request: Request) {
 
   const start = Date.now();
   try {
-    // Cursor-driven — each invocation walks 12-hour updateDate windows,
-    // persisting the cursor after each, and bails at the internal 50s deadline
-    // (enforced as a hard AbortSignal on in-flight Congress.gov requests).
-    // GitHub Actions reinvokes every 3h; the cursor converges within a run or
-    // two even after a slow upstream patch.
+    // Cursor-driven — each invocation walks 6-hour updateDate windows,
+    // persisting the cursor after each, and bails at the internal 280s deadline
+    // (enforced as a hard AbortSignal on in-flight Congress.gov requests), just
+    // under the 300s Fluid maxDuration above. GitHub Actions reinvokes every 3h.
     const result = await fetchBillsFunction();
     const ms = Date.now() - start;
     console.log(`[fetch-bills cron] completed in ${ms}ms`, result);
