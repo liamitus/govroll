@@ -121,7 +121,10 @@ jobs:
     name: Invoke ingest endpoint
     needs: resolve
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Must exceed the curl --max-time below (310s). The previous 5m cap would
+    # have killed the job at 300s — just before a legitimately-long fetch-bills
+    # catch-up run returns — turning a successful 300s function into a red job.
+    timeout-minutes: 7
     # Key BOTH scheduled and manual runs on the resolved endpoint so a
     # workflow_dispatch can't overlap a scheduled run of the same endpoint.
     concurrency:
@@ -170,15 +173,22 @@ jobs:
           fi
           echo "Calling $URL"
 
-          # --fail-with-body so non-2xx responses still print the body,
-          # --max-time 65 gives Vercel's 60s function plus 5s of slack.
-          # No --retry: a 504 from Vercel means the function hit its
-          # maxDuration cap, so retrying just burns another 60s budget
-          # for the same outcome. Endpoints are idempotent — let the next
-          # scheduled run pick up where we left off.
+          # --fail-with-body so non-2xx responses still print the body.
+          #
+          # --max-time must cover the LONGEST function's maxDuration. The old
+          # 65s cap dated from when every function was 60s; once fetch-bills and
+          # embed-large-bills moved to 300s on Fluid Compute, 65s severed them
+          # mid-run and reported a false curl(28) timeout (the function kept
+          # working server-side, but the job went red). 310s == Vercel's 300s
+          # platform ceiling + slack, so this caps the worst case without having
+          # to track any single endpoint's maxDuration — it can't drift again.
+          #
+          # No --retry: a 504 means the function hit its OWN maxDuration cap, so
+          # retrying just burns another budget for the same outcome. Endpoints
+          # are idempotent — let the next scheduled run resume where we left off.
           http_code=$(
             curl --silent --show-error --fail-with-body \
-              --max-time 65 \
+              --max-time 310 \
               -H "Authorization: Bearer ${SECRET}" \
               -H "Accept: application/json" \
               -o response.json \
