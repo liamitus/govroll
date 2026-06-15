@@ -14,7 +14,14 @@ import { reportError } from "@/lib/error-reporting";
  * Protected by CRON_SECRET.
  */
 
-export const maxDuration = 60;
+// The roster is ~540 members and the sweep is one DB write per member. At the
+// old 60s cap that landed right on the edge — a normal-latency run took ~60s
+// (one find + one write per member) and tipped into a 504 whenever the pooler
+// was slow. fetchRepresentativesFunction now prefetches existing ids so each
+// member costs a single write, but we keep generous headroom here too: this is
+// a weekly, idempotent, I/O-bound job, so the extra ceiling is nearly free
+// under Active-CPU billing and removes the 504 class entirely.
+export const maxDuration = 120;
 
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;

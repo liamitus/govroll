@@ -72,6 +72,23 @@ export async function fetchRepresentativesFunction() {
   try {
     const roles = await fetchGovTrackRoles({ current: true, limit: 600 });
 
+    // Prefetch the bioguideIds we already store so each member costs a single
+    // write (update OR create) instead of a find-then-write pair. With ~540
+    // members that halves the DB round trips for the whole sweep — the gap
+    // between finishing comfortably and tipping over the function budget into a
+    // 504 when the connection pooler is slow (the observed failure mode). We
+    // add to the set after each create so a (vanishingly rare) duplicate
+    // bioguideId within one batch still resolves to an update, not a unique
+    // violation — preserving the old find-per-row behavior.
+    const existingRows = await prisma.representative.findMany({
+      select: { bioguideId: true },
+    });
+    const existingBioguideIds = new Set(
+      existingRows
+        .map((r) => r.bioguideId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
     let processed = 0;
     const errors: Array<{ bioguideId: string; error: string }> = [];
 
@@ -107,11 +124,7 @@ export async function fetchRepresentativesFunction() {
       // whole weekly roster sweep. Log + count it and continue. A run that
       // fails *every* row throws below, so the cron still alerts loudly.
       try {
-        const existing = await prisma.representative.findUnique({
-          where: { bioguideId },
-          select: { id: true },
-        });
-        if (existing) {
+        if (existingBioguideIds.has(bioguideId)) {
           await prisma.representative.update({
             where: { bioguideId },
             data: fields,
@@ -126,6 +139,9 @@ export async function fetchRepresentativesFunction() {
           await prisma.representative.create({
             data: { bioguideId, slug, ...fields },
           });
+          // Keep the set authoritative within this run so a repeated
+          // bioguideId updates the row we just created instead of colliding.
+          existingBioguideIds.add(bioguideId);
         }
         processed++;
       } catch (rowError: unknown) {

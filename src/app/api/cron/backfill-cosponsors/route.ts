@@ -20,10 +20,18 @@ import { reportError } from "@/lib/error-reporting";
  *
  * Cost per bill: one /cosponsors API call (~1s) + DB writes. We cap each
  * bill at PER_BILL_TIMEOUT_MS so a single slow Congress.gov page can't eat
- * the whole 60s budget — that's what was causing 504s in production.
+ * the whole budget.
+ *
+ * maxDuration (120s) is deliberately well above TIMEOUT_MS (45s): the deadline
+ * is only checked BETWEEN bills, and the per-bill API timeout bounds the fetch
+ * but NOT the upsert loop that follows it. A heavy bill (some have 300+
+ * cosponsors → 300+ sequential upserts ≈ 25s+) that starts just under the 45s
+ * deadline can run tens of seconds past it. Under the old 60s cap that spilled
+ * into a 504; the 120s ceiling absorbs the worst-case tail while TIMEOUT_MS
+ * stays the real per-run pacing knob.
  */
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 const TIMEOUT_MS = 45_000;
 const PER_BILL_TIMEOUT_MS = 8_000;
 
