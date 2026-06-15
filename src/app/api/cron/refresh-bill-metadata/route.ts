@@ -18,7 +18,10 @@ import { reportError } from "@/lib/error-reporting";
  * be invoked by GitHub Actions on a cadence. Protected by CRON_SECRET.
  */
 
-export const maxDuration = 60;
+// 25 bills x ~2-3s each (4 Congress.gov calls apiece) sat right on the old 60s
+// cap, so a slow batch could 504. 120s gives headroom; the script also stops
+// the batch early on a 429, so a quota-limited run returns well under this.
+export const maxDuration = 120;
 
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;

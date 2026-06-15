@@ -228,4 +228,72 @@ describe("GET /api/cron/fetch-bills", () => {
     const rewound = new Date(cursorDate.getTime() - 48 * 60 * 60 * 1000);
     expect(fromDateTimes[0]).toBe(congressIso(rewound));
   });
+
+  it("stops cleanly (no 500/page) when the list call returns 429", async () => {
+    // A Congress.gov 429 is the shared API key's hourly quota — transient
+    // backpressure, not a failure. The run must return a green 200 with the
+    // cursor preserved and resume next time, NOT a 500 that pages on every hit.
+    const cursorDate = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    await getTestPrisma().ingestCursor.create({
+      data: { key: "fetch-bills", cursor: cursorDate },
+    });
+
+    server.use(
+      http.get("https://api.congress.gov/v3/bill", () =>
+        HttpResponse.json({ error: "rate limited" }, { status: 429 }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.quotaLimited).toBe(true);
+
+    // Cursor untouched so the next run resumes from exactly the same place.
+    const cursor = await getTestPrisma().ingestCursor.findUnique({
+      where: { key: "fetch-bills" },
+    });
+    expect(cursor?.cursor.toISOString()).toBe(cursorDate.toISOString());
+  });
+
+  it("stops cleanly when the detail call 429s mid-create", async () => {
+    // The CREATE path fetches introducedDate from the detail endpoint, which
+    // re-throws a 429 (it must never launder a quota outage into a missing
+    // date). That rejection surfaces out of the upsert chunk — it must be
+    // caught as a clean quota stop, not propagate to a 500.
+    const cursorDate = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    await getTestPrisma().ingestCursor.create({
+      data: { key: "fetch-bills", cursor: cursorDate },
+    });
+
+    server.use(
+      http.get("https://api.congress.gov/v3/bill", () =>
+        HttpResponse.json({
+          bills: [
+            {
+              congress: 119,
+              number: "5000",
+              type: "HR",
+              originChamberCode: "H",
+              title: "Quota Test Act",
+              updateDate: "2026-05-01",
+              latestAction: { actionDate: "2026-05-01", text: "Introduced" },
+            },
+          ],
+          pagination: { count: 1 },
+        }),
+      ),
+      http.get("https://api.congress.gov/v3/bill/119/hr/5000", () =>
+        HttpResponse.json({ error: "rate limited" }, { status: 429 }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.quotaLimited).toBe(true);
+    // We bailed on quota before persisting — the new bill was not created.
+    expect(await getTestPrisma().bill.count()).toBe(0);
+  });
 });

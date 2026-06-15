@@ -35,7 +35,13 @@ on:
     - cron: "5,35 * * * *" # backfill-bill-actions      (every 30m)
     - cron: "40 */2 * * *" # backfill-cosponsors        (every 2h)
     - cron: "0 */3 * * *" # fetch-bills                (every 3h)
-    - cron: "30 */6 * * *" # refresh-bill-metadata      (every 6h)
+    # Was every 6h at :30, which both starved the drain (~100 bills/day against
+    # a multi-thousand backlog of un-enriched bills — recent bills waited weeks
+    # for a sponsor/summary) AND collided with fetch-votes at :30, where GitHub
+    # coalesces same-minute triggers (see the header note). Hourly at the
+    # collision-free :25 clears the gap in days; the script stops the batch
+    # early on a 429 so the faster cadence can't exhaust the shared API key.
+    - cron: "25 * * * *" # refresh-bill-metadata      (hourly at :25)
     - cron: "0 * * * *" # evaluate-budget            (hourly, on the hour)
     - cron: "0 10 * * 1" # fetch-representatives      (weekly, Mon 10:00 UTC)
     - cron: "20,50 * * * *" # embed-large-bills          (every 30m, offset)
@@ -106,7 +112,7 @@ jobs:
             "5,35 * * * *")  echo "endpoint=backfill-bill-actions"     >> "$GITHUB_OUTPUT" ;;
             "40 */2 * * *")  echo "endpoint=backfill-cosponsors"       >> "$GITHUB_OUTPUT" ;;
             "0 */3 * * *")   echo "endpoint=fetch-bills"               >> "$GITHUB_OUTPUT" ;;
-            "30 */6 * * *")  echo "endpoint=refresh-bill-metadata"     >> "$GITHUB_OUTPUT" ;;
+            "25 * * * *")    echo "endpoint=refresh-bill-metadata"     >> "$GITHUB_OUTPUT" ;;
             "0 * * * *")     echo "endpoint=evaluate-budget"           >> "$GITHUB_OUTPUT" ;;
             "0 10 * * 1")    echo "endpoint=fetch-representatives"     >> "$GITHUB_OUTPUT" ;;
             "20,50 * * * *") echo "endpoint=embed-large-bills"         >> "$GITHUB_OUTPUT" ;;
