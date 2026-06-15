@@ -2,6 +2,7 @@ import "dotenv/config";
 import {
   fetchBillIntroducedDate,
   fetchCongressBillsByUpdate,
+  isQuotaError,
   type CongressListBill,
 } from "../lib/congress-api";
 import { createStandalonePrisma } from "../lib/prisma-standalone";
@@ -63,6 +64,10 @@ export interface FetchBillsResult {
   cursor: Date;
   done: boolean;
   timedOut: boolean;
+  /** Stopped early because Congress.gov returned 429 (shared key's hourly
+   *  quota spent). Not a failure — the cursor is preserved and the next run
+   *  resumes once the quota window resets. */
+  quotaLimited: boolean;
   elapsedMs: number;
 }
 
@@ -142,6 +147,7 @@ export async function fetchBillsFunction(
   let updated = 0;
   let windows = 0;
   let timedOut = false;
+  let quotaLimited = false;
 
   try {
     while (windowStart.isBefore(now)) {
@@ -163,32 +169,56 @@ export async function fetchBillsFunction(
       } catch (err) {
         // A deadline abort surfaces here as an axios cancel. Treat it like the
         // cooperative check: bail cleanly with the cursor left at the last
-        // completed window, so the next run resumes from there. Re-throw any
-        // genuine failure for the route to turn into a 500.
+        // completed window, so the next run resumes from there.
         if (controller.signal.aborted) {
           timedOut = true;
+          break;
+        }
+        // A Congress.gov 429 means the shared API key's hourly quota is spent.
+        // That's transient backpressure, not a failure — stop cleanly with the
+        // cursor at the last completed window and let the next 3-hourly run
+        // resume once the quota resets, exactly like the deadline path. Without
+        // this, the 429 propagated to a 500 and paged on every occurrence.
+        if (isQuotaError(err)) {
+          quotaLimited = true;
           break;
         }
         throw err;
       }
 
-      for (let i = 0; i < bills.length; i += UPSERT_CONCURRENCY) {
-        if (Date.now() - started > DEADLINE_MS) {
+      try {
+        for (let i = 0; i < bills.length; i += UPSERT_CONCURRENCY) {
+          if (Date.now() - started > DEADLINE_MS) {
+            timedOut = true;
+            break;
+          }
+          const chunk = bills.slice(i, i + UPSERT_CONCURRENCY);
+          const results = await Promise.all(
+            chunk.map((b) => upsertBillFromList(b, controller.signal)),
+          );
+          processed += results.length;
+          for (const r of results) {
+            if (r === "created") created++;
+            else if (r === "updated") updated++;
+          }
+        }
+      } catch (err) {
+        // The CREATE path calls fetchBillIntroducedDate, which re-throws a 429
+        // (it must not launder a quota outage into a missing date). Handle it
+        // here the same way as the list-fetch above: a quota stop is clean and
+        // resumable, an abort is the deadline, anything else is a real failure.
+        if (controller.signal.aborted) {
           timedOut = true;
           break;
         }
-        const chunk = bills.slice(i, i + UPSERT_CONCURRENCY);
-        const results = await Promise.all(
-          chunk.map((b) => upsertBillFromList(b, controller.signal)),
-        );
-        processed += results.length;
-        for (const r of results) {
-          if (r === "created") created++;
-          else if (r === "updated") updated++;
+        if (isQuotaError(err)) {
+          quotaLimited = true;
+          break;
         }
+        throw err;
       }
 
-      if (timedOut) break;
+      if (timedOut || quotaLimited) break;
 
       await prisma.ingestCursor.upsert({
         where: { key: CURSOR_KEY },
@@ -210,8 +240,9 @@ export async function fetchBillsFunction(
     updated,
     windows,
     cursor: windowStart.toDate(),
-    done: !timedOut && !windowStart.isBefore(now),
+    done: !timedOut && !quotaLimited && !windowStart.isBefore(now),
     timedOut,
+    quotaLimited,
     elapsedMs,
   };
 }

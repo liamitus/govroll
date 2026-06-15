@@ -40,6 +40,15 @@ export async function GET(request: Request) {
     // under the 300s Fluid maxDuration above. GitHub Actions reinvokes every 3h.
     const result = await fetchBillsFunction();
     const ms = Date.now() - start;
+    // A quota stop is expected backpressure, not a failure — keep it a green
+    // 200 (cursor preserved, next run resumes) but log loudly so it's visible
+    // in the function logs without paging. Previously the underlying 429 became
+    // a 500 + an alert email on every occurrence.
+    if (result && "quotaLimited" in result && result.quotaLimited) {
+      console.warn(
+        `[fetch-bills cron] stopped on Congress.gov 429 (quota); cursor preserved, resuming next run`,
+      );
+    }
     console.log(`[fetch-bills cron] completed in ${ms}ms`, result);
     return NextResponse.json({ ok: true, ms, ...result });
   } catch (error: unknown) {
