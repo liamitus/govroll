@@ -17,6 +17,7 @@ import type { StatusCode } from "@/lib/congress-session/types";
  * - pro_forma: half-filled amber (distinct shape)
  * - adjourned_today: hollow emerald ring (was active today, not right now)
  * - recess: hollow ring in the ambient text color
+ * - no_session: same hollow ring (scheduled day, but not on the floor today)
  * - adjourned_sine_die: same hollow ring
  * - unknown: thin dash in the ambient text color (no dot at all)
  */
@@ -43,7 +44,11 @@ export function StatusDot({
     );
   }
 
-  if (status === "recess" || status === "adjourned_sine_die") {
+  if (
+    status === "recess" ||
+    status === "adjourned_sine_die" ||
+    status === "no_session"
+  ) {
     return (
       <span
         aria-hidden

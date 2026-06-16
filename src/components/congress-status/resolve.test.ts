@@ -244,6 +244,55 @@ describe("resolveOverall — adjourned_today", () => {
   });
 });
 
+describe("resolveOverall — no_session", () => {
+  it("a real named recess outranks a chamber that merely has no session today (the screenshot bug)", () => {
+    // The motivating case: House is in the Juneteenth District Work Period
+    // (a published multi-day recess); the Senate's PAIL just isn't listed for
+    // this one Friday, so it resolves to `no_session`. The pill should
+    // headline the House's confident recess (Returns Jun 23), NOT the Senate's
+    // weekend-skip "Returns Mon" — even though the Senate's return is sooner.
+    const data = {
+      chambers: {
+        house: makePayload(
+          "house",
+          "recess",
+          "2026-06-23T00:00:00Z",
+          "Returns Tue, Jun 23",
+        ),
+        senate: makePayload(
+          "senate",
+          "no_session",
+          "2026-06-15T00:00:00Z",
+          "Next session Mon, Jun 15",
+        ),
+      },
+    };
+
+    const r = resolveOverall(data, NOW);
+    expect(r.status).toBe("recess");
+    expect(r.primaryChamber).toBe("house");
+    expect(r.nextTransitionLabel).toBe("Returns Tue, Jun 23");
+  });
+
+  it("no_session still outranks unknown (knowing a chamber is out today beats knowing nothing)", () => {
+    const data = {
+      chambers: {
+        house: makePayload(
+          "house",
+          "no_session",
+          "2026-06-15T00:00:00Z",
+          "Next session Mon, Jun 15",
+        ),
+        senate: makePayload("senate", "unknown", null, null),
+      },
+    };
+
+    const r = resolveOverall(data, NOW);
+    expect(r.status).toBe("no_session");
+    expect(r.primaryChamber).toBe("house");
+  });
+});
+
 describe("resolveOverall — pre_session", () => {
   it("picks the pre_session chamber over a chamber in multi-day recess (the screenshot bug)", () => {
     // The motivating case: House is in a multi-week District Work Period
@@ -344,6 +393,10 @@ describe("labelFor", () => {
     );
   });
 
+  it('returns "No session" for no_session (a quiet scheduled day, distinct from a multi-day recess)', () => {
+    expect(labelFor("no_session")).toBe("No session");
+  });
+
   it("covers every StatusCode value (no fall-through)", () => {
     const codes: StatusCode[] = [
       "voting",
@@ -353,6 +406,7 @@ describe("labelFor", () => {
       "adjourned_today",
       "adjourned_sine_die",
       "recess",
+      "no_session",
       "unknown",
     ];
     for (const c of codes) {
@@ -384,6 +438,17 @@ describe("chamberHintFor", () => {
       lastCheckedAt: null,
     };
     expect(chamberHintFor(r)).toBe("Senate");
+  });
+
+  it("stays quiet for no_session (like recess — the popover carries the per-chamber detail)", () => {
+    const r = {
+      status: "no_session" as StatusCode,
+      primaryChamber: "senate" as Chamber,
+      nextTransitionLabel: "Next session Mon, Jun 15",
+      stale: false,
+      lastCheckedAt: null,
+    };
+    expect(chamberHintFor(r)).toBeNull();
   });
 });
 

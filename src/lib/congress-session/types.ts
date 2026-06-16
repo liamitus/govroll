@@ -16,7 +16,8 @@ export type StatusCode =
   | "pro_forma" // brief procedural meeting with no legislative business
   | "pre_session" // scheduled to convene later today, hasn't gaveled in yet
   | "adjourned_today" // chamber gaveled in earlier today, then gaveled out for the day
-  | "recess" // scheduled non-session period
+  | "recess" // inside a published multi-day recess window (District/State Work Period, holiday)
+  | "no_session" // scheduled session day, but the chamber isn't on the floor — a quiet Fri/Mon or not-yet-published, NOT a multi-day break
   | "adjourned_sine_die" // formal end of Congress (between sessions)
   | "unknown"; // no signal resolved
 

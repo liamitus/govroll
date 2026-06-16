@@ -42,6 +42,12 @@ const PRIORITY: StatusCode[] = [
   "adjourned_today",
   "adjourned_sine_die",
   "recess",
+  // `no_session` ranks below `recess`: it's a low-confidence "couldn't
+  // confirm a session today" read (a quiet weekday, or the floor log hasn't
+  // published). When chambers disagree we'd rather headline the other one's
+  // confident named recess than this. It still outranks `unknown` — knowing a
+  // chamber has no session today beats knowing nothing.
+  "no_session",
   "unknown",
 ];
 
@@ -77,8 +83,8 @@ export function effectiveStatus(
 
 /**
  * Pick an overall "Congress" state from the per-chamber rows. Priority:
- *   voting > in_session > pro_forma > adjourned_today > adjourned_sine_die
- *   > recess > unknown
+ *   voting > in_session > pro_forma > pre_session > adjourned_today
+ *   > adjourned_sine_die > recess > no_session > unknown
  *
  * When chambers tie at the same priority, prefer the one whose
  * `nextTransitionAt` is sooner. For two recessed chambers that's "who
@@ -155,6 +161,8 @@ export function labelFor(status: StatusCode): string {
       return "Adjourned";
     case "recess":
       return "Recess";
+    case "no_session":
+      return "No session";
     case "adjourned_sine_die":
       return "Adjourned";
     case "unknown":
@@ -172,7 +180,10 @@ export function labelFor(status: StatusCode): string {
 
 export function chamberHintFor(r: Resolved): string | null {
   if (r.status === "unknown") return null;
-  if (r.status === "recess") return null; // both chambers usually recess together at this level
+  // recess / no_session are "not on the floor today" states the chambers
+  // usually share at the headline level; the popover breaks down the per-
+  // chamber nuance, so don't crowd the pill with a single-chamber qualifier.
+  if (r.status === "recess" || r.status === "no_session") return null;
   if (!r.primaryChamber) return null;
   return r.primaryChamber === "house" ? "House" : "Senate";
 }
