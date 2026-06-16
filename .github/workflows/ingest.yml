@@ -46,6 +46,10 @@ on:
     - cron: "0 10 * * 1" # fetch-representatives      (weekly, Mon 10:00 UTC)
     - cron: "20,50 * * * *" # embed-large-bills          (every 30m, offset)
     - cron: "30 3 * * *" # cleanup-expired-cache      (daily 03:30 UTC)
+    # Freshness watchdog — pages only when a cursor or backfill is genuinely
+    # stuck for hours (sustained quota / a stopped cron / the #139 silent-stall
+    # class), which the per-run quota stops deliberately no longer alert on.
+    - cron: "55 * * * *" # ingest-health             (hourly at :55)
 
   workflow_dispatch:
     inputs:
@@ -65,6 +69,7 @@ on:
           - fetch-representatives
           - embed-large-bills
           - cleanup-expired-cache
+          - ingest-health
       since:
         description: "fetch-votes only — deep-backfill start date YYYY-MM-DD (optional)"
         required: false
@@ -117,6 +122,7 @@ jobs:
             "0 10 * * 1")    echo "endpoint=fetch-representatives"     >> "$GITHUB_OUTPUT" ;;
             "20,50 * * * *") echo "endpoint=embed-large-bills"         >> "$GITHUB_OUTPUT" ;;
             "30 3 * * *")    echo "endpoint=cleanup-expired-cache"     >> "$GITHUB_OUTPUT" ;;
+            "55 * * * *")    echo "endpoint=ingest-health"             >> "$GITHUB_OUTPUT" ;;
             *)
               echo "::error::No endpoint mapped for schedule '${SCHEDULE}'"
               exit 1
