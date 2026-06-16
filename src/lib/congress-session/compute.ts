@@ -33,6 +33,10 @@ import type { Chamber, ChamberStatus, Signal } from "./types";
  *   - Weekend fallback only kicks in when all other signals are silent,
  *     protecting against the common case of Saturday/Sunday with no votes
  *     and no scraper match.
+ *   - If the live scraper reports no floor activity on a *scheduled* weekday
+ *     (past the calendar-recess and weekend gates), that's `no_session` —
+ *     "no session posted today," a single quiet day — not `recess`, which is
+ *     reserved for published multi-day windows.
  *
  * Returned status always includes `lastCheckedAt = now`; the caller
  * persists it to CongressChamberStatus.
@@ -168,11 +172,21 @@ export async function computeChamberStatus(
     });
   }
 
-  // ── 6. Live scraper said "recess" on a weekday ────────────────────────
+  // ── 6. Live scraper found no session on a scheduled weekday ────────────
+  // We're past the calendar-recess gate (step 4) and the weekend gate (step
+  // 5), so per the published calendar today IS a scheduled session day — yet
+  // the live floor log doesn't list the chamber. That's "no session posted
+  // today" (a quiet Friday/Monday, or the Clerk/PAIL simply hasn't published
+  // yet), NOT a multi-day recess. Emitting `recess` here mislabels a routine
+  // quiet day as a District Work Period and pairs it with a "Returns Monday"
+  // that reads as if the chamber is away for a block. `no_session` keeps the
+  // scraper's honest detail but surfaces "Next session …" instead — and,
+  // ranked below `recess`, lets the *other* chamber's real recess headline
+  // the pill when they disagree (see resolve.ts PRIORITY).
   if (liveSignal && liveSignal.status === "recess") {
     return shape({
       chamber,
-      status: "recess",
+      status: "no_session",
       detail: liveSignal.detail,
       source: liveSignal.source,
       lastActionAt: null,
@@ -223,7 +237,9 @@ function shape(args: ShapeArgs): ChamberStatus {
   let nextTransitionLabel: string | null = null;
 
   const isBetweenSessions =
-    args.status === "recess" || args.status === "adjourned_today";
+    args.status === "recess" ||
+    args.status === "adjourned_today" ||
+    args.status === "no_session";
 
   if (args.status === "pre_session" && args.scheduledConveneAt) {
     // pre_session implies the scheduled time is still in the future (the
@@ -233,7 +249,11 @@ function shape(args: ShapeArgs): ChamberStatus {
     nextTransitionLabel = `Convenes at ${formatEtTime(args.scheduledConveneAt)} ET`;
   } else if (isBetweenSessions && args.nextSession) {
     nextTransitionAt = args.nextSession;
-    nextTransitionLabel = `Returns ${formatReturns(args.nextSession, true)}`;
+    // "Returns" implies the chamber left on a scheduled break; for a quiet
+    // session day (`no_session`) they never left, so "Next session" reads
+    // truer and doesn't dress a routine Friday up as a recess return.
+    const verb = args.status === "no_session" ? "Next session" : "Returns";
+    nextTransitionLabel = `${verb} ${formatReturns(args.nextSession, true)}`;
   } else if (args.nextRecess) {
     nextTransitionAt = args.nextRecess.startDate;
     nextTransitionLabel = `Next recess ${formatReturns(args.nextRecess.startDate)} — ${args.nextRecess.label}`;

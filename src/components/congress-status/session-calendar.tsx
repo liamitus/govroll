@@ -23,6 +23,11 @@ import type { RecessWindow } from "@/app/api/congress/calendar/route";
  *
  * The window is vertically centered on today (2 weeks above, 2 below) so it
  * almost always spans parts of two months; prev/next nudge it a week at a time.
+ *
+ * These bars are the *planned* schedule, not live status: they're drawn purely
+ * from recess windows and never consult the floor scrapers, so a day can read
+ * "in session" here while the live badge above reads "No session." A caption
+ * under the grid says as much so the divergence doesn't look like a bug.
  */
 
 const WEEKDAY_FULL = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -119,6 +124,15 @@ export function SessionCalendar({
           })}
         </div>
       </div>
+
+      {/* The bars are the *published* schedule (every non-recess weekday is
+          drawn as a session day). A chamber's live status above is scraped
+          from the floor log and can differ on a given day — e.g. a quiet
+          Friday the schedule counts as a session day but no session is held.
+          Say so, so the two readings don't look like a bug. */}
+      <p className="text-muted-foreground/70 text-[10px] leading-snug">
+        Planned floor schedule — a chamber&apos;s live status today may differ.
+      </p>
     </section>
   );
 }
