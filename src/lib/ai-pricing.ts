@@ -19,9 +19,10 @@ type ModelPricing = {
 };
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  // Claude Sonnet 4 — main bill chat (src/lib/ai.ts SONNET_MODEL).
-  // $3/Mtok input, $15/Mtok output.
-  "claude-sonnet-4-20250514": {
+  // Claude Sonnet 4.6 — main bill chat (src/lib/ai.ts SONNET_MODEL).
+  // $3/Mtok input, $15/Mtok output. Key MUST equal SONNET_MODEL; the prior
+  // dated Sonnet 4 snapshot (claude-sonnet-4-20250514) was retired 2026-06-15.
+  "claude-sonnet-4-6": {
     inputCentsPerMtok: 300,
     outputCentsPerMtok: 1500,
   },

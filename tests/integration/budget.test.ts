@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { recordSpend, currentPeriod } from "@/lib/budget";
 import { getTestPrisma } from "./db";
 
-// Claude Sonnet 4 input is priced at $3 / 1M tokens (300 cents), so 1M input
+// Claude Sonnet 4.6 input is priced at $3 / 1M tokens (300 cents), so 1M input
 // tokens is a clean, deterministic 300¢ spend.
-const SONNET = "claude-sonnet-4-20250514";
+const SONNET = "claude-sonnet-4-6";
 const ONE_MTOK = 1_000_000;
 
 function seedLedger(over: { incomeCents: number; aiEnabled?: boolean }) {

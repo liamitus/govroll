@@ -37,7 +37,12 @@ export interface AiUsageRecord {
   cache?: CacheTokenBreakdown;
 }
 
-const SONNET_MODEL = "claude-sonnet-4-20250514";
+// Main bill-chat answer model. Pinned to the current Sonnet alias: the dated
+// snapshot `claude-sonnet-4-20250514` was retired by Anthropic on 2026-06-15
+// and now 404s, which surfaced to users as the generic "The AI service
+// returned an error". `claude-sonnet-4-6` is the documented drop-in (same
+// $3/$15 pricing). Keep `MODEL_PRICING` and budget.test.ts in sync with this.
+const SONNET_MODEL = "claude-sonnet-4-6";
 /** Cheaper model for bounded, structured tasks like section-picking or
  *  diff summarization where hallucination risk is inherently low. */
 const HAIKU_MODEL = "claude-haiku-4-5";
