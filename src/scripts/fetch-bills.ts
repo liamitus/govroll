@@ -2,6 +2,7 @@ import "dotenv/config";
 import {
   fetchBillIntroducedDate,
   fetchCongressBillsByUpdate,
+  isTransientCongressError,
   type CongressListBill,
 } from "../lib/congress-api";
 import { createStandalonePrisma } from "../lib/prisma-standalone";
@@ -63,6 +64,12 @@ export interface FetchBillsResult {
   cursor: Date;
   done: boolean;
   timedOut: boolean;
+  /** Stopped early on a TRANSIENT Congress.gov error — 429 (quota), a 5xx
+   *  (origin/Cloudflare hiccup, incl. 520-526), or a network drop. Not a
+   *  failure: the cursor is preserved and the next run resumes once upstream
+   *  recovers. A sustained outage surfaces via the ingest-health watchdog
+   *  (stale cursor), not here. */
+  upstreamPaused: boolean;
   elapsedMs: number;
 }
 
@@ -142,6 +149,7 @@ export async function fetchBillsFunction(
   let updated = 0;
   let windows = 0;
   let timedOut = false;
+  let upstreamPaused = false;
 
   try {
     while (windowStart.isBefore(now)) {
@@ -163,32 +171,59 @@ export async function fetchBillsFunction(
       } catch (err) {
         // A deadline abort surfaces here as an axios cancel. Treat it like the
         // cooperative check: bail cleanly with the cursor left at the last
-        // completed window, so the next run resumes from there. Re-throw any
-        // genuine failure for the route to turn into a 500.
+        // completed window, so the next run resumes from there.
         if (controller.signal.aborted) {
           timedOut = true;
+          break;
+        }
+        // A transient upstream error — 429 (quota), a 5xx (origin/Cloudflare
+        // hiccup, incl. 520-526), or a network drop — is backpressure, not a
+        // failure. Stop cleanly with the cursor at the last completed window and
+        // let the next 3-hourly run resume once upstream recovers, exactly like
+        // the deadline path. Without this these propagated to a 500 and paged on
+        // every occurrence; a SUSTAINED outage still surfaces via the
+        // ingest-health watchdog (the cursor goes stale).
+        if (isTransientCongressError(err)) {
+          upstreamPaused = true;
           break;
         }
         throw err;
       }
 
-      for (let i = 0; i < bills.length; i += UPSERT_CONCURRENCY) {
-        if (Date.now() - started > DEADLINE_MS) {
+      try {
+        for (let i = 0; i < bills.length; i += UPSERT_CONCURRENCY) {
+          if (Date.now() - started > DEADLINE_MS) {
+            timedOut = true;
+            break;
+          }
+          const chunk = bills.slice(i, i + UPSERT_CONCURRENCY);
+          const results = await Promise.all(
+            chunk.map((b) => upsertBillFromList(b, controller.signal)),
+          );
+          processed += results.length;
+          for (const r of results) {
+            if (r === "created") created++;
+            else if (r === "updated") updated++;
+          }
+        }
+      } catch (err) {
+        // The CREATE path calls fetchBillIntroducedDate, which re-throws a 429
+        // (it must not launder a quota outage into a missing date). Handle it
+        // here the same way as the list-fetch above: a transient upstream stop
+        // is clean and resumable, an abort is the deadline, anything else is a
+        // real failure.
+        if (controller.signal.aborted) {
           timedOut = true;
           break;
         }
-        const chunk = bills.slice(i, i + UPSERT_CONCURRENCY);
-        const results = await Promise.all(
-          chunk.map((b) => upsertBillFromList(b, controller.signal)),
-        );
-        processed += results.length;
-        for (const r of results) {
-          if (r === "created") created++;
-          else if (r === "updated") updated++;
+        if (isTransientCongressError(err)) {
+          upstreamPaused = true;
+          break;
         }
+        throw err;
       }
 
-      if (timedOut) break;
+      if (timedOut || upstreamPaused) break;
 
       await prisma.ingestCursor.upsert({
         where: { key: CURSOR_KEY },
@@ -210,8 +245,9 @@ export async function fetchBillsFunction(
     updated,
     windows,
     cursor: windowStart.toDate(),
-    done: !timedOut && !windowStart.isBefore(now),
+    done: !timedOut && !upstreamPaused && !windowStart.isBefore(now),
     timedOut,
+    upstreamPaused,
     elapsedMs,
   };
 }

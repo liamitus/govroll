@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { fetchBillMetadata } from "../lib/congress-api";
+import { fetchBillMetadata, isQuotaError } from "../lib/congress-api";
 import { parseBillId } from "../lib/parse-bill-id";
 import { createStandalonePrisma } from "../lib/prisma-standalone";
 
@@ -103,6 +103,17 @@ export async function refreshBillMetadataFunction(limit = 25) {
       });
       ok++;
     } catch (e) {
+      // A 429 means the shared Congress.gov key's hourly quota is spent. Every
+      // remaining bill in this batch would 429 too, so stop cleanly and let the
+      // next (hourly) run resume once the window resets — don't burn the batch
+      // (or page) hammering a spent key. These bills stay eligible, so no
+      // progress is lost.
+      if (isQuotaError(e)) {
+        console.warn(
+          `[refresh-metadata] Congress.gov 429 (quota) after ${ok} bills — stopping batch early; resumes next run`,
+        );
+        break;
+      }
       failed++;
       console.warn(
         `[refresh-metadata] ${bill.billId} failed:`,

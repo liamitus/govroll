@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
+import { AxiosError } from "axios";
 import {
   fetchAllTextVersions,
   fetchBillActions,
@@ -8,6 +9,7 @@ import {
   fetchBillMetadata,
   fetchOfficialBillTitle,
   isQuotaError,
+  isTransientCongressError,
 } from "./congress-api";
 
 // A 429 with a long Retry-After makes withRetry bail immediately (the server
@@ -345,6 +347,50 @@ describe("isQuotaError", () => {
     expect(isQuotaError(null)).toBe(false);
     expect(isQuotaError("nope")).toBe(false);
     expect(isQuotaError(undefined)).toBe(false);
+  });
+});
+
+describe("isTransientCongressError", () => {
+  // Only `status` is read; build a minimal axios rejection for each code.
+  const withStatus = (status: number): AxiosError => {
+    const err = new AxiosError("upstream", "ERR_BAD_RESPONSE");
+    err.response = {
+      status,
+      statusText: "",
+      data: null,
+      headers: {},
+      config: {} as never,
+    };
+    return err;
+  };
+
+  it("is true for 429 (quota)", () => {
+    expect(isTransientCongressError(withStatus(429))).toBe(true);
+  });
+
+  it("is true for any 5xx, including Cloudflare 520-526", () => {
+    for (const status of [500, 502, 503, 504, 520, 522, 524]) {
+      expect(isTransientCongressError(withStatus(status))).toBe(true);
+    }
+  });
+
+  it("is true for a network drop (axios error with no HTTP response)", () => {
+    const netErr = new AxiosError("socket hang up", "ECONNRESET");
+    expect(netErr.response).toBeUndefined();
+    expect(isTransientCongressError(netErr)).toBe(true);
+  });
+
+  it("is false for a non-429 4xx — a real, non-self-healing failure", () => {
+    for (const status of [400, 401, 403, 404]) {
+      expect(isTransientCongressError(withStatus(status))).toBe(false);
+    }
+  });
+
+  it("is false for non-axios errors and non-error values (real bugs surface)", () => {
+    expect(isTransientCongressError(new Error("bug"))).toBe(false);
+    expect(isTransientCongressError(null)).toBe(false);
+    expect(isTransientCongressError("nope")).toBe(false);
+    expect(isTransientCongressError(undefined)).toBe(false);
   });
 });
 

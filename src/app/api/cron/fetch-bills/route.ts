@@ -40,6 +40,16 @@ export async function GET(request: Request) {
     // under the 300s Fluid maxDuration above. GitHub Actions reinvokes every 3h.
     const result = await fetchBillsFunction();
     const ms = Date.now() - start;
+    // A transient-upstream stop (429 / 5xx / network) is expected backpressure,
+    // not a failure — keep it a green 200 (cursor preserved, next run resumes)
+    // but log loudly so it's visible in the function logs without paging.
+    // Previously these underlying errors became a 500 + an alert email on every
+    // occurrence; a SUSTAINED outage is caught by the ingest-health watchdog.
+    if (result && "upstreamPaused" in result && result.upstreamPaused) {
+      console.warn(
+        `[fetch-bills cron] stopped on a transient Congress.gov error (429/5xx/network); cursor preserved, resuming next run`,
+      );
+    }
     console.log(`[fetch-bills cron] completed in ${ms}ms`, result);
     return NextResponse.json({ ok: true, ms, ...result });
   } catch (error: unknown) {
