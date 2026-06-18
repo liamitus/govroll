@@ -248,7 +248,7 @@ describe("GET /api/cron/fetch-bills", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.quotaLimited).toBe(true);
+    expect(body.upstreamPaused).toBe(true);
 
     // Cursor untouched so the next run resumes from exactly the same place.
     const cursor = await getTestPrisma().ingestCursor.findUnique({
@@ -292,8 +292,36 @@ describe("GET /api/cron/fetch-bills", () => {
     const res = await invokeCron(GET);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.quotaLimited).toBe(true);
-    // We bailed on quota before persisting — the new bill was not created.
+    expect(body.upstreamPaused).toBe(true);
+    // We bailed before persisting — the new bill was not created.
     expect(await getTestPrisma().bill.count()).toBe(0);
+  });
+
+  it("stops cleanly (no 500/page) on a Congress.gov 5xx (e.g. Cloudflare 520)", async () => {
+    // The list call isn't swallowed the way the detail calls are, so a transient
+    // upstream 5xx propagates. 520 ("unknown error" from Cloudflare in front of
+    // congress.gov) is the real page we saw — it must stop cleanly, not 500.
+    const cursorDate = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    await getTestPrisma().ingestCursor.create({
+      data: { key: "fetch-bills", cursor: cursorDate },
+    });
+
+    server.use(
+      http.get("https://api.congress.gov/v3/bill", () =>
+        HttpResponse.text("origin error", { status: 520 }),
+      ),
+    );
+
+    const res = await invokeCron(GET);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.upstreamPaused).toBe(true);
+
+    // Cursor untouched — next run retries the same window once upstream recovers.
+    const cursor = await getTestPrisma().ingestCursor.findUnique({
+      where: { key: "fetch-bills" },
+    });
+    expect(cursor?.cursor.toISOString()).toBe(cursorDate.toISOString());
   });
 });

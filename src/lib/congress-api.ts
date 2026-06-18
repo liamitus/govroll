@@ -39,6 +39,29 @@ export function isQuotaError(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 429;
 }
 
+/**
+ * True when an error is a TRANSIENT upstream failure from congress.gov — one
+ * expected to clear on its own, so the right response is to stop the run cleanly
+ * and resume next cron tick rather than page. Three families:
+ *   - 429 — quota exhaustion (also `isQuotaError`).
+ *   - 5xx — origin or edge briefly unhealthy. congress.gov sits behind
+ *     Cloudflare, which adds its own 520-526 ("unknown error" / "origin
+ *     unreachable") on top of the usual 500/502/503/504.
+ *   - no response — a network drop (DNS, connection reset, socket timeout)
+ *     before any HTTP status came back.
+ *
+ * Excluded (these must still surface): a deadline abort (axios cancel — the
+ * caller handles that as a timeout), a non-429 4xx (a malformed request won't
+ * fix itself on retry), and any non-axios error (a real bug in our code).
+ */
+export function isTransientCongressError(error: unknown): boolean {
+  if (axios.isCancel(error)) return false;
+  if (!axios.isAxiosError(error)) return false;
+  if (!error.response) return true; // network-level failure, no HTTP status
+  const status = error.response.status;
+  return status === 429 || status >= 500;
+}
+
 /** Parse a Retry-After header (delta-seconds or HTTP-date) into milliseconds.
  *  Returns null when the header is absent or unparseable. */
 function parseRetryAfterMs(error: unknown): number | null {
