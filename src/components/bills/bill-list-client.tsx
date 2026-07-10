@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-query";
 import { BillCard } from "./bill-card";
 import { BillGroupCard } from "./bill-group-card";
+import { RecessNotice } from "@/components/congress-status/recess-notice";
 import { TOPICS } from "@/lib/topic-mapping";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserPref } from "@/hooks/use-user-pref";
@@ -421,6 +422,11 @@ export function BillListClient() {
           )}
         </p>
       </div>
+
+      {/* Recess strip — during a named recess the feed's activity dates go
+          quiet for a week+; explain that here, next to the dates themselves,
+          or the feed reads as stale data. */}
+      <RecessNotice />
 
       {/* Jump-to row — when the user typed a bill citation. Sits above
           the main feed so they can still browse other results. */}

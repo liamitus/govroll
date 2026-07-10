@@ -19,6 +19,7 @@ import type {
   ChamberStatusPayload,
 } from "@/app/api/congress/status/route";
 import type { CongressCalendarResponse } from "@/app/api/congress/calendar/route";
+import { CONGRESS_STATUS_QUERY_KEY, fetchCongressStatus } from "./status-query";
 
 /**
  * "Is Congress working right now?" — pill lives in the global NavBar,
@@ -43,12 +44,8 @@ export function CongressStatus() {
   const [open, setOpen] = useState(false);
 
   const query = useQuery<CongressStatusResponse>({
-    queryKey: ["congress-status"],
-    queryFn: async () => {
-      const res = await fetch("/api/congress/status", { cache: "no-store" });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      return res.json();
-    },
+    queryKey: CONGRESS_STATUS_QUERY_KEY,
+    queryFn: fetchCongressStatus,
     refetchInterval: (q) => {
       const house = q.state.data?.chambers.house;
       const senate = q.state.data?.chambers.senate;
