@@ -24,15 +24,16 @@ on:
     # compute-congress-status moved to its own workflow (congress-status.yml):
     # its */10 schedule collided with the crons below at :00/:20/:30/:50 and
     # GitHub coalesced the overlapping triggers, starving the status refresh.
-    - cron: "*/30 * * * *" # fetch-votes                (every 30m)
+    - cron: "10 * * * *" # fetch-votes                (hourly)
     - cron: "15 * * * *" # compute-momentum           (hourly)
     - cron: "45 * * * *" # backfill-bill-text         (hourly, small batch)
-    # Was every 2h, bumped to every 30m. This cron now reconciles
-    # currentStatus on top of the action backfill (Farm Bill class
-    # of bugs). With ~5k live bills and batch=20 every 30m, every
-    # live bill gets refreshed every ~2 days while a chamber vote
-    # shows up in the DB within hours of it happening.
-    - cron: "5,35 * * * *" # backfill-bill-actions      (every 30m)
+    # Was every 2h, bumped to every 30m, then relaxed to hourly to stay under
+    # Vercel's free-tier Active CPU budget (each invocation pays cold-start CPU).
+    # This cron reconciles currentStatus on top of the action backfill (Farm
+    # Bill class of bugs). With ~5k live bills and batch=20 hourly, every live
+    # bill gets refreshed every ~4 days while a chamber vote shows up in the DB
+    # within a few hours of it happening.
+    - cron: "5 * * * *" # backfill-bill-actions      (hourly)
     - cron: "40 */2 * * *" # backfill-cosponsors        (every 2h)
     - cron: "0 */3 * * *" # fetch-bills                (every 3h)
     # Was every 6h at :30, which both starved the drain (~100 bills/day against
@@ -44,7 +45,7 @@ on:
     - cron: "25 * * * *" # refresh-bill-metadata      (hourly at :25)
     - cron: "0 * * * *" # evaluate-budget            (hourly, on the hour)
     - cron: "0 10 * * 1" # fetch-representatives      (weekly, Mon 10:00 UTC)
-    - cron: "20,50 * * * *" # embed-large-bills          (every 30m, offset)
+    - cron: "20 * * * *" # embed-large-bills          (hourly)
     - cron: "30 3 * * *" # cleanup-expired-cache      (daily 03:30 UTC)
     # Freshness watchdog — pages only when a cursor or backfill is genuinely
     # stuck for hours (sustained quota / a stopped cron / the #139 silent-stall
@@ -111,16 +112,16 @@ jobs:
             exit 0
           fi
           case "${SCHEDULE}" in
-            "*/30 * * * *")  echo "endpoint=fetch-votes"               >> "$GITHUB_OUTPUT" ;;
+            "10 * * * *")    echo "endpoint=fetch-votes"               >> "$GITHUB_OUTPUT" ;;
             "15 * * * *")    echo "endpoint=compute-momentum"          >> "$GITHUB_OUTPUT" ;;
             "45 * * * *")    echo "endpoint=backfill-bill-text"        >> "$GITHUB_OUTPUT" ;;
-            "5,35 * * * *")  echo "endpoint=backfill-bill-actions"     >> "$GITHUB_OUTPUT" ;;
+            "5 * * * *")     echo "endpoint=backfill-bill-actions"     >> "$GITHUB_OUTPUT" ;;
             "40 */2 * * *")  echo "endpoint=backfill-cosponsors"       >> "$GITHUB_OUTPUT" ;;
             "0 */3 * * *")   echo "endpoint=fetch-bills"               >> "$GITHUB_OUTPUT" ;;
             "25 * * * *")    echo "endpoint=refresh-bill-metadata"     >> "$GITHUB_OUTPUT" ;;
             "0 * * * *")     echo "endpoint=evaluate-budget"           >> "$GITHUB_OUTPUT" ;;
             "0 10 * * 1")    echo "endpoint=fetch-representatives"     >> "$GITHUB_OUTPUT" ;;
-            "20,50 * * * *") echo "endpoint=embed-large-bills"         >> "$GITHUB_OUTPUT" ;;
+            "20 * * * *")    echo "endpoint=embed-large-bills"         >> "$GITHUB_OUTPUT" ;;
             "30 3 * * *")    echo "endpoint=cleanup-expired-cache"     >> "$GITHUB_OUTPUT" ;;
             "55 * * * *")    echo "endpoint=ingest-health"             >> "$GITHUB_OUTPUT" ;;
             *)

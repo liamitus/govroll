@@ -13,10 +13,15 @@ name: congress-status
 # GitHub still doesn't guarantee on-time scheduled runs, so the UI tolerates
 # drift (see STALENESS_CEILING_MS in src/components/congress-status/resolve.ts)
 # rather than relying on sub-15-min precision here.
+#
+# Cadence: relaxed from */10 to */30 to stay under Vercel's free-tier Active
+# CPU budget — this was the single highest-frequency cron (~4.3k invocations/
+# month, a third of the total), each paying cold-start CPU. */30 is still 3x
+# inside the 90-min STALENESS_CEILING_MS, so the widget never reads "stale".
 
 on:
   schedule:
-    - cron: "*/10 * * * *" # every 10 minutes (UTC)
+    - cron: "*/30 * * * *" # every 30 minutes (UTC)
   workflow_dispatch: {}
 
 # We only call an authenticated HTTP endpoint on govroll.com — no write scopes.
