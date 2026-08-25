@@ -140,7 +140,7 @@ export function BudgetThermometer({
           Hosting and database are free for now — these costs will grow with
           traffic.{" "}
           <a
-            href="https://github.com/liamitus/govroll/blob/main/src/lib/site-costs.ts"
+            href="https://github.com/howellandgibbs/govroll/blob/main/src/lib/site-costs.ts"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-foreground underline underline-offset-2"

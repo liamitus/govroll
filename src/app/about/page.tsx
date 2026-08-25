@@ -114,7 +114,7 @@ export default function AboutPage() {
         <p className="text-muted-foreground text-base leading-relaxed">
           Govroll is open source on{" "}
           <a
-            href="https://github.com/liamitus/govroll"
+            href="https://github.com/howellandgibbs/govroll"
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary underline underline-offset-2"
@@ -124,7 +124,7 @@ export default function AboutPage() {
           . Bugs, feature requests, and roadmap work happen in the open — you
           can browse or file anything on the public{" "}
           <a
-            href="https://github.com/liamitus/govroll/issues"
+            href="https://github.com/howellandgibbs/govroll/issues"
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary underline underline-offset-2"
