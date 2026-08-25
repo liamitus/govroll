@@ -62,14 +62,15 @@ export default async function SupportPage() {
     <div className="mx-auto max-w-2xl space-y-10 px-4 py-10">
       {/* Hero */}
       <header className="space-y-3 text-center">
-        <p className="text-civic-gold star-accent text-sm tracking-widest uppercase">
+        <p className="text-ink-muted flex items-center justify-center gap-2 text-[11px] font-bold tracking-[0.18em] uppercase">
+          <span className="brand-node" aria-hidden="true" />
           Citizen-Supported
         </p>
         <h1 className="text-4xl font-bold tracking-tight">
           Govroll is supported by citizens,{" "}
-          <span className="text-navy-light">not lobbyists.</span>
+          <span className="text-sapphire">not lobbyists.</span>
         </h1>
-        <p className="text-muted-foreground mx-auto max-w-lg text-base">
+        <p className="text-ink-muted mx-auto max-w-lg text-base">
           This site costs real money to run — hosting, database, AI&nbsp;APIs.
           No ads. No corporate sponsors. No paywalls. Just citizens chipping in
           to keep it free for everyone.
@@ -88,12 +89,12 @@ export default async function SupportPage() {
 
       {/* Context-sensitive message */}
       {funded ? (
-        <p className="text-muted-foreground mx-auto max-w-md text-center text-base">
-          Govroll is funded this month — thank you! Extra contributions help me
+        <p className="text-ink-muted mx-auto max-w-md text-center text-base">
+          Govroll is funded this month — thank you. Extra contributions help me
           work on this full-time, but please don&apos;t feel obligated.
         </p>
       ) : (
-        <p className="text-muted-foreground mx-auto max-w-md text-center text-base">
+        <p className="text-ink-muted mx-auto max-w-md text-center text-base">
           Donating is totally optional. When enough citizens chip in, AI
           features come back online for everyone — including you, for&nbsp;free.
         </p>
@@ -104,11 +105,11 @@ export default async function SupportPage() {
 
       {/* Social proof */}
       {donorCount > 0 && (
-        <p className="text-muted-foreground text-center text-sm">
+        <p className="text-ink-muted text-center text-sm">
           Join{" "}
           <Link
             href="/made-possible-by"
-            className="text-primary hover:text-navy underline underline-offset-2"
+            className="text-sapphire-deep hover:text-ink underline underline-offset-2"
           >
             {`${donorCount.toLocaleString("en-US")} citizen${donorCount !== 1 ? "s" : ""}`}
           </Link>{" "}
@@ -117,14 +118,14 @@ export default async function SupportPage() {
       )}
 
       {/* Other ways to help */}
-      <p className="text-muted-foreground text-center text-base">
+      <p className="text-ink-muted text-center text-base">
         Prefer contributing time instead of money? Govroll is open source —
         browse open{" "}
         <a
           href="https://github.com/howellandgibbs/govroll/issues"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary hover:text-navy underline underline-offset-2"
+          className="text-sapphire-deep hover:text-ink underline underline-offset-2"
         >
           issues on GitHub
         </a>
@@ -132,7 +133,7 @@ export default async function SupportPage() {
       </p>
 
       {/* Legal disclosure */}
-      <footer className="text-muted-foreground space-y-2 border-t pt-6 text-sm leading-relaxed">
+      <footer className="text-ink-muted space-y-2 border-t pt-6 text-sm leading-relaxed">
         <p>
           Contributions are processed by Stripe and received by Govroll.
           Contributions are <strong>not tax-deductible</strong> for U.S. federal
@@ -141,10 +142,7 @@ export default async function SupportPage() {
         <p>
           Refunds are available within 14 days for accidental or duplicate
           charges. Recurring contributions can be canceled at any time.{" "}
-          <Link
-            href="/support/terms"
-            className="hover:text-foreground underline"
-          >
+          <Link href="/support/terms" className="hover:text-ink underline">
             Full terms
           </Link>
         </p>

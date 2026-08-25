@@ -34,9 +34,9 @@ export function RecessNotice() {
   const detail = winner?.detail ?? null;
 
   return (
-    <div className="border-civic-gold/40 bg-civic-cream flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5">
+    <div className="border-l-gold bg-gold/25 flex items-start gap-2.5 border-l-4 px-3.5 py-2.5">
       <svg
-        className="text-civic-gold mt-0.5 h-4 w-4 shrink-0"
+        className="text-ink/70 mt-0.5 h-4 w-4 shrink-0"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -46,17 +46,17 @@ export function RecessNotice() {
         <rect x="3" y="5" width="18" height="16" rx="2" />
         <path d="M8 3v4M16 3v4M3 10h18" strokeLinecap="round" />
       </svg>
-      <div className="min-w-0 text-sm">
-        <p className="text-navy font-medium">
+      <div className="text-ink min-w-0 text-sm">
+        <p className="font-medium">
           Congress is in recess
           {resolved.nextTransitionLabel && (
-            <span className="text-muted-foreground font-normal">
+            <span className="text-ink-muted font-normal">
               {" "}
               · {resolved.nextTransitionLabel}
             </span>
           )}
         </p>
-        <p className="text-muted-foreground text-xs">
+        <p className="text-ink/80 text-xs">
           {detail ? `${detail}. ` : ""}
           Votes and floor action are paused, so the latest activity here may
           look a few days old — new bills still appear as they&apos;re

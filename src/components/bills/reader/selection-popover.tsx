@@ -169,7 +169,7 @@ export function SelectionPopover({
         transform: "translateX(-50%)",
         zIndex: 60,
       }}
-      className="border-civic-gold/40 bg-card max-w-[min(360px,calc(100vw-1rem))] rounded-lg border p-3 shadow-lg"
+      className="border-rule bg-paper max-w-[min(360px,calc(100vw-1rem))] border p-3"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <ExplainPopoverContent

@@ -38,7 +38,7 @@ export function AiSummaryFeedback({ billId, surface }: Props) {
         onClick={() => submit(1)}
         disabled={disabled}
         aria-label="Yes, helpful"
-        className="hover:bg-accent hover:text-foreground focus-visible:ring-civic-gold/40 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent transition-colors focus:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50"
+        className="hover:bg-accent hover:text-foreground focus-visible:ring-gold/60 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent transition-colors focus:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -60,7 +60,7 @@ export function AiSummaryFeedback({ billId, surface }: Props) {
         onClick={() => submit(-1)}
         disabled={disabled}
         aria-label="No, not helpful"
-        className="hover:bg-accent hover:text-foreground focus-visible:ring-civic-gold/40 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent transition-colors focus:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50"
+        className="hover:bg-accent hover:text-foreground focus-visible:ring-gold/60 inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent transition-colors focus:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"

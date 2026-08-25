@@ -76,11 +76,16 @@ function pickBanner(
   }
 }
 
+/**
+ * Never red, never alarm styling — a dead bill is a route that ended.
+ * Dead/dormant get the hollow/faded treatment; a stalled bill is still a
+ * stage fact, so it reads like a session note: gold-washed ground with a
+ * 4px gold left border.
+ */
 const TONE_CLASSES: Record<BannerSpec["tone"], string> = {
-  dead: "border-border/60 bg-muted/60 text-foreground/75",
-  dormant: "border-border/60 bg-muted/40 text-foreground/80",
-  stalled:
-    "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200",
+  dead: "border border-dashed border-hollow bg-transparent text-ink-muted",
+  dormant: "border border-hollow bg-transparent text-ink-muted",
+  stalled: "border-l-4 border-l-gold bg-gold/25 text-ink",
 };
 
 export function BillStatusBanner({
@@ -95,7 +100,7 @@ export function BillStatusBanner({
   const banner = pickBanner(tier, days, reason);
   if (!banner) return null;
   return (
-    <div className={`rounded-lg border px-4 py-3 ${TONE_CLASSES[banner.tone]}`}>
+    <div className={`px-4 py-3 ${TONE_CLASSES[banner.tone]}`}>
       <p className="text-base leading-tight font-semibold">{banner.title}</p>
       <p className="mt-1 text-sm leading-relaxed opacity-90">{banner.body}</p>
     </div>

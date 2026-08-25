@@ -69,7 +69,10 @@ export function DonationHistory({ userId }: { userId: string }) {
         <h2 className="text-xl font-semibold">
           Your Contributions ({donations.length})
         </h2>
-        <Link href="/support" className="text-primary text-sm hover:underline">
+        <Link
+          href="/support"
+          className="text-sapphire-deep text-sm hover:underline"
+        >
           Support again
         </Link>
       </div>
@@ -78,7 +81,7 @@ export function DonationHistory({ userId }: { userId: string }) {
           <div className="flex items-start justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="text-base font-medium">
+                <span className="text-base font-medium tabular-nums">
                   ${(d.amountCents / 100).toFixed(2)}
                 </span>
                 {d.isRecurring && (
@@ -93,7 +96,7 @@ export function DonationHistory({ userId }: { userId: string }) {
                   </Badge>
                 )}
               </div>
-              <p className="text-muted-foreground text-sm">
+              <p className="text-ink-muted text-sm">
                 {d.displayMode === "ANONYMOUS"
                   ? "Anonymous"
                   : d.displayMode === "TRIBUTE"
@@ -103,7 +106,7 @@ export function DonationHistory({ userId }: { userId: string }) {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-muted-foreground text-sm">
+              <span className="text-ink-muted text-sm tabular-nums">
                 {new Date(d.createdAt).toLocaleDateString("en-US")}
               </span>
               {d.displayMode !== "ANONYMOUS" && !d.hiddenAt && (
@@ -124,7 +127,7 @@ export function DonationHistory({ userId }: { userId: string }) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-muted-foreground h-6 px-2 text-xs"
+                    className="text-ink-muted h-6 px-2 text-xs"
                     onClick={() =>
                       mutation.mutate({ donationId: d.id, action: "hide" })
                     }

@@ -86,22 +86,22 @@ export function ConversationHistory({ userId }: { userId: string }) {
                     billId: c.bill.billId,
                     title: c.bill.title,
                   })}
-                  className="text-primary block truncate text-sm font-medium hover:underline"
+                  className="text-sapphire-deep block truncate text-sm font-medium hover:underline"
                 >
                   {c.bill.title}
                 </Link>
               )}
-              <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
+              <p className="text-ink-muted mt-1 line-clamp-2 text-sm">
                 <span className="font-medium">
                   {c.lastMessage?.sender === "ai" ? "AI: " : "You: "}
                 </span>
                 {previewFor(c.lastMessage)}
               </p>
-              <p className="text-muted-foreground/70 mt-1 text-xs">
+              <p className="text-ink-muted/70 mt-1 text-xs">
                 {`${c.questionCount} question${c.questionCount === 1 ? "" : "s"}`}
               </p>
             </div>
-            <span className="text-muted-foreground shrink-0 text-sm whitespace-nowrap">
+            <span className="text-ink-muted shrink-0 text-sm whitespace-nowrap tabular-nums">
               {new Date(c.updatedAt).toLocaleDateString("en-US")}
             </span>
           </div>

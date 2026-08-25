@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import type { RepVoteRecord } from "@/types";
 import { billHref } from "@/lib/bills/url";
 import { ChevronDown, ChevronUp, ChevronRight } from "lucide-react";
 import {
   isYesVote,
   isNoVote,
+  normalizeRepVote,
   voteCategoryLabel,
   isPassageCategory,
 } from "@/lib/votes";
@@ -21,21 +21,34 @@ interface VoteComparisonFeedProps {
 
 type Filter = "all" | "matches" | "mismatches";
 
-function repVoteBadgeClass(vote: string): string {
-  if (isYesVote(vote)) return "bg-vote-yea text-white";
-  if (isNoVote(vote)) return "bg-vote-nay text-white";
-  if (vote === "Present") return "bg-vote-present text-white";
-  return "bg-gray-300 text-gray-700";
+/**
+ * Vote chips carry the word — maya and flame differ only in hue, so the
+ * fill alone is never the message. Ink text on both fills; a non-position
+ * (Present / Not Voting / no record) is a dashed hollow frame, not a fill.
+ */
+const CHIP_BASE =
+  "inline-flex flex-shrink-0 items-center justify-center px-2 py-1 text-[10.5px] font-bold uppercase tracking-[0.08em]";
+const CHIP_DASHED = `${CHIP_BASE} border-[1.5px] border-dashed border-hollow text-ink-muted`;
+
+function repVoteChipClass(vote: string): string {
+  if (isYesVote(vote)) return `${CHIP_BASE} bg-maya text-ink`;
+  if (isNoVote(vote)) return `${CHIP_BASE} bg-flame text-ink`;
+  return CHIP_DASHED;
 }
 
-function userVoteBadgeClass(vote: string): string {
+function repVoteWord(vote: string): string {
+  const normalized = normalizeRepVote(vote);
+  return normalized === "Unknown" ? "No record" : normalized;
+}
+
+function userVoteChipClass(vote: string): string {
   switch (vote) {
     case "For":
-      return "bg-vote-yea text-white";
+      return `${CHIP_BASE} bg-maya text-ink`;
     case "Against":
-      return "bg-vote-nay text-white";
+      return `${CHIP_BASE} bg-flame text-ink`;
     default:
-      return "bg-gray-300 text-gray-700";
+      return CHIP_DASHED;
   }
 }
 
@@ -54,16 +67,18 @@ function rowDateIso(group: BillVoteGroup): string {
 function VoteHistoryRow({ vote }: { vote: RepVoteRecord }) {
   const dateIso = vote.votedAt ?? vote.date;
   return (
-    <li className="border-border/40 flex items-center justify-between gap-3 border-t py-2 text-sm">
+    <li className="border-rule flex items-center justify-between gap-3 border-t py-2 text-sm">
       <div className="min-w-0 flex-1">
-        <p className="text-navy/80 truncate font-medium">
+        <p className="text-ink truncate font-medium">
           {voteCategoryLabel(vote.category)}
         </p>
-        <p className="text-muted-foreground text-xs">{formatDate(dateIso)}</p>
+        <p className="text-ink-muted text-xs tabular-nums">
+          {formatDate(dateIso)}
+        </p>
       </div>
-      <Badge className={`${repVoteBadgeClass(vote.repVote)} flex-shrink-0`}>
-        {vote.repVote}
-      </Badge>
+      <span className={repVoteChipClass(vote.repVote)}>
+        {repVoteWord(vote.repVote)}
+      </span>
     </li>
   );
 }
@@ -73,27 +88,22 @@ function BillRow({ group }: { group: BillVoteGroup }) {
   const { primary, votes, alignment, hasMixedStances, userVote } = group;
   const hasMore = votes.length > 1;
 
-  const rowBg =
-    alignment === "match"
-      ? "bg-vote-yea/5 border-vote-yea/20"
-      : alignment === "mismatch"
-        ? "bg-vote-nay/5 border-vote-nay/20"
-        : "bg-white border-border/60";
-
   const primaryIsPassage = isPassageCategory(primary.category);
 
   return (
-    <div className={`rounded-lg border p-4 ${rowBg} transition-colors`}>
+    <div className="border-rule bg-paper border p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1">
           <Link
             href={billHref({ billId: group.billSlug, title: group.title })}
-            className="text-navy line-clamp-2 text-base leading-snug font-semibold hover:underline"
+            className="text-ink line-clamp-2 text-base leading-snug font-semibold hover:underline"
           >
             {group.title}
           </Link>
-          <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <span>{formatDate(rowDateIso(group))}</span>
+          <div className="text-ink-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+            <span className="tabular-nums">
+              {formatDate(rowDateIso(group))}
+            </span>
             {!primaryIsPassage && (
               <>
                 <span aria-hidden>·</span>
@@ -105,10 +115,7 @@ function BillRow({ group }: { group: BillVoteGroup }) {
             {hasMixedStances && (
               <>
                 <span aria-hidden>·</span>
-                <span
-                  className="text-vote-present"
-                  title="Voted on opposite sides across stages of this bill (e.g. yes on cloture, no on passage)"
-                >
+                <span title="Voted on opposite sides across stages of this bill (e.g. yes on cloture, no on passage)">
                   voted both ways across stages
                 </span>
               </>
@@ -118,36 +125,30 @@ function BillRow({ group }: { group: BillVoteGroup }) {
 
         <div className="flex flex-shrink-0 items-center gap-3">
           <div className="text-center">
-            <p className="text-muted-foreground mb-1 text-xs tracking-wider uppercase">
+            <p className="text-ink-muted mb-1 text-[10px] font-semibold tracking-[0.1em] uppercase">
               Rep
             </p>
-            <Badge className={repVoteBadgeClass(primary.repVote)}>
-              {primary.repVote}
-            </Badge>
+            <span className={repVoteChipClass(primary.repVote)}>
+              {repVoteWord(primary.repVote)}
+            </span>
           </div>
 
           <div className="text-center">
-            <p className="text-muted-foreground mb-1 text-xs tracking-wider uppercase">
+            <p className="text-ink-muted mb-1 text-[10px] font-semibold tracking-[0.1em] uppercase">
               You
             </p>
             {userVote ? (
-              <Badge className={userVoteBadgeClass(userVote)}>{userVote}</Badge>
+              <span className={userVoteChipClass(userVote)}>{userVote}</span>
             ) : (
-              <span className="text-muted-foreground text-xs">—</span>
+              <span className="text-ink-muted text-xs">—</span>
             )}
           </div>
 
-          <div className="w-6 text-center">
-            {alignment === "match" && (
-              <span className="text-vote-yea text-lg" aria-label="Aligned">
-                &#10003;
-              </span>
-            )}
-            {alignment === "mismatch" && (
-              <span className="text-vote-nay text-lg" aria-label="Not aligned">
-                &#10007;
-              </span>
-            )}
+          {/* Agreement is stated in words, in ink — never a green check
+              or red cross. */}
+          <div className="text-ink w-16 text-center text-[11px] leading-tight font-semibold">
+            {alignment === "match" && "Same position"}
+            {alignment === "mismatch" && "Different position"}
           </div>
         </div>
       </div>
@@ -155,7 +156,7 @@ function BillRow({ group }: { group: BillVoteGroup }) {
       {hasMore && (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-navy/70 hover:text-navy mt-3 inline-flex items-center gap-1 text-xs transition-colors"
+          className="text-ink-muted hover:text-ink mt-3 inline-flex items-center gap-1 text-xs transition-colors"
           aria-expanded={expanded}
         >
           <ChevronRight
@@ -209,7 +210,7 @@ export function VoteComparisonFeed({
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-navy/70 text-sm font-semibold tracking-[0.15em] uppercase">
+        <h2 className="text-ink-muted text-[11px] font-bold tracking-[0.18em] uppercase">
           Full Voting Record
         </h2>
         {userVotes && groups.length > 0 && (
@@ -224,10 +225,10 @@ export function VoteComparisonFeed({
               <button
                 key={key}
                 onClick={() => setFilter(key)}
-                className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                className={`border px-3 py-1 text-xs tabular-nums transition-colors ${
                   filter === key
-                    ? "bg-navy text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    ? "border-ink bg-ink text-paper"
+                    : "border-rule bg-paper text-ink-muted hover:text-ink"
                 }`}
               >
                 {label}
@@ -238,7 +239,7 @@ export function VoteComparisonFeed({
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-muted-foreground py-4 text-center text-base">
+        <p className="text-ink-muted py-4 text-center text-base">
           No votes to display.
         </p>
       ) : (
@@ -252,7 +253,7 @@ export function VoteComparisonFeed({
       {hasMore && (
         <button
           onClick={() => setShowAll((v) => !v)}
-          className="text-navy/70 hover:text-navy mx-auto flex items-center gap-1.5 py-2 text-sm transition-colors"
+          className="text-ink-muted hover:text-ink mx-auto flex items-center gap-1.5 py-2 text-sm transition-colors"
         >
           {showAll ? (
             <>

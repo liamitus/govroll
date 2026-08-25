@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import type { RepVoteRecord } from "@/types";
 import { billHref } from "@/lib/bills/url";
 import { isYesVote } from "@/lib/votes";
@@ -10,6 +9,13 @@ interface RepKeyVotesProps {
   keyVotes: RepVoteRecord[];
   repFirstName: string;
 }
+
+/**
+ * Vote chip base — the word is mandatory (maya/flame differ only in hue),
+ * ink text on both fills, square corners, uppercase Public Sans.
+ */
+const CHIP_BASE =
+  "inline-flex flex-shrink-0 items-center justify-center px-2 py-1 text-[10.5px] font-bold uppercase tracking-[0.08em]";
 
 function formatVoteDate(record: RepVoteRecord): string {
   // Prefer the actual roll-call date; fall back to bill.date for legacy
@@ -27,10 +33,10 @@ export function RepKeyVotes({ keyVotes, repFirstName }: RepKeyVotesProps) {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-navy/70 text-sm font-semibold tracking-[0.15em] uppercase">
+      <h2 className="text-ink-muted text-[11px] font-bold tracking-[0.18em] uppercase">
         Key Votes
       </h2>
-      <p className="text-muted-foreground -mt-1 text-sm">
+      <p className="text-ink-muted -mt-1 text-sm">
         {`How ${repFirstName} voted on final passage of bills`}
       </p>
 
@@ -40,26 +46,22 @@ export function RepKeyVotes({ keyVotes, repFirstName }: RepKeyVotesProps) {
           return (
             <div
               key={`${vote.billId}-${vote.rollCallNumber ?? "x"}`}
-              className="border-border/60 flex items-center gap-3 rounded-lg border bg-white p-3 sm:p-4"
+              className="border-rule bg-paper flex items-center gap-3 border p-3 sm:p-4"
             >
-              <Badge
-                className={
-                  yes
-                    ? "bg-vote-yea flex-shrink-0 text-white"
-                    : "bg-vote-nay flex-shrink-0 text-white"
-                }
+              <span
+                className={`${CHIP_BASE} ${yes ? "bg-maya" : "bg-flame"} text-ink`}
               >
-                {yes ? "YES" : "NO"}
-              </Badge>
+                {yes ? "Yes" : "No"}
+              </span>
 
               <div className="min-w-0 flex-1">
                 <Link
                   href={billHref({ billId: vote.billSlug, title: vote.title })}
-                  className="text-navy line-clamp-2 text-base leading-snug font-semibold hover:underline"
+                  className="text-ink line-clamp-2 text-base leading-snug font-semibold hover:underline"
                 >
                   {vote.title}
                 </Link>
-                <p className="text-muted-foreground mt-0.5 text-sm">
+                <p className="text-ink-muted mt-0.5 text-sm tabular-nums">
                   {formatVoteDate(vote)}
                 </p>
               </div>

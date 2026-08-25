@@ -16,9 +16,9 @@ import type { RecessWindow } from "@/app/api/congress/calendar/route";
 
 /**
  * Month grid of the published floor schedule. Each weekday that isn't inside a
- * recess window draws a color-coded session bar — House (amber) and Senate
- * (teal), matching the chamber swatches on the status rows above — and
- * consecutive in-session days merge into one continuous bar with rounded caps,
+ * recess window draws a sapphire session bar per chamber — the lanes are
+ * positional (House above, Senate below; chamber never gets its own colour
+ * channel) — and consecutive in-session days merge into one continuous bar,
  * reading like a legislative timeline.
  *
  * The window is vertically centered on today (2 weeks above, 2 below) so it
@@ -231,9 +231,11 @@ function NavButton({
 }
 
 // Literal class strings (not interpolated) so Tailwind's JIT keeps them.
+// In-session marks are sapphire for both chambers (restrained: the two
+// lanes are told apart by position, not hue); past days fade.
 function barColor(chamber: "house" | "senate", past: boolean): string {
-  if (chamber === "house") return past ? "bg-house/40" : "bg-house";
-  return past ? "bg-senate/40" : "bg-senate";
+  if (chamber === "house") return past ? "bg-sapphire/40" : "bg-sapphire";
+  return past ? "bg-sapphire/40" : "bg-sapphire";
 }
 
 function numberClass(cell: DayCell): string {

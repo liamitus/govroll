@@ -20,6 +20,13 @@ import {
   type RollCallOutcome,
 } from "@/lib/votes";
 
+/**
+ * Proportional stacked tally bar: maya | flame | blank, framed by a 1px
+ * ink border with 1px ink separators between segments. Absences (present
+ * / not voting / abstain) render as transparent segments occupying their
+ * true width — an absence is part of the record. Every bar is paired
+ * with a key of counts + words by its caller.
+ */
 function VoteBar({
   segments,
   total,
@@ -28,26 +35,35 @@ function VoteBar({
   total: number;
 }) {
   if (total === 0) {
-    return (
-      <div className="bg-muted h-3 w-full overflow-hidden rounded-full">
-        <div className="bg-muted h-full w-full" />
-      </div>
-    );
+    return <div className="border-ink h-3 w-full border" />;
   }
 
   return (
-    <div className="bg-muted flex h-3 w-full overflow-hidden rounded-full">
+    <div className="border-ink divide-ink flex h-3 w-full divide-x overflow-hidden border">
       {segments.map(
         (seg) =>
           seg.count > 0 && (
             <div
               key={seg.label}
-              className={`h-full ${seg.color} transition-all duration-500`}
+              className={`h-full ${seg.color}`}
               style={{ width: `${(seg.count / total) * 100}%` }}
             />
           ),
       )}
     </div>
+  );
+}
+
+/** Key swatch matching a bar segment — filled for maya/flame, a hollow
+ *  ink-bordered square for the blank (absence) segments. */
+function KeySwatch({ color }: { color: string }) {
+  return (
+    <span
+      className={`inline-block h-2.5 w-2.5 ${
+        color === "bg-transparent" ? "border-ink border" : color
+      }`}
+      aria-hidden
+    />
   );
 }
 
@@ -118,7 +134,9 @@ export function RollCallCard({ rollCall }: { rollCall: RollCallVote }) {
           {`${inferChamber(rollCall)} Vote`}
         </h4>
         {dateStr && (
-          <span className="text-muted-foreground text-sm">{dateStr}</span>
+          <span className="text-muted-foreground text-sm tabular-nums">
+            {dateStr}
+          </span>
         )}
       </div>
 
@@ -126,49 +144,45 @@ export function RollCallCard({ rollCall }: { rollCall: RollCallVote }) {
         segments={[
           { label: "Yes", count: yea, color: "bg-vote-yea" },
           { label: "No", count: nay, color: "bg-vote-nay" },
-          {
-            label: "Present",
-            count: present,
-            color: "bg-vote-present",
-          },
-          {
-            label: "Not Voting",
-            count: notVoting,
-            color: "bg-vote-notvoting",
-          },
+          // Absences occupy their true width as blank track — part of
+          // the record, never dropped from the bar.
+          { label: "Present", count: present, color: "bg-transparent" },
+          { label: "Not Voting", count: notVoting, color: "bg-transparent" },
         ]}
         total={total}
       />
 
-      <div className="flex flex-wrap gap-3 text-sm">
+      <div className="flex flex-wrap gap-3 text-sm tabular-nums">
         {yea > 0 && (
           <span className="flex items-center gap-1.5">
-            <span className="bg-vote-yea inline-block h-2.5 w-2.5 rounded-full" />
+            <KeySwatch color="bg-vote-yea" />
             Yes: {yea}
           </span>
         )}
         {nay > 0 && (
           <span className="flex items-center gap-1.5">
-            <span className="bg-vote-nay inline-block h-2.5 w-2.5 rounded-full" />
+            <KeySwatch color="bg-vote-nay" />
             No: {nay}
           </span>
         )}
         {present > 0 && (
           <span className="flex items-center gap-1.5">
-            <span className="bg-vote-present inline-block h-2.5 w-2.5 rounded-full" />
+            <KeySwatch color="bg-transparent" />
             Present: {present}
           </span>
         )}
         {notVoting > 0 && (
           <span className="flex items-center gap-1.5">
-            <span className="bg-vote-notvoting inline-block h-2.5 w-2.5 rounded-full" />
-            Not Voting: {notVoting}
+            <KeySwatch color="bg-transparent" />
+            Not voting: {notVoting}
           </span>
         )}
       </div>
 
+      {/* Verdict — plain ink, states the position without adjectives.
+          A failed roll call is never red. */}
       {total > 0 && (
-        <p className="text-muted-foreground text-sm">
+        <p className="text-foreground text-sm tabular-nums">
           {outcomeLine(rollCall.category, outcome, yea, nay)}
         </p>
       )}
@@ -293,7 +307,9 @@ export function VoteOnBill({
       >
         {/* Public vote */}
         <div className="space-y-4">
-          <h3 className="text-muted-foreground text-sm font-semibold tracking-wider uppercase">
+          {/* Kicker in Public Sans — the global h3 rule sets Archivo,
+              which never renders below 18px. */}
+          <h3 className="text-ink-muted font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
             Public Opinion
           </h3>
 
@@ -314,22 +330,22 @@ export function VoteOnBill({
                   {
                     label: "Abstain",
                     count: getCount("Abstain"),
-                    color: "bg-vote-abstain",
+                    color: "bg-transparent",
                   },
                 ]}
                 total={publicTotal}
               />
-              <div className="flex gap-4 text-sm">
+              <div className="flex gap-4 text-sm tabular-nums">
                 <span className="flex items-center gap-1.5">
-                  <span className="bg-vote-for inline-block h-2.5 w-2.5 rounded-full" />
+                  <KeySwatch color="bg-vote-for" />
                   For: {getCount("For")}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="bg-vote-against inline-block h-2.5 w-2.5 rounded-full" />
+                  <KeySwatch color="bg-vote-against" />
                   Against: {getCount("Against")}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="bg-vote-abstain inline-block h-2.5 w-2.5 rounded-full" />
+                  <KeySwatch color="bg-transparent" />
                   Abstain: {getCount("Abstain")}
                 </span>
               </div>
@@ -340,20 +356,24 @@ export function VoteOnBill({
             </p>
           )}
 
-          {/* Vote buttons — styled as poll CTA */}
+          {/* Vote buttons — same maya/flame + mandatory-word grammar as
+              the member chips: selected For = maya fill + ink text,
+              selected Against = flame fill + ink text, selected Abstain
+              = dashed ink frame (an abstention is a stated absence).
+              Unselected = quiet outline. Maya/flame are never text. */}
           <div className="flex gap-2">
             {(["For", "Against", "Abstain"] as VoteType[]).map((type) => {
               const isActive = userVote === type;
               const styles = {
                 For: isActive
-                  ? "bg-vote-for text-white border-vote-for shadow-sm"
-                  : "border-vote-for/50 text-vote-for hover:bg-vote-for-soft hover:border-vote-for",
+                  ? "bg-vote-for text-ink border-ink"
+                  : "border-rule text-ink hover:bg-vote-for-soft hover:border-ink",
                 Against: isActive
-                  ? "bg-vote-against text-white border-vote-against shadow-sm"
-                  : "border-vote-against/50 text-vote-against hover:bg-vote-against-soft hover:border-vote-against",
+                  ? "bg-vote-against text-ink border-ink"
+                  : "border-rule text-ink hover:bg-vote-against-soft hover:border-ink",
                 Abstain: isActive
-                  ? "bg-vote-abstain text-white border-vote-abstain shadow-sm"
-                  : "border-vote-abstain/50 text-vote-abstain hover:bg-vote-abstain-soft hover:border-vote-abstain",
+                  ? "border-ink text-ink border-dashed bg-transparent"
+                  : "border-rule text-ink hover:border-ink hover:border-dashed",
               };
               return (
                 <Button
@@ -396,7 +416,7 @@ export function VoteOnBill({
         {/* Congressional votes — grouped by roll call */}
         {hasRollCalls && (
           <div className="space-y-6">
-            <h3 className="text-muted-foreground text-sm font-semibold tracking-wider uppercase">
+            <h3 className="text-ink-muted font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
               Official Votes
             </h3>
             {latestRollCalls.map((rc, i) => (
@@ -420,7 +440,7 @@ export function VoteOnBill({
               } as RollCallVote;
               return (
                 <>
-                  <h3 className="text-muted-foreground text-sm font-semibold tracking-wider uppercase">
+                  <h3 className="text-ink-muted font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
                     {`${inferChamber(legacyRollCall)} Vote`}
                   </h3>
                   <RollCallCard rollCall={legacyRollCall} />

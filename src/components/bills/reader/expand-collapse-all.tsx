@@ -95,12 +95,12 @@ export function ExpandCollapseAll() {
   const allClosed = expandedCount === 0;
 
   return (
-    <div className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+    <div className="text-ink-muted inline-flex items-center gap-1 text-xs">
       <button
         type="button"
         onClick={() => setAll(true)}
         disabled={allOpen}
-        className="hover:text-foreground rounded-md px-1.5 py-0.5 font-medium transition-colors disabled:cursor-default disabled:opacity-40"
+        className="hover:text-ink px-1.5 py-0.5 font-medium transition-colors disabled:cursor-default disabled:opacity-40"
       >
         Expand all
       </button>
@@ -111,7 +111,7 @@ export function ExpandCollapseAll() {
         type="button"
         onClick={() => setAll(false)}
         disabled={allClosed}
-        className="hover:text-foreground rounded-md px-1.5 py-0.5 font-medium transition-colors disabled:cursor-default disabled:opacity-40"
+        className="hover:text-ink px-1.5 py-0.5 font-medium transition-colors disabled:cursor-default disabled:opacity-40"
       >
         Collapse all
       </button>

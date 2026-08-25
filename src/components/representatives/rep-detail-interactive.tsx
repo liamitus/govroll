@@ -38,22 +38,24 @@ export function RepDetailInteractive({
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-muted h-20 animate-pulse rounded-lg" />
+            <div key={i} className="bg-rule/60 h-20 animate-pulse" />
           ))}
         </div>
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-muted h-16 animate-pulse rounded-lg" />
+            <div key={i} className="bg-rule/60 h-16 animate-pulse" />
           ))}
         </div>
-        <div className="bg-muted h-40 animate-pulse rounded-xl" />
+        <div className="bg-rule/60 h-40 animate-pulse" />
       </div>
     );
   }
 
   if (error || !data) {
+    // Errors get an ink dashed frame — never flame, never red
+    // (flame means "against").
     return (
-      <div className="border-destructive/20 bg-destructive/5 text-destructive rounded-lg border p-4 text-base">
+      <div className="border-ink bg-paper text-ink border-[1.5px] border-dashed p-4 text-base">
         {error || "Something went wrong."}
       </div>
     );
@@ -95,7 +97,7 @@ export function RepDetailInteractive({
             href={data.representative.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-navy text-base transition-colors"
+            className="text-ink-muted hover:text-ink text-base transition-colors"
           >
             View full record on GovTrack &rarr;
           </a>

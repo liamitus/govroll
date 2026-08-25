@@ -4,12 +4,24 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ==================================================================
+   Roll Call — the Govroll visual system (Direction A, v0.1).
+   Token digest + rules: docs/design/roll-call.md
+   Brand guide: howellandgibbs.com/brand-guides/govroll-roll-call
+
+   The encoding law: signal colour = position, node fill = stage,
+   letter = party, line colour = topic. One channel, one fact.
+   ================================================================== */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-roboto);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-gelasio);
+  --font-sans: var(--font-public-sans);
+  /* No third family, no monospace — data is Public Sans + tabular-nums.
+     font-mono is kept as an alias so stray `font-mono` utilities degrade
+     to the body face instead of the UA monospace. */
+  --font-mono: var(--font-public-sans);
+  --font-heading: var(--font-archivo);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -47,93 +59,126 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  /* Civic palette — core */
-  --color-navy: #0a1f44;
-  --color-navy-light: #132d5e;
-  --color-navy-dark: #06142e;
-  --color-civic-gold: #b8860b;
-  --color-civic-cream: #fafaf5;
+  /* Signal palette. Gold, maya, and flame are FILL colours — text on
+     them is always ink. Sapphire fills carry paper text; under 18px
+     the fill (or the text on sand) must be sapphire-deep. */
+  --color-sand: #f2ede3;
+  --color-paper: #fbf8f2;
+  --color-ink: #14161c;
+  --color-ink-muted: #5c5f69;
+  --color-sapphire: #4164ff;
+  --color-sapphire-deep: #3258ff;
+  --color-gold: #ffb62e;
+  --color-maya: #7cc3ff;
+  --color-flame: #fe6237;
+  --color-rule: #d3ccbe;
+  --color-hollow: #bcb3a2;
 
-  /* Party colors */
-  --color-dem: #2563eb;
-  --color-dem-soft: #dbeafe;
-  --color-rep: #dc2626;
-  --color-rep-soft: #fee2e2;
-  --color-ind: #7c3aed;
-  --color-ind-soft: #ede9fe;
-  --color-lib: #ca8a04;
-  --color-lib-soft: #fef9c3;
-  --color-green: #16a34a;
-  --color-green-soft: #dcfce7;
+  /* Line palette — topic identification only. Rendered exclusively as
+     a 5–6px rule or left-margin bar; never a chip fill, never type.
+     Eleven hues is the ceiling (guide §5.3); topics beyond the eleven
+     are set typographically with no line colour. */
+  --color-line-health: #14707a;
+  --color-line-defense: #3f4c5c;
+  --color-line-education: #7a3e6b;
+  --color-line-economy: #2c6b45;
+  --color-line-environment: #6e8c3a;
+  --color-line-immigration: #4b3a6b;
+  --color-line-justice: #7e2f3e;
+  --color-line-civil-rights: #9c4a22;
+  --color-line-technology: #4a6e8c;
+  --color-line-foreign: #8a6a2b;
+  --color-line-housing: #a33a5b;
 
-  /* Chamber colors (distinct from party) */
-  --color-house: #b45309;
-  --color-house-soft: #fef3c7;
-  --color-senate: #0f766e;
-  --color-senate-soft: #ccfbf1;
+  /* Votes. Yes/no is maya/flame (blue–orange, the accessible pair) —
+     separated by hue alone, so the word YES or NO is mandatory in
+     every chip and every tally carries a key. */
+  --color-vote-yea: #7cc3ff;
+  --color-vote-yea-soft: color-mix(in srgb, #7cc3ff 32%, #f2ede3);
+  --color-vote-nay: #fe6237;
+  --color-vote-nay-soft: color-mix(in srgb, #fe6237 26%, #f2ede3);
+  --color-vote-present: #bcb3a2;
+  --color-vote-present-soft: color-mix(in srgb, #bcb3a2 30%, #f2ede3);
+  --color-vote-notvoting: #bcb3a2;
+  --color-vote-notvoting-soft: color-mix(in srgb, #bcb3a2 30%, #f2ede3);
 
-  /* Vote colors — congressional (Yea/Nay) */
-  --color-vote-yea: #059669;
-  --color-vote-yea-soft: #d1fae5;
-  --color-vote-nay: #e11d48;
-  --color-vote-nay-soft: #ffe4e6;
-  --color-vote-present: #d97706;
-  --color-vote-present-soft: #fef3c7;
-  --color-vote-notvoting: #6b7280;
-  --color-vote-notvoting-soft: #f3f4f6;
+  /* Public reader votes mirror the congressional pair. */
+  --color-vote-for: #7cc3ff;
+  --color-vote-for-soft: color-mix(in srgb, #7cc3ff 32%, #f2ede3);
+  --color-vote-against: #fe6237;
+  --color-vote-against-soft: color-mix(in srgb, #fe6237 26%, #f2ede3);
+  --color-vote-abstain: #bcb3a2;
+  --color-vote-abstain-soft: color-mix(in srgb, #bcb3a2 30%, #f2ede3);
 
-  /* Vote colors — public (For/Against/Abstain) */
-  --color-vote-for: #059669;
-  --color-vote-for-soft: #d1fae5;
-  --color-vote-against: #e11d48;
-  --color-vote-against-soft: #ffe4e6;
-  --color-vote-abstain: #6b7280;
-  --color-vote-abstain-soft: #f3f4f6;
+  /* Bill status is stage, not verdict: cleared/terminal is sapphire,
+     pending is gold, dead is hollow — a failed bill is a route that
+     ended, never a red alert. */
+  --color-enacted: #3258ff;
+  --color-enacted-soft: color-mix(in srgb, #4164ff 14%, #f2ede3);
+  --color-passed: #3258ff;
+  --color-passed-soft: color-mix(in srgb, #4164ff 14%, #f2ede3);
+  --color-failed: #5c5f69;
+  --color-failed-soft: color-mix(in srgb, #bcb3a2 30%, #f2ede3);
 
-  /* Bill status */
-  --color-enacted: #059669;
-  --color-enacted-soft: #d1fae5;
-  --color-passed: #2563eb;
-  --color-passed-soft: #dbeafe;
-  --color-failed: #dc2626;
-  --color-failed-soft: #fee2e2;
+  /* Chamber is typographic (a kicker like "HOUSE BILL"), not a colour
+     channel. Neutral values kept so legacy utilities stay quiet. */
+  --color-house: #5c5f69;
+  --color-house-soft: color-mix(in srgb, #bcb3a2 25%, #f2ede3);
+  --color-senate: #5c5f69;
+  --color-senate-soft: color-mix(in srgb, #bcb3a2 25%, #f2ede3);
+}
+
+/* Archivo's width axis is what makes it read as signage. Wordmark and
+   h1 at 125, h2 at 112, h3/bill titles at 105–110. Never below 18px. */
+@utility wdth-* {
+  font-variation-settings: "wdth" --value(integer);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --background: var(--color-sand);
+  --foreground: var(--color-ink);
+  --card: var(--color-paper);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-paper);
+  --popover-foreground: var(--color-ink);
+  /* Primary is the deep sapphire variant: button/link text is under
+     18px, and paper on #4164FF just misses AA. */
+  --primary: var(--color-sapphire-deep);
+  --primary-foreground: var(--color-paper);
+  --secondary: color-mix(in srgb, var(--color-ink) 7%, var(--color-sand));
+  --secondary-foreground: var(--color-ink);
+  --muted: color-mix(in srgb, var(--color-ink) 5%, var(--color-sand));
+  --muted-foreground: var(--color-ink-muted);
+  --accent: color-mix(in srgb, var(--color-ink) 6%, var(--color-paper));
+  --accent-foreground: var(--color-ink);
+  /* Destructive actions never use Tiger Flame (it means "against").
+     Deep brick, distinct from both flame and the justice line hue. */
+  --destructive: #8f2a1c;
+  --border: var(--color-rule);
+  --input: var(--color-rule);
+  /* Focus-visible is a gold ring on every interactive element. */
+  --ring: var(--color-gold);
+  --chart-1: var(--color-sapphire);
+  --chart-2: var(--color-gold);
+  --chart-3: var(--color-maya);
+  --chart-4: var(--color-flame);
+  --chart-5: var(--color-hollow);
+  /* Square corners — transit signage, not app chrome. */
+  --radius: 0rem;
+  --sidebar: var(--color-paper);
+  --sidebar-foreground: var(--color-ink);
+  --sidebar-primary: var(--color-sapphire-deep);
+  --sidebar-primary-foreground: var(--color-paper);
+  --sidebar-accent: color-mix(in srgb, var(--color-ink) 6%, var(--color-paper));
+  --sidebar-accent-foreground: var(--color-ink);
+  --sidebar-border: var(--color-rule);
+  --sidebar-ring: var(--color-gold);
 }
 
+/* Dark mode is out of scope for Roll Call v0.1 — the signal palette
+   was chosen against sand and has not been re-checked on a dark
+   ground. This block is unreachable (nothing sets .dark) and stays
+   as-is until the palette is re-derived. */
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
@@ -178,54 +223,75 @@
   html {
     @apply font-sans;
   }
+  /* Display headings get Archivo with the width axis stepped down by
+     level (guide §6.1). h4–h6 are usually under 18px, where the width
+     axis stops reading — they stay in Public Sans 600. */
   h1,
   h2,
-  h3,
+  h3 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+  }
+  h1 {
+    font-variation-settings: "wdth" 125;
+    letter-spacing: -0.03em;
+  }
+  h2 {
+    font-variation-settings: "wdth" 112;
+    letter-spacing: -0.02em;
+  }
+  h3 {
+    font-variation-settings: "wdth" 105;
+    letter-spacing: -0.015em;
+  }
   h4,
   h5,
   h6 {
-    font-family: var(--font-heading);
+    font-family: var(--font-sans);
+    font-weight: 600;
   }
 }
 
-/* Civic background pattern — subtle star field */
-.civic-pattern {
-  background-image:
-    radial-gradient(
-      circle at 20% 50%,
-      rgba(10, 31, 68, 0.03) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      circle at 80% 20%,
-      rgba(10, 31, 68, 0.02) 0%,
-      transparent 40%
-    ),
-    radial-gradient(
-      circle at 50% 80%,
-      rgba(10, 31, 68, 0.02) 0%,
-      transparent 45%
-    );
+/* Party is encoded by letter only — D · R · I in identical circular
+   frames. Neither party gets a colour, a heavier mark, or fill (fill
+   is reserved for stage). */
+.party-node {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--color-ink);
+  color: var(--color-ink);
+  font-family: var(--font-heading);
+  font-variation-settings: "wdth" 112;
+  font-weight: 800;
+  font-size: 0.6875rem;
+  vertical-align: middle;
+}
+.party-node--sm {
+  width: 1.1875rem;
+  height: 1.1875rem;
+  font-size: 0.625rem;
+  box-shadow: inset 0 0 0 1.8px var(--color-ink);
 }
 
-/* Party color bar on rep cards */
-.party-bar-democrat {
-  border-left: 4px solid var(--color-dem);
+/* The brand node — gold ringed in sapphire (ringed in the ground
+   colour when reversed on ink). "This is where the thing you are
+   following is right now." */
+.brand-node {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--color-gold);
+  border: 2.5px solid var(--color-sapphire);
 }
-.party-bar-republican {
-  border-left: 4px solid var(--color-rep);
-}
-.party-bar-independent {
-  border-left: 4px solid var(--color-ind);
-}
-.party-bar-libertarian {
-  border-left: 4px solid var(--color-lib);
-}
-.party-bar-green {
-  border-left: 4px solid var(--color-green);
-}
-.party-bar-unknown {
-  border-left: 4px solid #9ca3af;
+.brand-node--reversed {
+  border-color: var(--color-paper);
 }
 
 /* Hide scrollbar but keep scroll functionality */
@@ -272,48 +338,28 @@
   }
 }
 
-/* Stars decoration */
-.star-accent::before {
-  content: "\2605";
-  color: rgba(184, 134, 11, 0.2);
-  font-size: 0.6rem;
-  margin-right: 0.5rem;
-}
-.star-accent::after {
-  content: "\2605";
-  color: rgba(184, 134, 11, 0.2);
-  font-size: 0.6rem;
-  margin-left: 0.5rem;
-}
-
 /* ============================================================== */
 /* Bill reader prose styles. Applied in /bills/[id]/read.          */
-/*                                                                  */
-/* Body uses Gelasio (var(--font-heading), already loaded) for a   */
-/* document feel. Headings inherit family from the global rule;    */
-/* we set sizes/colors here. Captions and meta switch to Roboto    */
-/* (var(--font-sans)) so AI-generated text is visually distinct    */
-/* from the source bill prose.                                     */
+/*                                                                 */
+/* Body is Public Sans (all prose is — guide §6). Section headings */
+/* at 18px+ take Archivo from the global rule; smaller headings    */
+/* drop back to Public Sans 600 so the width axis never renders    */
+/* below 18px. The page sits on paper — it is a raised document    */
+/* surface, not the sand ground.                                   */
 /* ============================================================== */
 .bill-prose-page {
-  background-color: var(--color-civic-cream);
-  color: #1c1f2e;
-}
-.dark .bill-prose-page {
-  background-color: var(--background);
-  color: var(--foreground);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
 }
 
 .bill-prose-title {
   font-family: var(--font-heading);
+  font-variation-settings: "wdth" 110;
   font-size: 1.875rem;
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--color-navy);
-  letter-spacing: -0.01em;
-}
-.dark .bill-prose-title {
-  color: var(--foreground);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--color-ink);
+  letter-spacing: -0.02em;
 }
 @media (min-width: 768px) {
   .bill-prose-title {
@@ -323,48 +369,47 @@
 
 .bill-prose-meta {
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 .bill-prose {
-  font-family: var(--font-heading);
-  font-size: 17px;
-  line-height: 1.7;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.65;
 }
 @media (min-width: 768px) {
   .bill-prose {
-    font-size: 18px;
+    font-size: 17px;
   }
 }
 .bill-prose h2 {
   font-size: 1.375rem;
-  font-weight: 600;
-  color: var(--color-navy);
+  font-weight: 700;
+  font-variation-settings: "wdth" 105;
+  color: var(--color-ink);
   scroll-margin-top: 80px;
   margin-top: 2.5em;
   margin-bottom: 0.4em;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
 }
 .bill-prose h3 {
+  font-family: var(--font-sans);
   font-size: 1rem;
   font-weight: 600;
-  color: var(--color-navy);
+  color: var(--color-ink);
   scroll-margin-top: 80px;
   margin-top: 1.25em;
   margin-bottom: 0.25em;
   letter-spacing: 0;
 }
 .bill-prose h4 {
+  font-family: var(--font-sans);
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--color-navy);
+  color: var(--color-ink);
   scroll-margin-top: 80px;
   margin-top: 1em;
   margin-bottom: 0.2em;
-}
-.dark .bill-prose h2,
-.dark .bill-prose h3,
-.dark .bill-prose h4 {
-  color: var(--foreground);
 }
 .bill-prose p {
   margin-top: 0;
@@ -430,16 +475,7 @@
   top: 0.5em;
   bottom: 0.25em;
   width: 2px;
-  border-radius: 1px;
-  background-color: rgba(184, 134, 11, 0.18);
-}
-.dark .bill-prose-section[data-section-depth="2"]::before,
-.dark .bill-prose-section[data-section-depth="3"]::before,
-.dark .bill-prose-section[data-section-depth="4"]::before,
-.dark .bill-prose-section[data-section-depth="5"]::before,
-.dark .bill-prose-section[data-section-depth="6"]::before,
-.dark .bill-prose-section[data-section-depth="7"]::before {
-  background-color: rgba(212, 160, 23, 0.25);
+  background-color: var(--color-rule);
 }
 /* Mobile: collapse indentation to something much tighter — the 72ch
    measure isn't long enough to afford large indents on small screens,
@@ -471,13 +507,10 @@
    sibling markers align visually and the eye can scan a list of
    subclauses without the content jumping around. */
 .bill-prose-marker {
-  font-family: var(--font-heading);
+  font-family: var(--font-sans);
   font-weight: 600;
-  color: var(--color-navy);
+  color: var(--color-ink);
   margin-right: 0.1em;
-}
-.dark .bill-prose-marker {
-  color: var(--foreground);
 }
 
 .bill-prose-caption {
@@ -517,11 +550,8 @@
   /* The first group already sits under the reader header; the rest get
      a thin divider + breathing room so the wall of collapsed summaries
      doesn't feel undifferentiated. */
-  border-top: 1px solid rgba(184, 134, 11, 0.18);
+  border-top: 1px solid var(--color-rule);
   padding-top: 0.75rem;
-}
-.dark .bill-prose-details {
-  border-top-color: rgba(212, 160, 23, 0.22);
 }
 .bill-prose-section:first-of-type .bill-prose-details {
   border-top: none;
@@ -535,17 +565,16 @@
   padding: 0.25rem 0.25rem 0.25rem 0;
   cursor: pointer;
   list-style: none;
-  border-radius: 0.5rem;
   transition: background-color 120ms ease;
 }
 .bill-prose-summary::-webkit-details-marker {
   display: none;
 }
 .bill-prose-summary:hover {
-  background-color: rgba(184, 134, 11, 0.06);
+  background-color: color-mix(in srgb, var(--color-ink) 4%, transparent);
 }
 .bill-prose-summary:focus-visible {
-  outline: 2px solid var(--color-civic-gold);
+  outline: 3px solid var(--color-gold);
   outline-offset: 2px;
 }
 .bill-prose-summary-chevron {
@@ -617,7 +646,6 @@
   align-self: center;
   width: 1.75rem;
   height: 1.75rem;
-  border-radius: 0.5rem;
   color: var(--muted-foreground);
   background-color: transparent;
   align-items: center;
@@ -637,8 +665,8 @@
 .bill-prose-ask-ai:focus-visible,
 .bill-prose-ask-ai:hover {
   opacity: 1;
-  background-color: rgba(184, 134, 11, 0.08);
-  color: var(--color-civic-gold);
+  background-color: color-mix(in srgb, var(--color-sapphire) 9%, transparent);
+  color: var(--color-sapphire-deep);
 }
 
 /* Force text selection on bill body. iOS Safari occasionally refuses
@@ -652,10 +680,12 @@
 
 /* Brief flash applied to the section a chat citation jumps to,
    so the eye can locate the heading after the smooth scroll
-   completes. Honors prefers-reduced-motion below. */
+   completes. Gold is the one colour that means "here, now" — this
+   is the one place it marks the reader's position rather than the
+   bill's. Honors prefers-reduced-motion below. */
 @keyframes section-flash {
   0% {
-    background-color: rgba(184, 134, 11, 0.18);
+    background-color: color-mix(in srgb, var(--color-gold) 28%, transparent);
   }
   100% {
     background-color: transparent;

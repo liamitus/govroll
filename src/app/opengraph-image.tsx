@@ -4,22 +4,35 @@ export const alt = "Govroll — See What Your Representatives Are Doing";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-function Star({ size: s = 36 }: { size?: number }) {
+// Roll Call palette
+const SAND = "#F2EDE3";
+const INK = "#14161C";
+const SAPPHIRE = "#4164FF";
+const GOLD = "#FFB62E";
+
+const FONT_URL =
+  "https://cdn.jsdelivr.net/fontsource/fonts/archivo@latest/latin-800-normal.woff";
+
+/** The brand node — a gold dot ringed in sapphire, "you are here". */
+function Node({ size: s = 72 }: { size?: number }) {
+  const ring = Math.round(s * 0.18);
   return (
-    <svg width={s} height={s} viewBox="0 0 24 24" fill="#B8860B">
-      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-    </svg>
+    <div
+      style={{
+        display: "flex",
+        width: s,
+        height: s,
+        borderRadius: 9999,
+        backgroundColor: GOLD,
+        border: `${ring}px solid ${SAPPHIRE}`,
+      }}
+    />
   );
 }
 
 export default async function OgImage() {
-  // Load a serif font for the constitutional aesthetic
-  const geistRes = await fetch(
-    new URL(
-      "https://cdn.jsdelivr.net/fontsource/fonts/eb-garamond@latest/latin-700-normal.woff",
-    ),
-  );
-  const geistFont = await geistRes.arrayBuffer();
+  const fontRes = await fetch(new URL(FONT_URL));
+  const fontData = await fontRes.arrayBuffer();
 
   return new ImageResponse(
     <div
@@ -30,72 +43,58 @@ export default async function OgImage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0A1F44",
+        backgroundColor: SAND,
       }}
     >
-      {/* Stars + Brand */}
-      <div style={{ display: "flex", alignItems: "center", gap: "36px" }}>
-        <Star size={60} />
+      {/* Node + wordmark */}
+      <div style={{ display: "flex", alignItems: "center", gap: "44px" }}>
+        <Node size={96} />
         <span
           style={{
-            color: "#FFFFFF",
-            fontSize: 160,
-            fontFamily: "EBGaramond",
-            fontWeight: 700,
-            letterSpacing: "0.1em",
+            color: INK,
+            fontSize: 150,
+            fontFamily: "Archivo",
+            fontWeight: 800,
+            letterSpacing: "0.02em",
           }}
         >
           GOVROLL
         </span>
-        <Star size={60} />
       </div>
 
-      {/* Decorative flourish */}
+      {/* Single sapphire rule — the route line */}
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          gap: "32px",
-          marginTop: 52,
-          color: "#B8860B",
+          width: 560,
+          height: 5,
+          marginTop: 56,
+          backgroundColor: SAPPHIRE,
+        }}
+      />
+
+      <div
+        style={{
+          display: "flex",
+          marginTop: 40,
+          color: INK,
+          fontSize: 34,
+          fontFamily: "Archivo",
+          fontWeight: 800,
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
         }}
       >
-        <div
-          style={{
-            width: 120,
-            height: 3,
-            backgroundColor: "#B8860B",
-            opacity: 0.55,
-          }}
-        />
-        <span
-          style={{
-            fontSize: 52,
-            fontFamily: "EBGaramond",
-            fontWeight: 700,
-            letterSpacing: "0.3em",
-            opacity: 0.8,
-          }}
-        >
-          E PLURIBUS UNUM
-        </span>
-        <div
-          style={{
-            width: 120,
-            height: 3,
-            backgroundColor: "#B8860B",
-            opacity: 0.55,
-          }}
-        />
+        See what your representatives are doing
       </div>
     </div>,
     {
       ...size,
       fonts: [
         {
-          name: "EBGaramond",
-          data: geistFont,
-          weight: 700,
+          name: "Archivo",
+          data: fontData,
+          weight: 800,
           style: "normal",
         },
       ],

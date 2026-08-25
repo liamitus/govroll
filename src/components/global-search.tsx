@@ -12,7 +12,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { partyColor } from "@/lib/representative-utils";
+import { partyLetter } from "@/lib/representative-utils";
+import { getTopicForPolicyArea } from "@/lib/topic-mapping";
 import { pickBillHeadline } from "@/lib/bill-headline";
 import { billHref } from "@/lib/bills/url";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -248,20 +249,22 @@ function SearchInput({
     variant === "sheet" ||
     (!dismissed && (phase === "loading" || phase === "done"));
 
+  // Desktop lives in the ink nav bar: a translucent paper-on-ink field.
+  // Square corners; keyboard focus gets the system-wide gold ring.
   const inputClasses =
     variant === "desktop"
-      ? "h-9 w-full rounded-full border border-white/15 bg-white/5 pl-9 pr-9 text-sm text-white placeholder:text-white/40 focus:border-white/30 focus:bg-white/10 focus:outline-none focus:ring-0"
-      : "border-border/80 h-11 w-full rounded-lg border bg-white pl-10 pr-10 text-base text-foreground placeholder:text-muted-foreground focus:border-navy/40 focus:outline-none";
+      ? "h-9 w-full border border-paper/20 bg-paper/10 pl-9 pr-9 text-sm text-paper placeholder:text-paper/50 focus:border-paper/40 focus:bg-paper/15 focus:outline-none focus-visible:outline-2 focus-visible:outline-gold"
+      : "border-rule h-11 w-full border bg-paper pl-10 pr-10 text-base text-ink placeholder:text-ink-muted focus:border-ink/40 focus:outline-none focus-visible:outline-2 focus-visible:outline-gold";
 
   const iconClasses =
     variant === "desktop"
-      ? "pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-white/50"
-      : "pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-muted-foreground";
+      ? "pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-paper/50"
+      : "pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-ink-muted";
 
   const clearClasses =
     variant === "desktop"
-      ? "absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-white/40 hover:bg-white/10 hover:text-white/80"
-      : "absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground";
+      ? "absolute right-2 top-1/2 -translate-y-1/2 p-1 text-paper/50 hover:bg-paper/10 hover:text-paper"
+      : "absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-ink-muted hover:bg-sand hover:text-ink";
 
   return (
     <div
@@ -347,9 +350,10 @@ function SearchResults({
   );
   const seeAllBills = items.find((i) => i.kind === "see-all-bills");
 
+  // Popover on paper with a rule hairline — flat and square, no shadow.
   const wrapperClasses =
     variant === "desktop"
-      ? "border-border/80 absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-[70vh] overflow-y-auto rounded-xl border bg-white py-2 shadow-xl"
+      ? "border-rule absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-[70vh] overflow-y-auto border bg-paper py-2"
       : "mt-3 max-h-[70vh] overflow-y-auto";
 
   if (phase === "loading" && items.length === 0) {
@@ -358,7 +362,7 @@ function SearchResults({
         {[0, 1, 2].map((i) => (
           <div key={i} className="px-4 py-3" role="presentation">
             <div
-              className="bg-muted/60 h-4 animate-pulse rounded-md"
+              className="bg-rule/60 h-4 animate-pulse"
               style={{ width: `${75 - i * 15}%` }}
             />
           </div>
@@ -374,9 +378,9 @@ function SearchResults({
   ) {
     return (
       <div className={wrapperClasses} id="global-search-listbox" role="listbox">
-        <div className="text-muted-foreground px-4 py-6 text-center text-sm">
+        <div className="text-ink-muted px-4 py-6 text-center text-sm">
           No matches for{" "}
-          <span className="text-foreground font-medium">
+          <span className="text-ink font-medium">
             &ldquo;{query.trim()}&rdquo;
           </span>
         </div>
@@ -433,7 +437,7 @@ function SearchResults({
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-muted-foreground px-4 pt-2 pb-1 text-[10px] font-semibold tracking-widest uppercase">
+    <div className="text-ink-muted px-4 pt-2 pb-1 text-[11px] font-bold tracking-[0.18em] uppercase">
       {children}
     </div>
   );
@@ -448,7 +452,6 @@ interface RepRowProps {
 }
 
 function RepRow({ id, rep, active, onMouseEnter, onSelect }: RepRowProps) {
-  const colors = partyColor(rep.party);
   const chamberAndDistrict =
     rep.chamber === "senator"
       ? `Senator · ${rep.state}`
@@ -470,10 +473,10 @@ function RepRow({ id, rep, active, onMouseEnter, onSelect }: RepRowProps) {
       onMouseEnter={onMouseEnter}
       className={cn(
         "flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors",
-        active ? "bg-navy/[0.06]" : "hover:bg-muted/40",
+        active ? "bg-accent" : "hover:bg-accent",
       )}
     >
-      <div className="bg-muted relative size-9 flex-shrink-0 overflow-hidden rounded-full">
+      <div className="border-ink bg-sand relative size-9 flex-shrink-0 overflow-hidden rounded-full border-[1.5px]">
         <RepPhoto
           bioguideId={rep.bioguideId}
           firstName={rep.firstName}
@@ -483,20 +486,21 @@ function RepRow({ id, rep, active, onMouseEnter, onSelect }: RepRowProps) {
         />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-foreground truncate font-medium">
+        <div className="text-ink truncate font-medium">
           {rep.firstName} {rep.lastName}
         </div>
-        <div className="text-muted-foreground truncate text-xs">
+        <div className="text-ink-muted truncate text-xs">
           {chamberAndDistrict}
         </div>
       </div>
+      {/* Party is a letter in an identical ink-ring frame — never a
+          colour (the encoding law). */}
       <span
-        className={cn(
-          "rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
-          colors.badge,
-        )}
+        className="party-node party-node--sm"
+        title={rep.party.replace("Democratic", "Democrat")}
+        aria-label={rep.party.replace("Democratic", "Democrat")}
       >
-        {rep.party.replace("Democratic", "Democrat").slice(0, 3)}
+        {partyLetter(rep.party)}
       </span>
     </Link>
   );
@@ -513,6 +517,7 @@ interface BillRowProps {
 function BillRow({ id, bill, active, onMouseEnter, onSelect }: BillRowProps) {
   const headline = pickBillHeadline(bill);
   const citation = formatBillCitation(bill.billId);
+  const topic = getTopicForPolicyArea(bill.policyArea);
 
   return (
     <Link
@@ -526,22 +531,30 @@ function BillRow({ id, bill, active, onMouseEnter, onSelect }: BillRowProps) {
       }}
       onMouseEnter={onMouseEnter}
       className={cn(
-        "flex cursor-pointer flex-col gap-0.5 px-4 py-2.5 text-sm transition-colors",
-        active ? "bg-navy/[0.06]" : "hover:bg-muted/40",
+        "relative flex cursor-pointer flex-col gap-0.5 px-4 py-2.5 text-sm transition-colors",
+        active ? "bg-accent" : "hover:bg-accent",
       )}
     >
+      {/* Topic line hue appears only as a thin left-margin bar — never a
+          chip fill, never type. Unmapped topics get no bar. */}
+      {topic?.line && (
+        <span
+          aria-hidden
+          className={cn("absolute inset-y-0 left-0 w-[5px]", topic.line)}
+        />
+      )}
       <div className="flex items-center gap-2">
         {citation && (
-          <span className="text-muted-foreground bg-muted/60 rounded px-1.5 py-0.5 font-mono text-[11px]">
+          <span className="text-ink-muted bg-sand px-1.5 py-0.5 text-[11px] font-medium tabular-nums">
             {citation}
           </span>
         )}
-        <span className="text-foreground line-clamp-1 font-medium">
+        <span className="text-ink line-clamp-1 font-medium">
           {headline.headline}
         </span>
       </div>
       {bill.currentStatus && (
-        <div className="text-muted-foreground truncate pl-1 text-xs">
+        <div className="text-ink-muted truncate pl-1 text-xs">
           {bill.currentStatus.replace(/_/g, " ")}
         </div>
       )}
@@ -576,12 +589,12 @@ function SeeAllRow({
       }}
       onMouseEnter={onMouseEnter}
       className={cn(
-        "border-border/60 mt-1 flex cursor-pointer items-center justify-between border-t px-4 py-2.5 text-sm transition-colors",
-        active ? "bg-navy/[0.06]" : "hover:bg-muted/40",
+        "border-rule mt-1 flex cursor-pointer items-center justify-between border-t px-4 py-2.5 text-sm transition-colors",
+        active ? "bg-accent" : "hover:bg-accent",
       )}
     >
-      <span className="text-foreground font-medium">See all bill matches</span>
-      <span className="text-muted-foreground text-xs">&rarr;</span>
+      <span className="text-ink font-medium">See all bill matches</span>
+      <span className="text-ink-muted text-xs">&rarr;</span>
     </Link>
   );
 }
@@ -671,7 +684,7 @@ export function GlobalSearch() {
               <button
                 type="button"
                 aria-label="Search"
-                className="flex size-8 cursor-pointer items-center justify-center rounded text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+                className="text-paper/60 hover:bg-paper/10 hover:text-paper flex size-8 cursor-pointer items-center justify-center transition-colors"
               />
             }
           >
@@ -691,7 +704,7 @@ export function GlobalSearch() {
               <button
                 type="button"
                 onClick={() => setSheetOpen(false)}
-                className="text-muted-foreground hover:text-foreground rounded px-2 py-1 text-sm"
+                className="text-ink-muted hover:text-ink px-2 py-1 text-sm"
               >
                 Cancel
               </button>

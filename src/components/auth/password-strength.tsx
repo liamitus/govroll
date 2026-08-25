@@ -28,14 +28,11 @@ export function PasswordStrengthIndicator({ password }: { password: string }) {
   const { requirements } = validatePassword(password);
   const metCount = requirements.filter((r) => r.met).length;
 
+  // Strength reads as progress along a route, not as a verdict:
+  // hollow (weak) → gold (getting there) → sapphire (strong).
+  // Never red/green — those channels mean other things in this system.
   const strengthColor =
-    metCount <= 1
-      ? "bg-red-500"
-      : metCount <= 2
-        ? "bg-orange-500"
-        : metCount <= 3
-          ? "bg-yellow-500"
-          : "bg-green-500";
+    metCount <= 2 ? "bg-hollow" : metCount === 3 ? "bg-gold" : "bg-sapphire";
 
   return (
     <div className="space-y-2">
@@ -43,7 +40,7 @@ export function PasswordStrengthIndicator({ password }: { password: string }) {
         {requirements.map((_, i) => (
           <div
             key={i}
-            className={`h-1 flex-1 rounded-full transition-colors ${
+            className={`h-1 flex-1 transition-colors ${
               i < metCount ? strengthColor : "bg-muted"
             }`}
           />
@@ -54,7 +51,7 @@ export function PasswordStrengthIndicator({ password }: { password: string }) {
           <li
             key={req.label}
             className={`flex items-center gap-1.5 text-sm ${
-              req.met ? "text-green-600" : "text-muted-foreground"
+              req.met ? "text-ink" : "text-ink-muted"
             }`}
           >
             <span>{req.met ? "✓" : "○"}</span>

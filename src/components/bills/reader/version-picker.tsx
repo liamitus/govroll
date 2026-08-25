@@ -51,7 +51,7 @@ export function VersionPicker({
   // No other versions to switch to — show a static label.
   if (versions.length <= 1) {
     return (
-      <div className="text-muted-foreground/80 mt-2 text-xs">
+      <div className="text-ink-muted mt-2 text-xs tabular-nums">
         Version: {cleanType} · {versionDateLabel}
       </div>
     );
@@ -59,7 +59,7 @@ export function VersionPicker({
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <span className="text-muted-foreground/80">Version:</span>
+      <span className="text-ink-muted">Version:</span>
       <label className="sr-only" htmlFor="reader-version-picker">
         Bill text version
       </label>
@@ -68,7 +68,7 @@ export function VersionPicker({
         disabled={pending}
         value={current.versionCode}
         onChange={(event) => onVersionChange?.(event.target.value)}
-        className="border-border/70 bg-background hover:bg-muted/60 text-foreground rounded-md border px-1.5 py-0.5 text-xs transition-colors disabled:opacity-60"
+        className="border-rule bg-paper hover:bg-muted/60 text-ink border px-1.5 py-0.5 text-xs tabular-nums transition-colors disabled:opacity-60"
       >
         {versions.map((v) => (
           <option key={v.versionCode} value={v.versionCode}>
@@ -79,7 +79,7 @@ export function VersionPicker({
       </select>
       <a
         href={detailHref}
-        className="text-muted-foreground/70 hover:text-foreground"
+        className="text-sapphire-deep underline-offset-2 hover:underline"
       >
         View all versions →
       </a>

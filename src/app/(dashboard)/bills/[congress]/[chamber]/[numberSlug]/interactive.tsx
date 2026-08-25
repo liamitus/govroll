@@ -29,8 +29,8 @@ function CollapsibleCard({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="bg-card rounded-xl border" id={anchorId}>
-        <CollapsibleTrigger className="text-foreground hover:bg-accent/50 flex w-full items-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold transition-colors">
+      <div className="bg-card border" id={anchorId}>
+        <CollapsibleTrigger className="text-foreground hover:bg-accent/50 flex w-full items-center gap-2 px-6 py-4 text-sm font-semibold transition-colors">
           {icon}
           {title}
           <svg
@@ -68,11 +68,13 @@ export function BillDetailInteractive({
   return (
     <div className="space-y-4">
       <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
-      {/* Ask AI FIRST — help users understand the bill before engaging */}
-      <section className="border-civic-gold/40 bg-civic-cream/30 dark:bg-accent/20 rounded-xl border p-6">
-        <h2 className="text-foreground mb-1 flex items-center gap-2 text-sm font-semibold">
+      {/* Ask AI FIRST — help users understand the bill before engaging.
+          (Bespoke "Ask AI" surface treatment is Roll Call v0.2; for now
+          it sits on a plain paper card like its siblings.) */}
+      <section className="border-rule bg-paper border p-6">
+        <h2 className="text-ink-muted mb-1 flex items-center gap-2 font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
           <svg
-            className="text-civic-gold h-4 w-4"
+            className="text-sapphire-deep h-4 w-4"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -97,8 +99,8 @@ export function BillDetailInteractive({
       </section>
 
       {/* Your Representatives */}
-      <section className="bg-card rounded-xl border p-6">
-        <h2 className="text-foreground mb-4 flex items-center gap-2 text-sm font-semibold">
+      <section className="bg-card border p-6">
+        <h2 className="text-ink-muted mb-4 flex items-center gap-2 font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
           <svg
             className="text-muted-foreground h-4 w-4"
             fill="none"
@@ -118,8 +120,8 @@ export function BillDetailInteractive({
       </section>
 
       {/* Votes — public opinion vs congress */}
-      <section className="bg-card rounded-xl border p-6">
-        <h2 className="text-foreground mb-4 flex items-center gap-2 text-sm font-semibold">
+      <section className="bg-card border p-6">
+        <h2 className="text-ink-muted mb-4 flex items-center gap-2 font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
           <svg
             className="text-muted-foreground h-4 w-4"
             fill="none"

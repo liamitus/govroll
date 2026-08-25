@@ -9,7 +9,7 @@ export function DonorGrid({ donors }: { donors: DonorRow[] }) {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1">
       {donors.map((d) => (
-        <span key={d.id} className="text-foreground/80 text-base">
+        <span key={d.id} className="text-ink text-base">
           {d.displayMode === "TRIBUTE" ? d.tributeName : d.displayName}
         </span>
       ))}

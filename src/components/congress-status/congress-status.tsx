@@ -77,9 +77,12 @@ export function CongressStatus() {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
+      {/* Trigger lives on the ink nav — paper type, with the next-transition
+          date picked out in gold ("RECESS · RETURNS MON, AUG 31"). Gold as
+          type is allowed only here, reversed on ink. */}
       <Popover.Trigger
         className={cn(
-          "group inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 text-xs tracking-wide uppercase transition-colors hover:border-white/25 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none",
+          "group border-paper/20 bg-paper/5 hover:border-paper/40 hover:bg-paper/10 focus-visible:ring-gold inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs tracking-wide uppercase transition-colors focus-visible:ring-2 focus-visible:outline-none",
           "min-w-[44px]",
         )}
         aria-label={ariaLabelFor(resolved, query.data)}
@@ -87,17 +90,17 @@ export function CongressStatus() {
         <span
           role="status"
           aria-live="polite"
-          className="inline-flex items-center gap-1.5 text-white/80 group-hover:text-white"
+          className="text-paper/80 group-hover:text-paper inline-flex items-center gap-1.5"
         >
           <StatusDot status={resolved.status} stale={resolved.stale} />
           <span className="font-medium">{label}</span>
           {chamberHint && (
-            <span className="hidden text-white/50 sm:inline">
+            <span className="text-paper/50 hidden sm:inline">
               · {chamberHint}
             </span>
           )}
           {pillNextTransition && (
-            <span className="hidden text-white/40 lg:inline">
+            <span className="text-gold hidden lg:inline">
               · {pillNextTransition}
             </span>
           )}
@@ -109,7 +112,7 @@ export function CongressStatus() {
           sideOffset={8}
           className="isolate z-50 outline-none"
         >
-          <Popover.Popup className="bg-popover text-popover-foreground ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 w-[340px] max-w-[calc(100vw-1rem)] origin-(--transform-origin) rounded-lg p-3 text-sm shadow-md ring-1 duration-100 outline-none">
+          <Popover.Popup className="bg-paper text-ink border-rule data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 w-[340px] max-w-[calc(100vw-1rem)] origin-(--transform-origin) border p-3 text-sm duration-100 outline-none">
             <PopoverContent
               data={query.data}
               loading={query.isLoading}
@@ -153,7 +156,8 @@ function PopoverContent({
   return (
     <div className="space-y-3">
       <header>
-        <h3 className="font-heading text-muted-foreground text-[11px] tracking-widest uppercase">
+        {/* Kicker, not display type — Archivo never renders below 18px. */}
+        <h3 className="text-ink-muted font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
           U.S. Congress
         </h3>
       </header>
@@ -163,7 +167,7 @@ function PopoverContent({
       </ul>
 
       {showCalendar && (
-        <div className="border-border/60 border-t pt-3">
+        <div className="border-rule border-t pt-3">
           <SessionCalendar
             recesses={recesses ?? { house: [], senate: [] }}
             todayIso={todayIso}
@@ -172,7 +176,7 @@ function PopoverContent({
         </div>
       )}
 
-      <footer className="border-border/60 text-muted-foreground border-t pt-2 text-[11px]">
+      <footer className="border-rule text-ink-muted border-t pt-2 text-[11px] tabular-nums">
         {lastChecked ? (
           <>Updated {formatAgo(lastChecked)}</>
         ) : (
@@ -202,17 +206,17 @@ function ChamberRow({
 
   return (
     <li className={cn("flex items-start gap-2", isStale && "opacity-65")}>
-      {/* Chamber color swatch — ties this row to its bars in the calendar
-          below and serves as the grid's legend. */}
+      {/* Chamber swatch — ties this row to its lane in the calendar below.
+          Session marks are sapphire for both chambers (the lanes are
+          positional: house above, senate below); chamber never gets its
+          own colour channel. */}
       <span
         aria-hidden
-        className={cn(
-          "mt-[5px] inline-flex size-2.5 shrink-0 items-center justify-center rounded-[3px]",
-          chamber === "house" ? "bg-house" : "bg-senate",
-        )}
+        data-chamber={chamber}
+        className="bg-sapphire mt-[5px] inline-flex size-2.5 shrink-0 items-center justify-center"
       >
         {status === "voting" && !isStale && (
-          <span className="size-1 animate-ping rounded-full bg-white/90 motion-reduce:hidden" />
+          <span className="bg-paper/90 size-1 animate-ping rounded-full motion-reduce:hidden" />
         )}
       </span>
       <div className="min-w-0 flex-1">

@@ -137,13 +137,14 @@ export default async function MadePossibleByPage() {
     <div className="mx-auto max-w-3xl space-y-10 px-4 py-10">
       {/* Header */}
       <header className="space-y-3 text-center">
-        <p className="text-civic-gold star-accent text-sm tracking-widest uppercase">
+        <p className="text-ink-muted flex items-center justify-center gap-2 text-[11px] font-bold tracking-[0.18em] uppercase">
+          <span className="brand-node" aria-hidden="true" />
           Made Possible By
         </p>
         {totalCount === 0 ? (
           <>
             <h1 className="text-4xl font-bold tracking-tight">Be the first.</h1>
-            <p className="text-muted-foreground mx-auto max-w-lg">
+            <p className="text-ink-muted mx-auto max-w-lg">
               Govroll is just getting started. No ads, no corporate sponsors —
               every citizen who chips in shows up here.
             </p>
@@ -153,7 +154,7 @@ export default async function MadePossibleByPage() {
             <h1 className="text-4xl font-bold tracking-tight">
               {`${totalCount.toLocaleString("en-US")} ${totalCount === 1 ? "citizen keeps" : "citizens keep"} Govroll running.`}
             </h1>
-            <p className="text-muted-foreground mx-auto max-w-lg">
+            <p className="text-ink-muted mx-auto max-w-lg">
               No ads. No corporate sponsors. Just people who believe civic
               transparency matters.
             </p>
@@ -169,7 +170,7 @@ export default async function MadePossibleByPage() {
         <section className="space-y-4">
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-semibold">Sustainers</h2>
-            <span className="bg-civic-gold/10 text-civic-gold rounded-full px-2 py-0.5 text-xs font-medium">
+            <span className="border-hollow text-ink-muted border px-2 py-0.5 text-[11px] font-bold tracking-[0.1em] uppercase">
               Monthly
             </span>
           </div>
@@ -191,9 +192,9 @@ export default async function MadePossibleByPage() {
           <h2 className="text-xl font-semibold">In Honor Of</h2>
           <div className="grid gap-2">
             {shuffledTributes.map((d) => (
-              <div key={d.id} className="text-muted-foreground text-sm italic">
+              <div key={d.id} className="text-ink-muted text-sm italic">
                 In honor of{" "}
-                <span className="text-foreground font-medium not-italic">
+                <span className="text-ink font-medium not-italic">
                   {d.tributeName}
                 </span>
               </div>
@@ -204,7 +205,7 @@ export default async function MadePossibleByPage() {
 
       {/* Anonymous aggregate */}
       {anonCount > 0 && (
-        <p className="text-muted-foreground text-center text-base font-medium">
+        <p className="text-ink-muted text-center text-base font-medium">
           {`+ ${anonCount.toLocaleString("en-US")} anonymous citizen${anonCount !== 1 ? "s" : ""}`}
         </p>
       )}
@@ -213,7 +214,7 @@ export default async function MadePossibleByPage() {
       <div className="pt-4 text-center">
         <Link
           href="/support"
-          className="bg-navy hover:bg-navy-light inline-flex items-center gap-2 rounded-md px-6 py-3 text-sm font-semibold tracking-wide text-white transition-colors"
+          className="bg-sapphire-deep hover:bg-ink text-paper inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold tracking-wide transition-colors"
         >
           Join them
         </Link>

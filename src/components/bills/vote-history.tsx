@@ -18,8 +18,8 @@ export function VoteHistorySection({
   if (history.length < 2) return null;
 
   return (
-    <div className="border-border/30 border-t pt-3">
-      <p className="text-muted-foreground mb-1.5 text-xs font-medium tracking-wider uppercase">
+    <div className="border-rule border-t pt-3">
+      <p className="text-ink-muted mb-1.5 text-[11px] font-bold tracking-[0.18em] uppercase">
         Your vote history
       </p>
       <div className="space-y-1">

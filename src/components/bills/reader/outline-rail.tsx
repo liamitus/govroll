@@ -31,11 +31,11 @@ export function OutlineRail({
       className="sticky top-[3.5rem] hidden h-[calc(100vh-3.5rem)] w-[280px] flex-none flex-col overflow-y-auto py-6 pr-2 lg:flex"
       aria-label="Bill sections"
     >
-      <h2 className="text-muted-foreground mb-3 px-2 text-xs font-semibold tracking-[0.15em] uppercase">
+      <h2 className="text-ink-muted mb-3 px-2 font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
         Outline
       </h2>
       <OutlineTree entries={entries} />
-      <div className="border-border/40 mt-auto border-t pt-4">
+      <div className="border-rule mt-auto border-t pt-4">
         <SourceLinks
           congressGovUrl={congressGovUrl}
           govtrackUrl={govtrackUrl}

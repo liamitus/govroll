@@ -11,7 +11,8 @@ export default function AboutPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-8 px-4 py-10">
       <header className="space-y-3">
-        <p className="text-civic-gold star-accent text-sm tracking-widest uppercase">
+        <p className="text-ink-muted flex items-center gap-2 text-[11px] font-bold tracking-[0.18em] uppercase">
+          <span className="brand-node" aria-hidden="true" />
           About
         </p>
         <h1 className="text-4xl font-bold tracking-tight">
@@ -21,13 +22,13 @@ export default function AboutPage() {
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Our mission</h2>
-        <p className="text-muted-foreground text-base leading-relaxed">
+        <p className="text-ink-muted text-base leading-relaxed">
           Govroll is an independent civic transparency platform. We believe
           everyone should be able to see what Congress is doing — what bills are
           moving, how their representatives vote, and what proposed legislation
           actually means — without needing a law degree or hours of free time.
         </p>
-        <p className="text-muted-foreground text-base leading-relaxed">
+        <p className="text-ink-muted text-base leading-relaxed">
           We use AI to summarize complex legislation in plain language and
           surface the information that matters most: the bills your
           representatives are voting on, the ones gaining momentum, and the ones
@@ -37,15 +38,15 @@ export default function AboutPage() {
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">How it works</h2>
-        <ul className="text-muted-foreground list-disc space-y-2 pl-5 text-base leading-relaxed">
+        <ul className="text-ink-muted list-disc space-y-2 pl-5 text-base leading-relaxed">
           <li>
-            <strong className="text-foreground">Legislative data</strong> is
-            sourced from{" "}
+            <strong className="text-ink">Legislative data</strong> is sourced
+            from{" "}
             <a
               href="https://congress.gov"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-primary underline underline-offset-2"
+              className="text-sapphire-deep underline underline-offset-2"
             >
               congress.gov
             </a>{" "}
@@ -54,22 +55,22 @@ export default function AboutPage() {
             sources.
           </li>
           <li>
-            <strong className="text-foreground">AI summaries</strong> are
-            generated to help you understand what bills do in plain language.
-            These summaries are informational and may contain errors — always
-            refer to the official bill text for authoritative information.
+            <strong className="text-ink">AI summaries</strong> are generated to
+            help you understand what bills do in plain language. These summaries
+            are informational and may contain errors — always refer to the
+            official bill text for authoritative information.
           </li>
           <li>
-            <strong className="text-foreground">Representative lookup</strong>{" "}
-            uses your address to identify your elected officials. Your address
-            stays on your device and is never sent to our servers.
+            <strong className="text-ink">Representative lookup</strong> uses
+            your address to identify your elected officials. Your address stays
+            on your device and is never sent to our servers.
           </li>
         </ul>
       </section>
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Nonpartisan commitment</h2>
-        <p className="text-muted-foreground text-base leading-relaxed">
+        <p className="text-ink-muted text-base leading-relaxed">
           Govroll does not endorse candidates, political parties, or positions
           on legislation. We present legislative data and voting records as they
           are. Our goal is to inform, not to persuade.
@@ -78,11 +79,11 @@ export default function AboutPage() {
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">How it&apos;s funded</h2>
-        <p className="text-muted-foreground text-base leading-relaxed">
+        <p className="text-ink-muted text-base leading-relaxed">
           Govroll is supported entirely by{" "}
           <Link
             href="/support"
-            className="text-primary underline underline-offset-2"
+            className="text-sapphire-deep underline underline-offset-2"
           >
             reader contributions
           </Link>
@@ -94,13 +95,13 @@ export default function AboutPage() {
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Who built this</h2>
-        <p className="text-muted-foreground text-base leading-relaxed">
+        <p className="text-ink-muted text-base leading-relaxed">
           Govroll is built and maintained by{" "}
           <a
             href="https://howellandgibbs.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary underline underline-offset-2"
+            className="text-sapphire-deep underline underline-offset-2"
           >
             Howell &amp; Gibbs
           </a>
@@ -111,13 +112,13 @@ export default function AboutPage() {
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Open source</h2>
-        <p className="text-muted-foreground text-base leading-relaxed">
+        <p className="text-ink-muted text-base leading-relaxed">
           Govroll is open source on{" "}
           <a
             href="https://github.com/howellandgibbs/govroll"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary underline underline-offset-2"
+            className="text-sapphire-deep underline underline-offset-2"
           >
             GitHub
           </a>
@@ -127,7 +128,7 @@ export default function AboutPage() {
             href="https://github.com/howellandgibbs/govroll/issues"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary underline underline-offset-2"
+            className="text-sapphire-deep underline underline-offset-2"
           >
             issue tracker
           </a>
@@ -142,11 +143,11 @@ export default function AboutPage() {
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Get in touch</h2>
-        <p className="text-muted-foreground text-base leading-relaxed">
+        <p className="text-ink-muted text-base leading-relaxed">
           Have feedback, found a bug, or have a question?{" "}
           <Link
             href="/contact"
-            className="text-primary underline underline-offset-2"
+            className="text-sapphire-deep underline underline-offset-2"
           >
             Reach out
           </Link>

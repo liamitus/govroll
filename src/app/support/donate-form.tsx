@@ -129,17 +129,17 @@ export function DonateForm({
                 setAmountCents(cents);
                 setCustomAmount("");
               }}
-              className={`flex-1 rounded-md border py-2.5 text-sm font-medium transition-colors ${
+              className={`flex-1 border py-2.5 text-sm font-medium tabular-nums transition-colors ${
                 amountCents === cents && !customAmount
-                  ? "bg-navy border-navy text-white"
-                  : "bg-card text-foreground border-border hover:border-navy/40"
+                  ? "bg-sapphire-deep border-sapphire-deep text-paper"
+                  : "bg-paper text-ink border-rule hover:border-ink"
               }`}
             >
               ${cents / 100}
             </button>
           ))}
           <div className="relative flex-1">
-            <span className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2 text-sm">
+            <span className="text-ink-muted absolute top-1/2 left-3 -translate-y-1/2 text-sm">
               $
             </span>
             <Input
@@ -157,11 +157,11 @@ export function DonateForm({
           </div>
         </div>
         {impactLine && (
-          <p className="text-muted-foreground pt-1 text-xs">{impactLine}</p>
+          <p className="text-ink-muted pt-1 text-xs">{impactLine}</p>
         )}
 
         {typicalDonationCents && (
-          <p className="text-muted-foreground text-xs">
+          <p className="text-ink-muted text-xs">
             Typical contribution: ${(typicalDonationCents / 100).toFixed(0)}
             {donorCount > 0 &&
               ` from ${donorCount.toLocaleString("en-US")} supporters`}
@@ -172,20 +172,20 @@ export function DonateForm({
       {/* Recurring toggle */}
       <label className="group flex cursor-pointer items-center gap-3">
         <div
-          className={`relative h-5 w-10 rounded-full transition-colors ${
-            isRecurring ? "bg-navy" : "bg-muted"
+          className={`relative h-5 w-10 transition-colors ${
+            isRecurring ? "bg-sapphire-deep" : "bg-hollow"
           }`}
           onClick={() => setIsRecurring(!isRecurring)}
         >
           <div
-            className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+            className={`bg-paper absolute top-0.5 left-0.5 h-4 w-4 transition-transform ${
               isRecurring ? "translate-x-5" : ""
             }`}
           />
         </div>
         <div>
           <span className="text-sm font-medium">Support monthly</span>
-          <span className="text-muted-foreground block text-xs">
+          <span className="text-ink-muted block text-xs">
             Predictable support keeps Govroll running. Cancel anytime.
           </span>
         </div>
@@ -212,7 +212,7 @@ export function DonateForm({
                 value={mode}
                 checked={displayMode === mode}
                 onChange={() => setDisplayMode(mode)}
-                className="accent-navy"
+                className="accent-sapphire-deep"
               />
               <span className="text-sm">{label}</span>
             </label>
@@ -237,8 +237,12 @@ export function DonateForm({
             placeholder="Your name"
             maxLength={40}
           />
-          {nameError && <p className="text-xs text-red-500">{nameError}</p>}
-          <p className="text-muted-foreground text-xs">
+          {nameError && (
+            <p className="border-ink text-ink-muted border-[1.5px] border-dashed px-2 py-1 text-xs">
+              {nameError}
+            </p>
+          )}
+          <p className="text-ink-muted text-xs">
             Personal names only. Displayed on the <em>Made possible by</em> page
             after review.
           </p>
@@ -262,9 +266,11 @@ export function DonateForm({
             maxLength={40}
           />
           {tributeError && (
-            <p className="text-xs text-red-500">{tributeError}</p>
+            <p className="border-ink text-ink-muted border-[1.5px] border-dashed px-2 py-1 text-xs">
+              {tributeError}
+            </p>
           )}
-          <p className="text-muted-foreground text-xs">
+          <p className="text-ink-muted text-xs">
             Honor a teacher, family member, friend, or someone who inspired your
             civic engagement. Personal names only.
           </p>
@@ -275,7 +281,7 @@ export function DonateForm({
       {!user && (
         <div className="space-y-1">
           <Label htmlFor="email" className="text-sm">
-            Email <span className="text-muted-foreground">(for receipt)</span>
+            Email <span className="text-ink-muted">(for receipt)</span>
           </Label>
           <Input
             id="email"
@@ -288,12 +294,16 @@ export function DonateForm({
       )}
 
       {/* Submit */}
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && (
+        <p className="border-ink text-ink-muted border-[1.5px] border-dashed px-3 py-2 text-sm">
+          {error}
+        </p>
+      )}
 
       <Button
         onClick={handleSubmit}
         disabled={submitting || effectiveAmount < 100}
-        className="bg-navy hover:bg-navy-light h-12 w-full text-base font-semibold tracking-wide text-white"
+        className="bg-sapphire-deep hover:bg-ink text-paper h-12 w-full text-base font-semibold tracking-wide"
       >
         {submitting
           ? "Redirecting to Stripe..."

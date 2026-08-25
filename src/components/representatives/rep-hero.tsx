@@ -1,7 +1,6 @@
-import { Badge } from "@/components/ui/badge";
 import type { RepresentativeInfo } from "@/types";
 import {
-  partyColor,
+  partyLetter,
   chamberLabel,
   nextElection,
 } from "@/lib/representative-utils";
@@ -12,13 +11,12 @@ interface RepHeroProps {
 }
 
 export function RepHero({ rep }: RepHeroProps) {
-  const colors = partyColor(rep.party);
   const electionCountdown = nextElection(rep.termEnd, rep.chamber);
 
   return (
-    <div className="flex flex-col items-start gap-6 sm:flex-row">
-      {/* Photo */}
-      <div className="bg-muted relative h-40 w-32 flex-shrink-0 overflow-hidden rounded-lg shadow-sm">
+    <div className="border-rule border-l-sapphire bg-paper flex flex-col items-start gap-6 border border-l-4 p-6 sm:flex-row">
+      {/* Photo — circular, ink ring, sand ground behind the fallback */}
+      <div className="border-ink bg-sand relative h-28 w-28 flex-shrink-0 overflow-hidden rounded-full border-[1.5px]">
         <RepPhoto
           bioguideId={rep.bioguideId}
           firstName={rep.firstName}
@@ -29,20 +27,25 @@ export function RepHero({ rep }: RepHeroProps) {
       {/* Info */}
       <div className="space-y-3">
         <div>
-          <h1 className="font-gelasio text-navy text-3xl leading-tight font-bold sm:text-4xl">
+          <h1 className="wdth-110 text-ink text-3xl leading-tight font-bold sm:text-4xl">
             {rep.firstName} {rep.lastName}
           </h1>
-          <p className="text-muted-foreground mt-1 text-base">
+          <p className="text-ink-muted mt-1 text-base">
             {chamberLabel(rep.chamber)}
             {rep.district ? `, ${rep.state}-${rep.district}` : `, ${rep.state}`}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge className={colors.badge}>
-            {rep.party.replace("Democratic", "Democrat")}
-          </Badge>
-          <span className="text-muted-foreground text-sm">
+          {/* Party is a letter in an identical ink-ring frame — never a colour */}
+          <span
+            className="party-node"
+            title={rep.party.replace("Democratic", "Democrat")}
+            aria-label={rep.party.replace("Democratic", "Democrat")}
+          >
+            {partyLetter(rep.party)}
+          </span>
+          <span className="text-ink-muted text-sm">
             Next election {electionCountdown}
           </span>
         </div>
@@ -50,7 +53,7 @@ export function RepHero({ rep }: RepHeroProps) {
         {rep.phone && (
           <a
             href={`tel:${rep.phone}`}
-            className="text-muted-foreground hover:text-navy inline-flex items-center gap-2 text-base transition-colors"
+            className="text-ink-muted hover:text-ink inline-flex items-center gap-2 text-base transition-colors"
           >
             <svg
               className="h-4 w-4"

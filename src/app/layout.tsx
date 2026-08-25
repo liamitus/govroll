@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Gelasio, Roboto, Geist_Mono } from "next/font/google";
+import { Archivo, Public_Sans } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { NavBar } from "@/components/nav-bar";
@@ -7,20 +7,18 @@ import { Footer } from "@/components/footer";
 import { BfcacheReload } from "@/components/bfcache-reload";
 import { QueryProvider } from "@/components/query-provider";
 
-const roboto = Roboto({
-  variable: "--font-roboto",
+// Roll Call carries exactly two families (docs/design/roll-call.md):
+// Public Sans for body/UI/data, Archivo (with its width axis) for display.
+const publicSans = Public_Sans({
+  variable: "--font-public-sans",
   subsets: ["latin"],
+  style: ["normal", "italic"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
-});
-
-const gelasio = Gelasio({
-  variable: "--font-gelasio",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  axes: ["wdth"],
 });
 
 const SITE_TITLE = "Govroll — See What Your Representatives Are Doing";
@@ -56,7 +54,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${roboto.variable} ${geistMono.variable} ${gelasio.variable} h-full antialiased`}
+      className={`${publicSans.variable} ${archivo.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         <QueryProvider>

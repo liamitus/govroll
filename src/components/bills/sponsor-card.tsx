@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { partyColor } from "@/lib/representative-utils";
+import { partyLetter } from "@/lib/representative-utils";
 import { parseSponsorString } from "@/lib/sponsor";
 import { RepPhoto } from "@/components/representatives/rep-photo";
 
@@ -116,48 +116,14 @@ function coalitionLine(
   return `${count} ${noun} — ${partyWord}`;
 }
 
-/** Proportional D/R/I bar. Decorative — numeric counts are in the text above. */
-function PartyBar({
-  demCount,
-  repCount,
-  otherCount,
-}: {
-  demCount: number;
-  repCount: number;
-  otherCount: number;
-}) {
-  const total = demCount + repCount + otherCount;
-  if (total === 0) return null;
-  const demPct = (demCount / total) * 100;
-  const repPct = (repCount / total) * 100;
-  const otherPct = (otherCount / total) * 100;
-  return (
-    <div
-      className="bg-muted flex h-1 overflow-hidden rounded-full"
-      aria-hidden="true"
-    >
-      {demCount > 0 && (
-        <div className="bg-dem h-full" style={{ width: `${demPct}%` }} />
-      )}
-      {repCount > 0 && (
-        <div className="bg-rep h-full" style={{ width: `${repPct}%` }} />
-      )}
-      {otherCount > 0 && (
-        <div className="bg-ind h-full" style={{ width: `${otherPct}%` }} />
-      )}
-    </div>
-  );
-}
-
-/** Single cosponsor row: photo, name, "D-TX" party+state tag. */
+/** Single cosponsor row: photo, name, party letter node + state. Party is
+ *  encoded by letter only — identical frames for every party, no tints. */
 function CosponsorRow({ cosponsor }: { cosponsor: Cosponsor }) {
-  const code = partyCode(cosponsor.party);
-  const colors = partyColor(cosponsor.party);
   const href = `/representatives/${cosponsor.slug || cosponsor.bioguideId}`;
   return (
     <Link
       href={href}
-      className="hover:bg-muted/60 flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors"
+      className="hover:bg-muted/60 flex items-center gap-2.5 px-2 py-1.5 transition-colors"
     >
       <div className="bg-muted relative h-7 w-7 flex-shrink-0 overflow-hidden rounded-full">
         <RepPhoto
@@ -169,13 +135,16 @@ function CosponsorRow({ cosponsor }: { cosponsor: Cosponsor }) {
           fallbackClassName="text-xs font-semibold"
         />
       </div>
-      <p className="text-navy min-w-0 flex-1 truncate text-base">
+      <p className="text-ink min-w-0 flex-1 truncate text-base">
         {cosponsor.firstName} {cosponsor.lastName}
       </p>
-      <span
-        className={`inline-flex flex-shrink-0 items-center rounded px-1.5 py-0.5 text-xs font-semibold ${colors.badge}`}
-      >
-        {code}-{cosponsor.state}
+      <span className="flex flex-shrink-0 items-center gap-1.5">
+        <span className="party-node party-node--sm">
+          {partyLetter(cosponsor.party)}
+        </span>
+        <span className="text-ink-muted text-xs font-medium">
+          {cosponsor.state}
+        </span>
       </span>
     </Link>
   );
@@ -192,16 +161,6 @@ export function SponsorCard({
   const [expanded, setExpanded] = useState(false);
   const parsed = parseSponsorString(sponsor);
   if (!parsed) return null;
-
-  const colors = partyColor(
-    parsed.party === "R"
-      ? "Republican"
-      : parsed.party === "D"
-        ? "Democrat"
-        : parsed.party === "I"
-          ? "Independent"
-          : parsed.party,
-  );
 
   const chamberLabel =
     parsed.chamberPrefix === "Sen."
@@ -259,19 +218,23 @@ export function SponsorCard({
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-navy text-base leading-snug font-semibold">
+          <p className="text-ink text-base leading-snug font-semibold">
             {displayName}
           </p>
+          {/* Party is a letter in an identical frame — never a colour. */}
           <span
-            className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold ${colors.badge}`}
+            className="party-node party-node--sm"
+            aria-label={
+              parsed.party === "D"
+                ? "Democrat"
+                : parsed.party === "R"
+                  ? "Republican"
+                  : parsed.party === "I"
+                    ? "Independent"
+                    : parsed.party
+            }
           >
-            {parsed.party === "D"
-              ? "Democrat"
-              : parsed.party === "R"
-                ? "Republican"
-                : parsed.party === "I"
-                  ? "Independent"
-                  : parsed.party}
+            {parsed.party}
           </span>
         </div>
         <p className="text-muted-foreground mt-0.5 text-sm">
@@ -280,7 +243,7 @@ export function SponsorCard({
       </div>
 
       {rep && (
-        <span className="text-muted-foreground group-hover:text-navy hidden items-center text-sm transition-colors sm:inline-flex">
+        <span className="text-muted-foreground group-hover:text-ink hidden items-center text-sm transition-colors sm:inline-flex">
           View profile
           <svg
             className="ml-1 h-3 w-3"
@@ -312,25 +275,17 @@ export function SponsorCard({
   );
 
   return (
-    <div
-      className={`border-border/60 overflow-hidden rounded-lg border bg-white ${colors.bar}`}
-    >
+    // Rep-card grammar: paper surface, rule hairline, 4px sapphire left
+    // border. No party tint anywhere — the coalition split is stated in
+    // words, never as a red/blue bar.
+    <div className="border-rule border-l-sapphire bg-paper overflow-hidden border border-l-4">
       {sponsorSection}
 
       {/* Coalition line — static for solo bills or unbackfilled bills,
           expandable when we actually have cosponsor rows to reveal. */}
       {!canExpand ? (
-        <div className="border-border/60 border-t px-4 py-2.5">
+        <div className="border-rule border-t px-4 py-2.5">
           <p className="text-muted-foreground/80 text-sm">{coalition}</p>
-          {count > 0 && (
-            <div className="mt-1.5">
-              <PartyBar
-                demCount={demCount}
-                repCount={repCount}
-                otherCount={otherCount}
-              />
-            </div>
-          )}
         </div>
       ) : (
         <>
@@ -339,15 +294,10 @@ export function SponsorCard({
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
             aria-controls="sponsor-cosponsor-list"
-            className="border-border/60 hover:bg-muted/40 flex w-full items-center gap-3 border-t px-4 py-2.5 text-left transition-colors"
+            className="border-rule hover:bg-muted/40 flex w-full items-center gap-3 border-t px-4 py-2.5 text-left transition-colors"
           >
-            <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="min-w-0 flex-1">
               <p className="text-muted-foreground/80 text-sm">{coalition}</p>
-              <PartyBar
-                demCount={demCount}
-                repCount={repCount}
-                otherCount={otherCount}
-              />
             </div>
             <svg
               className={`text-muted-foreground h-4 w-4 flex-shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -365,7 +315,7 @@ export function SponsorCard({
           {expanded && (
             <div
               id="sponsor-cosponsor-list"
-              className="border-border/60 border-t px-3 py-3"
+              className="border-rule border-t px-3 py-3"
             >
               {demCosponsors.length > 0 && (
                 <CosponsorGroup
@@ -409,7 +359,7 @@ function CosponsorGroup({
 }) {
   return (
     <div className={isFirst ? "" : "mt-3"}>
-      <p className="text-muted-foreground px-2 pb-1 text-xs font-semibold tracking-[0.12em] uppercase">
+      <p className="text-ink-muted px-2 pb-1 text-[11px] font-bold tracking-[0.18em] uppercase tabular-nums">
         {label} ({cosponsors.length})
       </p>
       <ul className="space-y-0.5">

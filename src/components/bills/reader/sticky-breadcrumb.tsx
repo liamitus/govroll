@@ -39,19 +39,19 @@ export function StickyBreadcrumb({
   }, [activeSlug, sections]);
 
   return (
-    <div className="border-civic-gold/30 bg-civic-cream/85 dark:bg-card/85 supports-[backdrop-filter]:bg-civic-cream/65 sticky top-0 z-30 border-b backdrop-blur">
+    <div className="border-rule bg-paper/90 supports-[backdrop-filter]:bg-paper/75 sticky top-0 z-30 border-b backdrop-blur">
       <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-2.5 sm:px-6">
         <Link
           href={billHref(bill)}
-          className="text-muted-foreground hover:text-foreground flex-none rounded-md px-1 text-xs font-medium transition-colors"
+          className="text-ink-muted hover:text-ink flex-none px-1 text-xs font-medium transition-colors"
           aria-label="Back to bill page"
         >
           ←
         </Link>
 
-        <div className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-          <span className="text-foreground">{headline ?? bill.title}</span>
-          <span className="text-muted-foreground" suppressHydrationWarning>
+        <div className="text-ink min-w-0 flex-1 truncate text-sm font-medium">
+          <span className="text-ink">{headline ?? bill.title}</span>
+          <span className="text-ink-muted" suppressHydrationWarning>
             {path.length > 0 ? (
               <>
                 <span className="mx-2">·</span>

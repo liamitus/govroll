@@ -1,13 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" fill="#0A1F44"/>
-  <text
-    x="512"
-    y="760"
-    text-anchor="middle"
-    font-family="Georgia, 'Times New Roman', serif"
-    font-weight="700"
-    font-size="840"
-    fill="#B8860B"
-    letter-spacing="-20"
-  >G</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Roll Call node mark (standalone). The full wordmark is live type
+       (Archivo 800, wdth 125) and has no outlined artwork yet — see the
+       brand guide's open items. -->
+  <rect width="1024" height="1024" fill="#F2EDE3"/>
+  <circle cx="512" cy="512" r="300" fill="#FFB62E" stroke="#4164FF" stroke-width="120"/>
 </svg>
