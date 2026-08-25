@@ -41,7 +41,7 @@ export default function ContactPage() {
           <p className="text-muted-foreground text-sm leading-relaxed">
             Prefer public tracking? File an issue on{" "}
             <a
-              href="https://github.com/liamitus/govroll/issues"
+              href="https://github.com/howellandgibbs/govroll/issues"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-foreground underline underline-offset-2"

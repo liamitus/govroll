@@ -486,7 +486,7 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
         <p className="text-muted-foreground text-sm">
           Your address is only used to find your district and is never saved.{" "}
           <a
-            href="https://github.com/liamitus/govroll/blob/main/src/lib/civic-api.ts"
+            href="https://github.com/howellandgibbs/govroll/blob/main/src/lib/civic-api.ts"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-foreground underline transition-colors"

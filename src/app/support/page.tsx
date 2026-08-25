@@ -121,7 +121,7 @@ export default async function SupportPage() {
         Prefer contributing time instead of money? Govroll is open source —
         browse open{" "}
         <a
-          href="https://github.com/liamitus/govroll/issues"
+          href="https://github.com/howellandgibbs/govroll/issues"
           target="_blank"
           rel="noopener noreferrer"
           className="text-primary hover:text-navy underline underline-offset-2"
