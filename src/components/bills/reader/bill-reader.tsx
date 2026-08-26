@@ -248,7 +248,7 @@ function SourceFooter({
   return (
     <footer
       aria-label="Bill text source"
-      className="text-muted-foreground/80 bill-prose-meta border-border/40 mt-12 border-t pt-4 text-xs"
+      className="text-ink-muted bill-prose-meta border-rule mt-12 border-t pt-4 text-xs"
     >
       <p>
         {congressGovUrl ? (
@@ -273,7 +273,7 @@ function SourceFooterLink({ href, label }: { href: string; label: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="hover:text-foreground inline-flex items-center gap-1 underline underline-offset-2"
+      className="hover:text-ink inline-flex items-center gap-1 underline underline-offset-2"
     >
       {label}
       <ExternalLink className="h-3 w-3" aria-hidden="true" />

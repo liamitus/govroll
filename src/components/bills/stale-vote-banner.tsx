@@ -35,10 +35,12 @@ export function StaleVoteBanner({
   const otherOptions = VOTE_OPTIONS.filter((v) => v !== currentVote);
 
   return (
-    <div className="border-civic-gold/30 bg-civic-gold/5 space-y-3 rounded-lg border p-4">
+    // Informational notice — ink dashed frame on paper. Flame/red never
+    // appears here: flame means "against", and this is not an alarm.
+    <div className="border-ink bg-paper space-y-3 border border-dashed p-4">
       <div className="flex items-start gap-2">
         <svg
-          className="text-civic-gold mt-0.5 h-5 w-5 shrink-0"
+          className="text-ink mt-0.5 h-5 w-5 shrink-0"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -72,7 +74,7 @@ export function StaleVoteBanner({
           </p>
 
           {changeSummary ? (
-            <div className="text-muted-foreground border-civic-gold/40 border-l-2 pl-3 text-sm">
+            <div className="text-muted-foreground border-rule border-l-2 pl-3 text-sm">
               <span className="text-foreground/80 font-medium">
                 What changed:{" "}
               </span>
@@ -90,7 +92,7 @@ export function StaleVoteBanner({
         <button
           onClick={onConfirm}
           disabled={submitting}
-          className="bg-navy hover:bg-navy-light rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
+          className="bg-sapphire-deep text-paper hover:bg-sapphire-deep/90 px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50"
         >
           Keep My Vote: {currentVote}
         </button>
@@ -99,7 +101,7 @@ export function StaleVoteBanner({
             key={option}
             onClick={() => onReVote(option)}
             disabled={submitting}
-            className="border-border/60 text-muted-foreground hover:text-foreground hover:border-navy/30 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50"
+            className="border-rule text-muted-foreground hover:text-foreground hover:border-ink border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50"
           >
             Change to {option}
           </button>

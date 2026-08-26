@@ -372,14 +372,18 @@ export default async function BillDetailPage({
         }
         typeLabel={typeInfo.label}
         statusHeadline={statusExplanation.headline}
+        // Status pill grammar: sapphire-deep fill + paper text = terminal
+        // cleared; dashed/faded hollow = died (never red); outline = in
+        // progress. Passed-one-chamber is still in progress, so it stays
+        // an outline pill — only enactment earns the filled treatment.
         statusStyle={
           isEnacted
-            ? "bg-enacted-soft text-enacted border-0"
+            ? "bg-sapphire-deep text-paper border-0"
             : isFailed
-              ? "bg-failed-soft text-failed border-0"
+              ? "border border-dashed border-hollow bg-transparent text-ink-muted"
               : isPassed
-                ? "bg-passed-soft text-passed border-0"
-                : "bg-muted text-muted-foreground border-0"
+                ? "border border-rule bg-transparent text-ink"
+                : "border border-rule bg-transparent text-ink-muted"
         }
         momentumTier={bill.momentumTier as MomentumTier | null}
         daysSinceLastAction={bill.daysSinceLastAction}
@@ -408,7 +412,9 @@ export default async function BillDetailPage({
       {/* ── Who's behind this bill ── */}
       {parsedSponsor && (
         <section aria-label="Bill sponsor" className="space-y-2">
-          <h2 className="text-muted-foreground text-xs font-semibold tracking-[0.15em] uppercase">
+          {/* Kicker in Public Sans — global h2 is Archivo, which never
+              renders below 18px. */}
+          <h2 className="text-ink-muted font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
             Who introduced this
           </h2>
           <SponsorCard

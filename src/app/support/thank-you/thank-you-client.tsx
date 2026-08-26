@@ -19,11 +19,11 @@ export function ThankYouClient() {
       .catch(() => {});
   }, []);
 
-  // Confetti burst — civic gold + navy, top-right & top-left origins.
+  // Confetti burst — gold, sapphire, and maya, top-right & top-left origins.
   useEffect(() => {
     if (fired.current) return;
     fired.current = true;
-    const colors = ["#B8860B", "#0A1F44", "#FAFAF5"];
+    const colors = ["#FFB62E", "#4164FF", "#7CC3FF"];
     const duration = 1200;
     const end = Date.now() + duration;
     (function frame() {
@@ -76,27 +76,28 @@ export function ThankYouClient() {
 
   return (
     <div className="mx-auto max-w-lg space-y-8 px-4 py-16 text-center">
-      <p className="text-civic-gold star-accent text-sm tracking-widest uppercase">
+      <p className="text-ink-muted flex items-center justify-center gap-2 text-[11px] font-bold tracking-[0.18em] uppercase">
+        <span className="brand-node" aria-hidden="true" />
         Thank You
       </p>
-      <h1 className="font-gelasio text-3xl leading-tight font-bold tracking-tight sm:text-4xl">
+      <h1 className="text-3xl leading-tight font-bold tracking-tight sm:text-4xl">
         You&apos;re keeping civic
         <br />
         transparency alive.
       </h1>
 
       {citizenCount != null && citizenCount > 0 && (
-        <div className="border-civic-gold/30 bg-civic-cream/40 animate-fade-slide-up rounded-lg border px-6 py-5">
-          <p className="text-civic-gold/80 mb-1 text-xs font-semibold tracking-widest uppercase">
+        <div className="border-rule bg-paper animate-fade-slide-up border px-6 py-5">
+          <p className="text-ink-muted mb-1 text-[11px] font-bold tracking-[0.18em] uppercase">
             Made Possible By
           </p>
-          <p className="font-gelasio text-navy text-3xl font-bold tabular-nums">
+          <p className="text-ink text-3xl font-bold tabular-nums">
             {displayCount.toLocaleString("en-US")}
-            <span className="text-muted-foreground ml-2 text-base font-normal">
+            <span className="text-ink-muted ml-2 text-base font-normal">
               {citizenCount === 1 ? "citizen" : "citizens"}
             </span>
           </p>
-          <p className="text-muted-foreground mt-1 text-sm">
+          <p className="text-ink-muted mt-1 text-sm">
             {citizenCount === 1
               ? "You’re the first — thank you for starting this."
               : "and counting"}
@@ -104,14 +105,14 @@ export function ThankYouClient() {
         </div>
       )}
 
-      <p className="text-muted-foreground text-base leading-relaxed">
+      <p className="text-ink-muted text-base leading-relaxed">
         Your contribution goes directly to powering Govroll&apos;s AI tools and
         data infrastructure — keeping Govroll free for every American, with no
         ads and no paywalls. We just sent a receipt to your inbox.
       </p>
 
       <div className="space-y-3 pt-2">
-        <p className="text-muted-foreground text-xs font-semibold tracking-widest uppercase">
+        <p className="text-ink-muted text-xs font-semibold tracking-widest uppercase">
           Spread the word
         </p>
         <div className="flex flex-wrap justify-center gap-2">
@@ -119,7 +120,7 @@ export function ThankYouClient() {
             href={`https://twitter.com/intent/tweet?text=${shareText}&url=${encodeURIComponent(shareUrl)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="border-border/60 text-navy hover:bg-navy/5 inline-flex items-center gap-2 rounded-md border bg-white px-3 py-1.5 text-xs font-medium transition-colors"
+            className="border-rule text-ink hover:bg-ink/5 bg-paper inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-medium transition-colors"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -134,7 +135,7 @@ export function ThankYouClient() {
             href={`https://bsky.app/intent/compose?text=${shareText}%20${encodeURIComponent(shareUrl)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="border-border/60 text-navy hover:bg-navy/5 inline-flex items-center gap-2 rounded-md border bg-white px-3 py-1.5 text-xs font-medium transition-colors"
+            className="border-rule text-ink hover:bg-ink/5 bg-paper inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-medium transition-colors"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -151,14 +152,14 @@ export function ThankYouClient() {
       <div className="flex justify-center gap-4 pt-2 text-sm">
         <Link
           href="/made-possible-by"
-          className="text-navy/70 hover:text-navy underline underline-offset-2"
+          className="text-ink-muted hover:text-ink underline underline-offset-2"
         >
           See who makes Govroll possible
         </Link>
-        <span className="text-muted-foreground">·</span>
+        <span className="text-ink-muted">·</span>
         <Link
           href="/bills"
-          className="text-navy/70 hover:text-navy underline underline-offset-2"
+          className="text-ink-muted hover:text-ink underline underline-offset-2"
         >
           Back to bills
         </Link>

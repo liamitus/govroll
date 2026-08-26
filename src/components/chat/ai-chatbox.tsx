@@ -114,13 +114,13 @@ function AiMessageContent({
     <ReactMarkdown
       components={{
         blockquote: ({ children }) => (
-          <blockquote className="border-civic-gold/60 text-muted-foreground my-2 border-l-2 pl-3 italic">
+          <blockquote className="border-rule text-ink-muted my-2 border-l-2 pl-3 italic">
             {children}
           </blockquote>
         ),
         p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
         strong: ({ children }) => (
-          <strong className="text-foreground font-semibold">{children}</strong>
+          <strong className="text-ink font-semibold">{children}</strong>
         ),
         ul: ({ children }) => (
           <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>
@@ -134,7 +134,7 @@ function AiMessageContent({
             return (
               <a
                 href={href}
-                className="text-civic-gold font-medium underline-offset-2 hover:underline"
+                className="text-sapphire-deep font-medium underline-offset-2 hover:underline"
                 onClick={(e) => {
                   if (!slug) return;
                   e.preventDefault();
@@ -151,7 +151,7 @@ function AiMessageContent({
               {...rest}
               target={href?.startsWith("http") ? "_blank" : undefined}
               rel={href?.startsWith("http") ? "noopener noreferrer" : undefined}
-              className="text-civic-gold underline-offset-2 hover:underline"
+              className="text-sapphire-deep underline-offset-2 hover:underline"
             >
               {children}
             </a>
@@ -567,7 +567,7 @@ export function AiChatbox({
                       setOpen(true);
                       submit(q);
                     }}
-                    className="border-civic-gold/40 text-foreground/80 hover:border-civic-gold hover:bg-civic-cream/60 rounded-full border bg-white px-3 py-1 text-xs font-medium transition-colors"
+                    className="border-rule text-ink bg-paper hover:border-ink hover:bg-muted border px-3 py-1 text-xs font-medium transition-colors"
                   >
                     {q}
                   </button>
@@ -628,13 +628,13 @@ export function AiChatbox({
             onPointerMove={onResizeMove}
             onPointerUp={onResizeEnd}
             onPointerCancel={onResizeEnd}
-            className="hover:bg-civic-gold/30 active:bg-civic-gold/60 absolute inset-y-0 left-0 z-20 hidden w-1.5 cursor-col-resize transition-colors sm:block"
+            className="hover:bg-sapphire/30 active:bg-sapphire/50 absolute inset-y-0 left-0 z-20 hidden w-1.5 cursor-col-resize transition-colors sm:block"
           />
 
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <svg
-                className="text-civic-gold h-4 w-4"
+                className="text-sapphire-deep h-4 w-4"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -704,7 +704,7 @@ export function AiChatbox({
                             key={q}
                             type="button"
                             onClick={() => submit(q)}
-                            className="border-civic-gold/40 text-foreground/80 hover:border-civic-gold hover:bg-civic-cream/60 rounded-full border bg-white px-3 py-1 text-xs font-medium transition-colors"
+                            className="border-rule text-ink bg-paper hover:border-ink hover:bg-muted border px-3 py-1 text-xs font-medium transition-colors"
                           >
                             {q}
                           </button>
@@ -797,7 +797,7 @@ export function AiChatbox({
                 aria-label={
                   isBusy ? "Jump to latest response" : "Jump to latest message"
                 }
-                className="bg-background hover:bg-muted text-foreground absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-md transition-colors"
+                className="bg-paper hover:bg-muted text-ink border-rule absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors"
               >
                 <ArrowDown className="h-3.5 w-3.5" />
                 {isBusy ? "Jump to latest" : "New messages"}
@@ -807,9 +807,9 @@ export function AiChatbox({
 
           <div className="bg-background border-t px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             {sectionContext ? (
-              <div className="border-civic-gold/40 bg-civic-gold/10 mb-2 flex items-center justify-between rounded-md px-2 py-1.5 text-xs">
-                <span className="text-foreground min-w-0 truncate">
-                  <span className="text-muted-foreground">Asking about:</span>{" "}
+              <div className="border-gold bg-gold/10 mb-2 flex items-center justify-between border px-2 py-1.5 text-xs">
+                <span className="text-ink min-w-0 truncate">
+                  <span className="text-ink-muted">Asking about:</span>{" "}
                   {sectionContext.sectionPath.join(" › ")}
                 </span>
                 {onClearSectionContext ? (

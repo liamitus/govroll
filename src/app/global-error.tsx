@@ -2,6 +2,15 @@
 
 import { useEffect } from "react";
 
+// global-error replaces the root layout, so globals.css (and the Roll Call
+// token utilities) may not be loaded. Everything is inline-styled with the
+// raw palette values: sand ground, ink type, sapphire-deep action.
+const SAND = "#F2EDE3";
+const PAPER = "#FBF8F2";
+const INK = "#14161C";
+const INK_MUTED = "#5C5F69";
+const SAPPHIRE_DEEP = "#3258FF";
+
 export default function GlobalError({
   error,
   reset,
@@ -24,29 +33,84 @@ export default function GlobalError({
 
   return (
     <html lang="en">
-      <body className="flex min-h-screen items-center justify-center bg-white">
-        <div className="max-w-md space-y-6 px-4 text-center">
+      <body
+        style={{
+          display: "flex",
+          minHeight: "100vh",
+          alignItems: "center",
+          justifyContent: "center",
+          margin: 0,
+          backgroundColor: SAND,
+          color: INK,
+          fontFamily:
+            'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "28rem",
+            padding: "3rem 2rem",
+            textAlign: "center",
+            backgroundColor: PAPER,
+            // Errors get the dashed ink frame — never red.
+            border: `1.5px dashed ${INK}`,
+          }}
+        >
           <p
-            className="text-sm tracking-widest uppercase"
-            style={{ color: "#B8860B" }}
+            style={{
+              margin: "0 0 1.5rem",
+              fontSize: "11px",
+              fontWeight: 700,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color: INK_MUTED,
+            }}
           >
-            Something Went Wrong
+            Something went wrong
           </p>
           <h1
-            className="text-4xl font-bold tracking-tight"
-            style={{ color: "#0A1F44" }}
+            style={{
+              margin: "0 0 1.5rem",
+              fontSize: "2.25rem",
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+              color: INK,
+            }}
           >
-            Unexpected Error
+            Unexpected error
           </h1>
-          <p className="text-base text-gray-500">
+          <p
+            style={{
+              margin: "0 0 1.5rem",
+              fontSize: "1rem",
+              lineHeight: 1.6,
+              color: INK_MUTED,
+            }}
+          >
             We hit an unexpected problem. Please try again, or head back to the
             homepage.
           </p>
-          <div className="flex justify-center gap-4 pt-4">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: "1rem",
+              paddingTop: "0.5rem",
+            }}
+          >
             <button
               onClick={reset}
-              className="inline-flex items-center rounded-md px-4 py-2 text-base font-medium text-white transition-colors"
-              style={{ backgroundColor: "#0A1F44" }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "0.5rem 1rem",
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: PAPER,
+                backgroundColor: SAPPHIRE_DEEP,
+                border: "none",
+                cursor: "pointer",
+              }}
             >
               Try again
             </button>
@@ -55,8 +119,16 @@ export default function GlobalError({
             {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/"
-              className="inline-flex items-center rounded-md border px-4 py-2 text-base font-medium transition-colors"
-              style={{ borderColor: "rgba(10,31,68,0.2)" }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "0.5rem 1rem",
+                fontSize: "1rem",
+                fontWeight: 500,
+                color: INK,
+                textDecoration: "none",
+                border: "1px solid #D3CCBE",
+              }}
             >
               Go home
             </a>

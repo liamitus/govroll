@@ -57,11 +57,12 @@ export function LiveFeed({ donors }: { donors: FeedDonor[] }) {
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
-        </span>
-        <h2 className="text-muted-foreground text-sm font-medium tracking-wide uppercase">
+        {/* Gold = "here, now" — the live marker for the most recent activity. */}
+        <span
+          className="bg-gold inline-flex h-2 w-2 rounded-full"
+          aria-hidden="true"
+        />
+        <h2 className="text-ink-muted text-sm font-medium tracking-wide uppercase">
           Recent
         </h2>
       </div>
@@ -71,8 +72,8 @@ export function LiveFeed({ donors }: { donors: FeedDonor[] }) {
             key={d.id}
             className="animate-fade-slide-up flex items-center justify-between py-1.5 text-sm"
           >
-            <span className="text-foreground">{donorLabel(d)}</span>
-            <span className="text-muted-foreground ml-3 text-xs whitespace-nowrap">
+            <span className="text-ink">{donorLabel(d)}</span>
+            <span className="text-ink-muted ml-3 text-xs whitespace-nowrap tabular-nums">
               {timeAgo(new Date(d.createdAt))}
             </span>
           </div>

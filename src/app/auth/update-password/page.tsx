@@ -87,7 +87,11 @@ export default function UpdatePasswordPage() {
             />
           </div>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && (
+            <p className="border-ink text-ink-muted border-[1.5px] border-dashed px-3 py-2 text-sm">
+              {error}
+            </p>
+          )}
 
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? "Updating..." : "Update Password"}

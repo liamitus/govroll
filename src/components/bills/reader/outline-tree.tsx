@@ -71,7 +71,7 @@ export function OutlineTree({
               {entry.depth >= 2 ? (
                 <span
                   aria-hidden
-                  className="bg-civic-gold/20 dark:bg-civic-gold/30 absolute top-1 bottom-1 w-px"
+                  className="bg-rule absolute top-1 bottom-1 w-px"
                   style={{ left: `${indent - 0.5}rem` }}
                 />
               ) : null}
@@ -79,18 +79,27 @@ export function OutlineTree({
                 ref={isActive ? activeRowRef : undefined}
                 href={`#${entry.slug}`}
                 className={[
-                  "relative block rounded-md py-1 transition-colors",
+                  "relative block py-1 transition-colors",
                   isMarkerOnly ? "text-xs" : "text-sm",
                   isActive
-                    ? "bg-civic-gold/15 text-foreground"
+                    ? "text-ink"
                     : isMarkerOnly
-                      ? "text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                      ? "text-ink-muted/70 hover:bg-muted/50 hover:text-ink"
+                      : "text-ink-muted hover:bg-muted/60 hover:text-ink",
                 ].join(" ")}
                 style={{ paddingLeft: `${indent}rem`, paddingRight: "0.5rem" }}
                 aria-current={isActive ? "true" : undefined}
                 onClick={() => onItemClick?.()}
               >
+                {/* Current-position marker — the reader's "you are here".
+                    Gold means "here, now"; this bar is the one gold
+                    element in the outline view. */}
+                {isActive ? (
+                  <span
+                    aria-hidden
+                    className="bg-gold absolute top-1 bottom-1 left-0 w-[3px]"
+                  />
+                ) : null}
                 <span
                   className={[
                     "block truncate",
@@ -101,7 +110,7 @@ export function OutlineTree({
                   {lastSegment}
                 </span>
                 {entry.caption ? (
-                  <span className="text-muted-foreground/90 mt-0.5 line-clamp-2 block text-xs leading-snug font-normal italic">
+                  <span className="text-ink-muted mt-0.5 line-clamp-2 block text-xs leading-snug font-normal italic">
                     {entry.caption}
                   </span>
                 ) : null}

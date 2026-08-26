@@ -10,25 +10,23 @@ export const metadata: Metadata = {
 export default function PrivacyPage() {
   return (
     <article className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-      <header className="border-border/40 space-y-3 border-b pb-10">
-        <p className="text-navy/70 text-xs font-semibold tracking-[0.25em] uppercase">
+      <header className="border-rule space-y-3 border-b pb-10">
+        <p className="text-ink-muted text-[11px] font-bold tracking-[0.18em] uppercase">
           Legal
         </p>
-        <h1 className="text-navy text-4xl font-bold tracking-tight sm:text-5xl">
+        <h1 className="text-ink text-4xl font-bold tracking-tight sm:text-5xl">
           Privacy Policy
         </h1>
-        <p className="text-muted-foreground text-base">
-          Last updated: April 15, 2026
-        </p>
+        <p className="text-ink-muted text-base">Last updated: April 15, 2026</p>
       </header>
 
-      <div className="text-muted-foreground space-y-14 pt-10 text-base leading-7">
+      <div className="text-ink-muted space-y-14 pt-10 text-base leading-7">
         <p>
           Govroll (&ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;)
           operates the website at{" "}
           <a
             href="https://govroll.com"
-            className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-2"
+            className="text-ink decoration-rule hover:decoration-ink underline underline-offset-2"
           >
             govroll.com
           </a>
@@ -40,7 +38,7 @@ export default function PrivacyPage() {
 
         <Section number="1" title="Information we collect">
           <Sub title="Information you provide directly">
-            <ul className="marker:text-navy/30 list-disc space-y-2 pl-5">
+            <ul className="marker:text-hollow list-disc space-y-2 pl-5">
               <Item label="Account information">
                 email address and password when you create an account, or basic
                 profile information (name, email, avatar) from Google or GitHub
@@ -70,7 +68,7 @@ export default function PrivacyPage() {
                 emails you send to{" "}
                 <a
                   href="mailto:support@govroll.com"
-                  className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-2"
+                  className="text-ink decoration-rule hover:decoration-ink underline underline-offset-2"
                 >
                   support@govroll.com
                 </a>{" "}
@@ -80,7 +78,7 @@ export default function PrivacyPage() {
           </Sub>
 
           <Sub title="Information stored on your device only">
-            <ul className="marker:text-navy/30 list-disc space-y-2 pl-5">
+            <ul className="marker:text-hollow list-disc space-y-2 pl-5">
               <Item label="Your address">
                 when you enter your address to find your representatives, it is
                 stored in your browser&apos;s local storage. It is not saved to
@@ -93,7 +91,7 @@ export default function PrivacyPage() {
               We would prefer to geocode directly in your browser, but the{" "}
               <a
                 href="https://geocoding.geo.census.gov/"
-                className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-2"
+                className="text-ink decoration-rule hover:decoration-ink underline underline-offset-2"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -112,7 +110,7 @@ export default function PrivacyPage() {
           </Sub>
 
           <Sub title="Information collected automatically">
-            <ul className="marker:text-navy/30 list-disc space-y-2 pl-5">
+            <ul className="marker:text-hollow list-disc space-y-2 pl-5">
               <Item label="Authentication cookies">
                 if you sign in, we set essential cookies to keep your session
                 active. These are strictly necessary and cannot be disabled
@@ -134,7 +132,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section number="2" title="How we use your information">
-          <ul className="marker:text-navy/30 list-disc space-y-2 pl-5">
+          <ul className="marker:text-hollow list-disc space-y-2 pl-5">
             <li>
               To provide and maintain the service — account access, bill
               tracking, comments, and supporter attribution.
@@ -162,7 +160,7 @@ export default function PrivacyPage() {
             We use the following third-party providers to operate Govroll. Each
             has its own privacy policy governing how it handles data.
           </p>
-          <ul className="marker:text-navy/30 list-disc space-y-2 pl-5">
+          <ul className="marker:text-hollow list-disc space-y-2 pl-5">
             <Item label="Vercel">
               website hosting, function execution, CDN, and request logging.
             </Item>
@@ -208,9 +206,9 @@ export default function PrivacyPage() {
 
         <Section number="4" title="Artificial intelligence">
           <p>We use AI for three narrow, server-side purposes:</p>
-          <ul className="marker:text-navy/30 list-disc space-y-2 pl-5">
+          <ul className="marker:text-hollow list-disc space-y-2 pl-5">
             <li>
-              <strong className="text-foreground font-semibold">
+              <strong className="text-ink font-semibold">
                 Bill summaries:
               </strong>{" "}
               generating plain-language summaries of public bill text retrieved
@@ -218,7 +216,7 @@ export default function PrivacyPage() {
               are cached so the same bill is not reprocessed.
             </li>
             <li>
-              <strong className="text-foreground font-semibold">
+              <strong className="text-ink font-semibold">
                 Ask-an-AI (bill chat):
               </strong>{" "}
               an authenticated feature that lets you ask questions about a
@@ -235,7 +233,7 @@ export default function PrivacyPage() {
               it) and expires after 24 hours.
             </li>
             <li>
-              <strong className="text-foreground font-semibold">
+              <strong className="text-ink font-semibold">
                 Content safety:
               </strong>{" "}
               screening user-submitted text — donor display names, usernames,
@@ -268,7 +266,7 @@ export default function PrivacyPage() {
             delete your account at any time from your{" "}
             <Link
               href="/account"
-              className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-2"
+              className="text-ink decoration-rule hover:decoration-ink underline underline-offset-2"
             >
               account settings
             </Link>
@@ -295,7 +293,7 @@ export default function PrivacyPage() {
             a child has provided us with personal information, please{" "}
             <Link
               href="/contact"
-              className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-2"
+              className="text-ink decoration-rule hover:decoration-ink underline underline-offset-2"
             >
               contact us
             </Link>{" "}
@@ -305,7 +303,7 @@ export default function PrivacyPage() {
 
         <Section number="7" title="Your rights">
           <p>Depending on where you live, you may have the right to:</p>
-          <ul className="marker:text-navy/30 list-disc space-y-2 pl-5">
+          <ul className="marker:text-hollow list-disc space-y-2 pl-5">
             <li>Access the personal information we hold about you.</li>
             <li>Request correction of inaccurate information.</li>
             <li>Request deletion of your personal information.</li>
@@ -321,7 +319,7 @@ export default function PrivacyPage() {
             To exercise any of these rights, email{" "}
             <a
               href="mailto:privacy@govroll.com"
-              className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-2"
+              className="text-ink decoration-rule hover:decoration-ink underline underline-offset-2"
             >
               privacy@govroll.com
             </a>
@@ -335,7 +333,7 @@ export default function PrivacyPage() {
               the California Consumer Privacy Act, as amended by the California
               Privacy Rights Act:
             </p>
-            <ul className="marker:text-navy/30 mt-3 list-disc space-y-2 pl-5">
+            <ul className="marker:text-hollow mt-3 list-disc space-y-2 pl-5">
               <li>
                 The right to know what categories and specific pieces of
                 personal information we collect, use, and disclose.
@@ -348,7 +346,7 @@ export default function PrivacyPage() {
               <li>
                 The right to opt out of the sale or sharing of your personal
                 information.{" "}
-                <strong className="text-foreground">
+                <strong className="text-ink">
                   We do not sell or share personal information
                 </strong>{" "}
                 as those terms are defined under California law.
@@ -413,14 +411,14 @@ export default function PrivacyPage() {
             Questions about this Privacy Policy or our data practices? Email{" "}
             <a
               href="mailto:privacy@govroll.com"
-              className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-2"
+              className="text-ink decoration-rule hover:decoration-ink underline underline-offset-2"
             >
               privacy@govroll.com
             </a>
             , or reach us through the{" "}
             <Link
               href="/contact"
-              className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-2"
+              className="text-ink decoration-rule hover:decoration-ink underline underline-offset-2"
             >
               contact page
             </Link>
@@ -443,8 +441,8 @@ function Section({
 }) {
   return (
     <section className="scroll-mt-24 space-y-4">
-      <h2 className="text-navy flex items-baseline gap-3 text-2xl font-semibold tracking-tight">
-        <span className="text-navy/40 text-xs font-semibold tracking-[0.2em] tabular-nums">
+      <h2 className="text-ink flex items-baseline gap-3 text-2xl font-semibold tracking-tight">
+        <span className="text-ink-muted text-xs font-semibold tracking-[0.2em] tabular-nums">
           {number.padStart(2, "0")}
         </span>
         <span>{title}</span>
@@ -463,7 +461,7 @@ function Sub({
 }) {
   return (
     <div className="space-y-3 pt-2">
-      <h3 className="text-navy/80 text-sm font-semibold tracking-[0.15em] uppercase">
+      <h3 className="text-ink-muted font-sans text-sm font-semibold tracking-[0.15em] uppercase">
         {title}
       </h3>
       <div className="space-y-3">{children}</div>
@@ -480,8 +478,7 @@ function Item({
 }) {
   return (
     <li>
-      <strong className="text-foreground font-semibold">{label}:</strong>{" "}
-      {children}
+      <strong className="text-ink font-semibold">{label}:</strong> {children}
     </li>
   );
 }

@@ -47,7 +47,7 @@ export function OutlineSheet({
             entries={entries}
             onItemClick={() => onOpenChange(false)}
           />
-          <div className="border-border/40 mt-6 border-t pt-4">
+          <div className="border-rule mt-6 border-t pt-4">
             <SourceLinks
               congressGovUrl={congressGovUrl}
               govtrackUrl={govtrackUrl}

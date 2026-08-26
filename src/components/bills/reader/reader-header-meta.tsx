@@ -54,8 +54,8 @@ export function ReaderHeaderMeta({
 
   return (
     <header className="mb-10">
-      <div className="text-muted-foreground bill-prose-meta mb-2 text-xs font-medium tracking-wide uppercase">
-        <a href={bill.detailHref} className="hover:text-foreground">
+      <div className="text-ink-muted bill-prose-meta mb-2 text-[11px] font-bold tracking-[0.18em] uppercase">
+        <a href={bill.detailHref} className="hover:text-ink">
           {bill.displayNumber}
         </a>
         <span aria-hidden className="mx-1.5 opacity-40">
@@ -68,13 +68,13 @@ export function ReaderHeaderMeta({
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
         <span
-          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold tracking-wide uppercase ${statusTone.pillClass}`}
+          className={`inline-flex items-center border px-2.5 py-0.5 text-xs font-bold tracking-[0.1em] uppercase ${statusTone.pillClass}`}
           title={statusInfo.detail}
         >
           {statusInfo.headline}
         </span>
         {sponsor ? (
-          <span className="text-muted-foreground bill-prose-meta">
+          <span className="text-ink-muted bill-prose-meta">
             {sponsor.chamberPrefix ?? ""} {sponsor.firstName} {sponsor.lastName}{" "}
             <span className="opacity-70">
               ({sponsor.party}-{sponsor.state}
@@ -82,15 +82,15 @@ export function ReaderHeaderMeta({
             </span>
           </span>
         ) : null}
-        <span aria-hidden className="text-muted-foreground opacity-40">
+        <span aria-hidden className="text-ink-muted opacity-40">
           ·
         </span>
-        <span className="text-muted-foreground bill-prose-meta">
+        <span className="text-ink-muted bill-prose-meta tabular-nums">
           {sectionCountLabel} · {readingLabel}
         </span>
         {expandCollapseSlot ? (
           <>
-            <span aria-hidden className="text-muted-foreground opacity-40">
+            <span aria-hidden className="text-ink-muted opacity-40">
               ·
             </span>
             {expandCollapseSlot}
@@ -109,17 +109,22 @@ export function ReaderHeaderMeta({
   );
 }
 
+/**
+ * Roll Call status grammar (docs/design/roll-call.md, "UI patterns"):
+ * status is stage, not verdict. Sapphire-deep fill + paper text =
+ * terminal cleared; gold fill + ink text = pending action; outline =
+ * in progress; faded hollow = dead. Bill failure is hollow, never red.
+ */
 function toneForStatus(status: string): { pillClass: string } {
-  // Enacted — the bill is law. Strong positive tone.
+  // Enacted — the bill's route reached its terminus.
   if (status.startsWith("enacted_")) {
     return {
-      pillClass:
-        "border-emerald-300/70 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-100",
+      pillClass: "border-sapphire-deep bg-sapphire-deep text-paper",
     };
   }
   // Passed Congress / conference-done / concurrentres / simpleres —
   // all chambers cleared, awaiting president or already complete for
-  // the measure's type.
+  // the measure's type. Gold = pending action ("awaiting signature").
   if (
     status === "passed_bill" ||
     status === "passed_concurrentres" ||
@@ -127,38 +132,23 @@ function toneForStatus(status: string): { pillClass: string } {
     status.startsWith("conference_")
   ) {
     return {
-      pillClass:
-        "border-violet-300/70 bg-violet-50 text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-100",
+      pillClass: "border-gold bg-gold text-ink",
     };
   }
-  // Active but not done — reported or passed one chamber.
-  if (
-    status === "reported" ||
-    status === "pass_over_house" ||
-    status === "pass_over_senate" ||
-    status === "pass_back_house" ||
-    status === "pass_back_senate"
-  ) {
-    return {
-      pillClass:
-        "border-sky-300/70 bg-sky-50 text-sky-900 dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-100",
-    };
-  }
-  // Dead or blocked.
+  // Dead or blocked — the route ended here. Faded hollow, not red.
   if (
     status.startsWith("fail_") ||
     status.startsWith("prov_kill_") ||
     status.startsWith("vetoed_")
   ) {
     return {
-      pillClass:
-        "border-rose-300/70 bg-rose-50 text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-100",
+      pillClass: "border-hollow bg-transparent text-ink-muted",
     };
   }
-  // Introduced or unknown — neutral.
+  // In progress (introduced, reported, passed one chamber, unknown) —
+  // outline treatment; the label carries the distinction.
   return {
-    pillClass:
-      "border-civic-gold/40 bg-civic-gold/10 text-navy dark:text-civic-gold",
+    pillClass: "border-ink bg-transparent text-ink",
   };
 }
 

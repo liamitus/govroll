@@ -2,22 +2,21 @@ import { cn } from "@/lib/utils";
 import type { StatusCode } from "@/lib/congress-session/types";
 
 /**
- * The colored glyph inside the pill. Shape + color + animation together
- * carry the state — never relying on color alone (so deuteranopic users
- * and grayscale screenshots still read correctly).
+ * The glyph inside the pill. Shape + color + animation together carry the
+ * state — never relying on color alone (so deuteranopic users and
+ * grayscale screenshots still read correctly).
  *
- * Colors are either semantic (emerald = active, amber = pro forma) or
- * `currentColor`-based (recess outline, unknown dash) so the neutral glyphs
- * adapt to their surrounding text color — readable on both the dark nav
- * pill and the light popover rows without a per-context override.
+ * Colors follow the Roll Call signal palette — in session is sapphire,
+ * recess/pending is gold, "out" is hollow. Never green/red: legislative
+ * timing is wayfinding, not an alert.
  *
- * - voting: filled emerald with motion-safe pulse
- * - in_session: filled emerald, static
- * - pre_session: filled amber, static (scheduled to convene later today)
- * - pro_forma: half-filled amber (distinct shape)
- * - adjourned_today: hollow emerald ring (was active today, not right now)
- * - recess: hollow ring in the ambient text color
- * - no_session: same hollow ring (scheduled day, but not on the floor today)
+ * - voting: filled sapphire with motion-safe pulse
+ * - in_session: filled sapphire, static
+ * - pre_session: filled gold, static (scheduled to convene later today)
+ * - pro_forma: half-filled gold (distinct shape)
+ * - adjourned_today: hollow sapphire ring (was active today, not right now)
+ * - recess: hollow gold ring (the calendar says "away")
+ * - no_session: hollow ring (scheduled day, but not on the floor today)
  * - adjourned_sine_die: same hollow ring
  * - unknown: thin dash in the ambient text color (no dot at all)
  */
@@ -44,16 +43,24 @@ export function StatusDot({
     );
   }
 
-  if (
-    status === "recess" ||
-    status === "adjourned_sine_die" ||
-    status === "no_session"
-  ) {
+  if (status === "recess") {
     return (
       <span
         aria-hidden
         className={cn(
-          "relative inline-block size-2 rounded-full border border-current/60",
+          "border-gold relative inline-block size-2 rounded-full border-[1.5px]",
+          className,
+        )}
+      />
+    );
+  }
+
+  if (status === "adjourned_sine_die" || status === "no_session") {
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          "border-hollow relative inline-block size-2 rounded-full border-[1.5px]",
           className,
         )}
       />
@@ -65,7 +72,7 @@ export function StatusDot({
       <span
         aria-hidden
         className={cn(
-          "relative inline-block size-2 rounded-full border border-emerald-400",
+          "border-sapphire relative inline-block size-2 rounded-full border-[1.5px]",
           className,
         )}
       />
@@ -77,12 +84,12 @@ export function StatusDot({
       <span
         aria-hidden
         className={cn(
-          "relative inline-block size-2 overflow-hidden rounded-full ring-1 ring-amber-300/80",
+          "ring-gold/80 relative inline-block size-2 overflow-hidden rounded-full ring-1",
           className,
         )}
       >
         <span
-          className="absolute inset-0 bg-amber-300"
+          className="bg-gold absolute inset-0"
           style={{ clipPath: "inset(0 50% 0 0)" }}
         />
       </span>
@@ -94,7 +101,7 @@ export function StatusDot({
       <span
         aria-hidden
         className={cn(
-          "relative inline-block size-2 rounded-full bg-amber-300",
+          "bg-gold relative inline-block size-2 rounded-full",
           className,
         )}
       />
@@ -111,9 +118,9 @@ export function StatusDot({
       )}
     >
       {status === "voting" && !stale && (
-        <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/70 motion-reduce:hidden" />
+        <span className="bg-sapphire/70 absolute inset-0 animate-ping rounded-full motion-reduce:hidden" />
       )}
-      <span className="relative inline-block size-2 rounded-full bg-emerald-400" />
+      <span className="bg-sapphire relative inline-block size-2 rounded-full" />
     </span>
   );
 }

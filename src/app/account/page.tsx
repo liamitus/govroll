@@ -209,15 +209,15 @@ export default function AccountPage() {
 
       <Card className="space-y-4 p-4">
         <h2 className="text-xl font-semibold">Profile</h2>
-        <p className="text-muted-foreground text-base">
-          Username: <span className="text-foreground">{username}</span>
+        <p className="text-ink-muted text-base">
+          Username: <span className="text-ink">{username}</span>
         </p>
-        <p className="text-muted-foreground text-base">
-          Email: <span className="text-foreground">{user.email}</span>
+        <p className="text-ink-muted text-base">
+          Email: <span className="text-ink">{user.email}</span>
         </p>
-        <p className="text-muted-foreground text-base">
+        <p className="text-ink-muted text-base">
           Member since:{" "}
-          <span className="text-foreground">
+          <span className="text-ink">
             {new Date(user.created_at).toLocaleDateString("en-US")}
           </span>
         </p>
@@ -225,10 +225,10 @@ export default function AccountPage() {
 
       <Card className="space-y-4 p-4">
         <h2 className="text-xl font-semibold">Display Name</h2>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-ink-muted text-sm">
           This is how you appear in comments and discussions. You were assigned{" "}
-          <span className="text-foreground font-medium">{username}</span> —
-          change it to your name or a pseudonym you prefer.
+          <span className="text-ink font-medium">{username}</span> — change it
+          to your name or a pseudonym you prefer.
         </p>
         <div className="flex gap-2">
           <Input
@@ -244,7 +244,7 @@ export default function AccountPage() {
 
       <Card className="space-y-4 p-4">
         <h2 className="text-xl font-semibold">Update Email</h2>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-ink-muted text-sm">
           A confirmation link will be sent to both your current and new email.
         </p>
         <div className="flex gap-2">
@@ -279,7 +279,9 @@ export default function AccountPage() {
       {message && (
         <p
           className={`text-sm ${
-            messageType === "error" ? "text-red-500" : "text-green-600"
+            messageType === "error"
+              ? "border-ink bg-paper text-ink-muted border-[1.5px] border-dashed px-3 py-2"
+              : "text-ink"
           }`}
         >
           {message}
@@ -307,20 +309,20 @@ export default function AccountPage() {
                       billId: comment.bill.billId,
                       title: comment.bill.title,
                     })}
-                    className="text-primary mt-1 block text-sm hover:underline"
+                    className="text-sapphire-deep mt-1 block text-sm hover:underline"
                   >
                     {comment.bill.title}
                   </Link>
                 )}
               </div>
               <div className="ml-2 flex flex-col items-end gap-1">
-                <span className="text-muted-foreground text-sm whitespace-nowrap">
+                <span className="text-ink-muted text-sm whitespace-nowrap tabular-nums">
                   {new Date(comment.date).toLocaleDateString("en-US")}
                 </span>
                 <button
                   onClick={() => handleDeleteComment(comment.id)}
                   disabled={deleteCommentMutation.isPending}
-                  className="text-muted-foreground hover:text-destructive text-sm disabled:opacity-50"
+                  className="text-ink-muted hover:text-destructive text-sm disabled:opacity-50"
                 >
                   Delete
                 </button>
@@ -347,9 +349,9 @@ export default function AccountPage() {
 
       <Separator />
 
-      <Card className="space-y-4 border-red-200 p-4">
-        <h2 className="text-xl font-semibold text-red-600">Danger Zone</h2>
-        <p className="text-muted-foreground text-base">
+      <Card className="border-ink space-y-4 border-[1.5px] border-dashed p-4">
+        <h2 className="text-xl font-semibold">Danger Zone</h2>
+        <p className="text-ink-muted text-base">
           Permanently delete your account and all associated data. This action
           cannot be undone.
         </p>
@@ -363,8 +365,8 @@ export default function AccountPage() {
           </Button>
         ) : (
           <div className="space-y-2">
-            <p className="text-sm text-red-600">
-              Type <span className="font-mono font-bold">DELETE</span> to
+            <p className="text-ink-muted text-sm">
+              Type <span className="text-ink font-bold">DELETE</span> to
               confirm:
             </p>
             <Input

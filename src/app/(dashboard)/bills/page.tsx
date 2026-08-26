@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { HydrationBoundary, dehydrate } from "@tanstack/react-query";
 import { BillListClient } from "@/components/bills/bill-list-client";
 import { RepresentativesDashboard } from "@/components/representatives-dashboard";
+import { SystemBanner } from "@/components/system-banner";
 import { getServerQueryClient } from "@/lib/query-client";
 import { fetchBillsPage } from "@/lib/queries/bills";
 import {
@@ -79,26 +80,32 @@ export default async function BillsPage({
   const dehydratedState = dehydrate(queryClient);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-10 px-6 py-8">
-      {/* Representatives section — the hero */}
-      <RepresentativesDashboard />
+    <>
+      {/* System banner — full-bleed, directly under the nav. Shows only
+          when there's a session-status fact worth explaining (recess). */}
+      <SystemBanner />
 
-      {/* Divider */}
-      <div className="flex items-center gap-3">
-        <div className="bg-border/50 h-px flex-1" />
-        <span className="text-muted-foreground text-xs font-semibold tracking-[0.2em] uppercase">
-          Legislation
-        </span>
-        <div className="bg-border/50 h-px flex-1" />
-      </div>
+      <div className="mx-auto max-w-6xl space-y-10 px-6 py-8">
+        {/* Representatives section — the hero */}
+        <RepresentativesDashboard />
 
-      {/* Bills feed — Suspense boundary is required because BillListClient
+        {/* Divider */}
+        <div className="flex items-center gap-3">
+          <div className="bg-rule h-px flex-1" />
+          <span className="text-ink-muted text-[11px] font-bold tracking-[0.18em] uppercase">
+            Legislation
+          </span>
+          <div className="bg-rule h-px flex-1" />
+        </div>
+
+        {/* Bills feed — Suspense boundary is required because BillListClient
           reads search params via nuqs; Next.js needs a fallback to prerender. */}
-      <HydrationBoundary state={dehydratedState}>
-        <Suspense fallback={null}>
-          <BillListClient />
-        </Suspense>
-      </HydrationBoundary>
-    </div>
+        <HydrationBoundary state={dehydratedState}>
+          <Suspense fallback={null}>
+            <BillListClient />
+          </Suspense>
+        </HydrationBoundary>
+      </div>
+    </>
   );
 }

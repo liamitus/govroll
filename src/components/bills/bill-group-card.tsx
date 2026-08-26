@@ -8,7 +8,7 @@ import { formatBillNumber } from "@/lib/bill-grouping";
 import { billHref } from "@/lib/bills/url";
 import { pickBillHeadline } from "@/lib/bill-headline";
 import { formatJourneyDate } from "@/lib/bill-helpers";
-import { voteChipStyle } from "./bill-card";
+import { MiniRoute, voteChipStyle } from "./bill-card";
 
 // Swaps the chevron for a spinner while this specific sub-row's Link is
 // resolving the next route. Only renders when *this* Link is pending —
@@ -20,13 +20,13 @@ function SubRowNavIndicator() {
       <span
         aria-busy="true"
         aria-label="Loading"
-        className="border-navy/20 border-t-navy/70 h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2"
+        className="border-ink/20 border-t-ink/70 h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2"
       />
     );
   }
   return (
     <svg
-      className="text-muted-foreground/60 group-hover:text-navy h-3.5 w-3.5 shrink-0 transition-colors"
+      className="text-ink-muted/70 group-hover:text-ink h-3.5 w-3.5 shrink-0 transition-colors"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -39,29 +39,27 @@ function SubRowNavIndicator() {
   );
 }
 
-function statusStyle(status: string): { label: string; className: string } {
-  if (status.startsWith("enacted_"))
-    return { label: "Enacted", className: "bg-enacted-soft text-enacted" };
+function statusLabel(status: string): string {
+  if (status.startsWith("enacted_")) return "Enacted";
   if (
     status === "passed_bill" ||
     status.startsWith("conference_") ||
     status === "passed_simpleres" ||
     status === "passed_concurrentres"
   )
-    return { label: "Passed", className: "bg-passed-soft text-passed" };
+    return "Passed";
   if (status.startsWith("pass_over_") || status.startsWith("pass_back_"))
-    return { label: "In Progress", className: "bg-passed-soft text-passed" };
+    return "In Progress";
   if (status.startsWith("prov_kill_") && status !== "prov_kill_veto")
-    return { label: "Stalled", className: "bg-muted text-foreground/60" };
+    return "Stalled";
   if (
     status.startsWith("fail_") ||
     status.startsWith("vetoed_") ||
     status === "prov_kill_veto"
   )
-    return { label: "Failed", className: "bg-failed-soft text-failed" };
-  if (status === "reported")
-    return { label: "In Committee", className: "bg-muted text-foreground/70" };
-  return { label: "Introduced", className: "bg-muted text-foreground/70" };
+    return "Failed";
+  if (status === "reported") return "In Committee";
+  return "Introduced";
 }
 
 export function BillGroupCard({
@@ -74,8 +72,7 @@ export function BillGroupCard({
   const [expanded, setExpanded] = useState(false);
   const lead = bills[0];
   const topic = getTopicForPolicyArea(lead.policyArea);
-  const chamberIsHouse = lead.billType.startsWith("house");
-  const status = statusStyle(lead.currentStatus);
+  const stage = statusLabel(lead.currentStatus);
   const displayDate = lead.latestActionDate || lead.introducedDate;
   const votedCount = bills.filter((b) => userVotes.has(b.id)).length;
   const allVoted = votedCount === bills.length;
@@ -94,33 +91,44 @@ export function BillGroupCard({
     : null;
   const headline = pickBillHeadline(lead);
 
+  const metaParts = [
+    formatBillNumber(lead.billType, lead.billId),
+    topic?.label ?? null,
+    lead.sponsor,
+    displayDate
+      ? `last action ${formatJourneyDate(displayDate, "short")}`
+      : null,
+  ].filter((p): p is string => Boolean(p));
+
   return (
-    <div className="border-border/50 hover:border-navy/25 relative rounded-lg border bg-white transition-all hover:shadow-[0_2px_12px_rgba(10,31,68,0.1)]">
-      <div
-        className={`absolute top-0 bottom-0 left-0 w-1 rounded-l-lg ${
-          chamberIsHouse ? "bg-house/70" : "bg-senate/70"
-        }`}
-      />
+    <div className="border-rule bg-paper hover:border-ink/40 relative border transition-colors">
+      {/* Topic line — the line palette's only home: a 5px bar in the
+          left margin. Topics beyond the eleven hues get no bar. */}
+      {topic?.line && (
+        <div
+          className={`absolute top-0 bottom-0 left-0 w-[5px] ${topic.line}`}
+        />
+      )}
 
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="focus-visible:ring-navy/40 w-full rounded-lg px-5 py-4 text-left focus-visible:ring-2 focus-visible:outline-none"
+        className="focus-visible:ring-gold w-full px-5 py-4 text-left focus-visible:ring-2 focus-visible:outline-none"
       >
         <div className="pl-3">
           <div className="flex items-start justify-between gap-3">
             <h3
-              className={`line-clamp-2 flex-1 text-base leading-snug font-semibold ${
-                allVoted ? "text-navy/55" : "text-navy"
+              className={`line-clamp-2 flex-1 font-sans text-base leading-snug font-semibold tracking-normal ${
+                allVoted ? "text-ink/50" : "text-ink"
               }`}
             >
               {headline.headline}
             </h3>
             {allVoted && (
               <span
-                className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-semibold tracking-wider uppercase ${
-                  leadChip?.className ?? "bg-navy/8 text-navy/80 border-navy/10"
+                className={`inline-flex shrink-0 items-center gap-1 border px-1.5 py-0.5 text-[10.5px] font-bold tracking-[0.08em] uppercase ${
+                  leadChip?.className ?? "border-rule text-ink-muted"
                 }`}
               >
                 <svg
@@ -138,7 +146,7 @@ export function BillGroupCard({
               </span>
             )}
             <svg
-              className={`text-muted-foreground/60 mt-0.5 h-4 w-4 shrink-0 transition-transform ${
+              className={`text-ink-muted/70 mt-0.5 h-4 w-4 shrink-0 transition-transform ${
                 expanded ? "rotate-180" : ""
               }`}
               viewBox="0 0 24 24"
@@ -154,37 +162,16 @@ export function BillGroupCard({
 
           {headline.officialTitle && (
             <p
-              className="text-muted-foreground/70 mt-1 line-clamp-1 text-xs italic"
+              className="text-ink-muted/80 mt-1 line-clamp-1 text-xs italic"
               title={headline.officialTitle}
             >
               Official title: {headline.officialTitle}
             </p>
           )}
 
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span
-              className={`text-xs font-bold tracking-wider uppercase ${
-                chamberIsHouse ? "text-house" : "text-senate"
-              }`}
-            >
-              {chamberIsHouse ? "House" : "Senate"}
-            </span>
-            <span className="text-foreground/70 font-mono text-xs font-medium">
-              {formatBillNumber(lead.billType, lead.billId)}
-            </span>
-            {topic && (
-              <span
-                className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${topic.color}`}
-              >
-                {topic.label}
-              </span>
-            )}
-            <span
-              className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${status.className}`}
-            >
-              {status.label}
-            </span>
-            <span className="bg-navy/8 text-navy/80 border-navy/10 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-medium">
+          <div className="text-ink-muted mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] tabular-nums">
+            <span className="min-w-0">{metaParts.join(" · ")}</span>
+            <span className="border-rule inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10.5px] font-bold tracking-[0.08em] uppercase">
               <svg
                 className="h-3 w-3"
                 viewBox="0 0 24 24"
@@ -201,18 +188,21 @@ export function BillGroupCard({
               </svg>
               {`${bills.length} related`}
               {!allVoted && votedCount > 0 && (
-                <span className="text-muted-foreground/80">
+                <span className="text-ink-muted/80 normal-case">
                   {` · ${votedCount}/${bills.length} voted`}
                 </span>
               )}
             </span>
-            {lead.sponsor && (
-              <span className="text-muted-foreground text-xs">
-                {lead.sponsor}
+            {/* Stage label over the row-scale route, far right — the same
+                grammar as single rows. */}
+            <span className="ml-auto flex flex-col items-end gap-1">
+              <span className="text-ink-muted text-[10px] font-semibold tracking-[0.14em] uppercase">
+                {stage}
               </span>
-            )}
-            <span className="text-muted-foreground text-xs">
-              {displayDate ? formatJourneyDate(displayDate, "long") : null}
+              <MiniRoute
+                billType={lead.billType}
+                currentStatus={lead.currentStatus}
+              />
             </span>
           </div>
         </div>
@@ -232,11 +222,11 @@ export function BillGroupCard({
           const allSame = summaries.every((s) => s === firstSummary);
           const showPerRowSummary = !allSame;
           return (
-            <div className="border-border/40 bg-muted/20 animate-fade-slide-up rounded-b-lg border-t pt-2 pr-3 pb-1.5 pl-6">
-              <p className="text-muted-foreground/80 px-2 pb-1.5 text-xs leading-relaxed">
+            <div className="border-rule bg-sand/60 animate-fade-slide-up border-t pt-2 pr-3 pb-1.5 pl-6">
+              <p className="text-ink-muted px-2 pb-1.5 text-xs leading-relaxed">
                 Related bills filed together — tap any to see details.
               </p>
-              <ul className="divide-border/30 divide-y">
+              <ul className="divide-rule/60 divide-y">
                 {bills.map((b) => {
                   const subVote = userVotes.get(b.id) ?? null;
                   const subChip = subVote ? voteChipStyle(subVote) : null;
@@ -245,24 +235,24 @@ export function BillGroupCard({
                     <li key={b.id}>
                       <Link
                         href={billHref(b)}
-                        className="group flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-white"
+                        className="group hover:bg-paper flex items-center gap-3 px-2 py-2.5 transition-colors"
                       >
                         <span
-                          className={`w-24 shrink-0 font-mono text-xs font-semibold ${
-                            subVote ? "text-navy/55" : "text-navy"
+                          className={`w-24 shrink-0 text-xs font-semibold tabular-nums ${
+                            subVote ? "text-ink/50" : "text-ink"
                           }`}
                         >
                           {formatBillNumber(b.billType, b.billId)}
                         </span>
                         {showPerRowSummary && (
-                          <span className="text-muted-foreground line-clamp-1 flex-1 text-xs">
+                          <span className="text-ink-muted line-clamp-1 flex-1 text-xs">
                             {detail ?? "No summary available yet."}
                           </span>
                         )}
                         {!showPerRowSummary && <span className="flex-1" />}
                         {subChip && (
                           <span
-                            className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase ${subChip.className}`}
+                            className={`inline-flex shrink-0 items-center border px-1.5 py-0.5 text-[10px] font-bold tracking-[0.08em] uppercase ${subChip.className}`}
                           >
                             {subChip.label}
                           </span>

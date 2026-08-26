@@ -11,7 +11,6 @@ import type {
   ChamberPassageInfo,
   ChamberName,
 } from "@/types";
-import { partyColor as partyColors } from "@/lib/representative-utils";
 import { RepPhoto } from "@/components/representatives/rep-photo";
 import {
   fetchRepsForBill,
@@ -36,13 +35,32 @@ function normalizeVote(vote: string): string {
   return vote;
 }
 
-function voteColor(vote: string) {
+/**
+ * Vote chip grammar (docs/design/roll-call.md): the word is mandatory —
+ * maya and flame differ only in hue, so colour alone never carries the
+ * vote. YES = maya fill + ink text; NO = flame fill + ink text; absences
+ * ("Not Voting", "No record", and the synthetic pending/did-not-vote
+ * states) get a dashed hollow frame with ink-muted text. Flame is never
+ * used for anything but "no".
+ */
+const CHIP_BASE =
+  "inline-flex items-center px-2 py-1 text-[10.5px] font-bold tracking-[0.08em] uppercase";
+const CHIP_DASHED = "border-[1.5px] border-dashed border-hollow text-ink-muted";
+
+function voteChipClass(vote: string) {
   const v = normalizeVote(vote);
-  if (v === "Yes") return "text-vote-yea bg-vote-yea-soft";
-  if (v === "No") return "text-vote-nay bg-vote-nay-soft";
-  if (v === "Present") return "text-vote-present bg-vote-present-soft";
-  if (v === "Not Voting") return "text-vote-notvoting bg-vote-notvoting-soft";
-  return "text-muted-foreground bg-muted";
+  if (v === "Yes") return "bg-vote-yea text-ink";
+  if (v === "No") return "bg-vote-nay text-ink";
+  return CHIP_DASHED;
+}
+
+/** Chip label. "No recorded vote" (no per-member vote exists at all)
+ *  reads as the distinct "No record" — a different fact from a member
+ *  being absent for a roll call that did happen. */
+function voteChipLabel(vote: string): string {
+  if (vote === NO_VOTE_SENTINEL || vote === "No recorded vote")
+    return "No record";
+  return normalizeVote(vote);
 }
 
 function chamberLabel(chamber: string | null): string {
@@ -150,8 +168,10 @@ function RepCard({
     rep.vote !== NO_VOTE_SENTINEL ? voteContextLabel(rep.voteCategory) : null;
 
   return (
+    // Identical frame for every party — member cards get the sapphire
+    // left border, never a party tint.
     <div
-      className={`bg-card rounded-lg border ${partyColors(rep.party).bar} ${muted ? "opacity-60" : ""}`}
+      className={`bg-card border-l-sapphire border border-l-4 ${muted ? "opacity-60" : ""}`}
     >
       <div className="flex items-center gap-3 p-3">
         <Link
@@ -180,7 +200,7 @@ function RepCard({
               {rep.district ? `-${rep.district}` : ""}
             </p>
             {signalText && (
-              <p className="text-civic-gold mt-0.5 truncate text-xs">
+              <p className="text-sapphire-deep mt-0.5 truncate text-xs">
                 {signalText}
               </p>
             )}
@@ -189,9 +209,9 @@ function RepCard({
         <div className="flex items-center gap-2">
           <div className="flex min-w-0 flex-col items-end gap-0.5">
             <span
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${muted ? "text-muted-foreground" : voteColor(displayVote)}`}
+              className={`${CHIP_BASE} ${muted ? CHIP_DASHED : voteChipClass(displayVote)}`}
             >
-              {normalizeVote(displayVote)}
+              {voteChipLabel(displayVote)}
             </span>
             {voteContext && (
               <span className="text-muted-foreground text-right text-xs leading-tight italic">
@@ -234,7 +254,7 @@ function RepCard({
                 key={i}
                 className="flex items-center justify-between text-xs"
               >
-                <span className="text-muted-foreground">
+                <span className="text-muted-foreground tabular-nums">
                   {chamberLabel(vh.chamber)}
                   {vh.votedAt
                     ? ` — ${new Date(vh.votedAt).toLocaleDateString("en-US", {
@@ -245,9 +265,9 @@ function RepCard({
                     : ""}
                 </span>
                 <span
-                  className={`rounded-full px-2 py-0.5 font-semibold ${voteColor(vh.vote)}`}
+                  className={`inline-flex items-center px-2 py-0.5 text-[10.5px] font-bold tracking-[0.08em] uppercase ${voteChipClass(vh.vote)}`}
                 >
-                  {normalizeVote(vh.vote)}
+                  {voteChipLabel(vh.vote)}
                 </span>
               </div>
             ))}
@@ -695,7 +715,9 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
           Finding your representatives...
         </div>
       ) : isError ? (
-        <div className="border-border/60 bg-muted/30 space-y-3 rounded-lg border p-5 text-center">
+        // Error state — ink dashed frame on paper (flame is reserved for
+        // "against"; errors never use it).
+        <div className="border-ink bg-paper space-y-3 border border-dashed p-5 text-center">
           <p className="text-foreground text-base">
             We couldn&apos;t find your representatives for this address.
           </p>
@@ -707,7 +729,7 @@ export function RepresentativesVotes({ billId }: { billId: number }) {
           <div className="flex flex-wrap justify-center gap-2">
             <button
               onClick={() => refetch()}
-              className="text-foreground border-border/60 hover:bg-muted/50 inline-flex items-center gap-1.5 rounded-md border bg-white px-3 py-1.5 text-xs font-medium transition-colors"
+              className="text-foreground border-rule hover:bg-muted/50 bg-paper inline-flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors"
             >
               Try again
             </button>

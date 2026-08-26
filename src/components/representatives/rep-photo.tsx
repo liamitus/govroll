@@ -28,7 +28,7 @@ export function RepPhoto({
   firstName,
   lastName,
   imgClassName = "object-top",
-  fallbackClassName = "text-2xl font-medium",
+  fallbackClassName = "text-2xl",
   priority = false,
   alt,
 }: RepPhotoProps) {
@@ -38,7 +38,7 @@ export function RepPhoto({
   if (!bioguideId || failed) {
     return (
       <div
-        className={`text-muted-foreground flex h-full w-full items-center justify-center ${fallbackClassName}`}
+        className={`bg-sand font-heading wdth-110 text-ink flex h-full w-full items-center justify-center font-bold ${fallbackClassName}`}
       >
         {initials}
       </div>

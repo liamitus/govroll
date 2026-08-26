@@ -2,14 +2,16 @@
 
 import Link, { useLinkStatus } from "next/link";
 import type { BillSummary, MomentumTier, DeathReason, VoteType } from "@/types";
-import { formatJourneyDate } from "@/lib/bill-helpers";
+import { formatJourneyDate, getJourneySteps } from "@/lib/bill-helpers";
 import { getTopicForPolicyArea } from "@/lib/topic-mapping";
 import { billHref } from "@/lib/bills/url";
 import { formatBillNumber } from "@/lib/bill-grouping";
 import { pickBillHeadline } from "@/lib/bill-headline";
 
-// Reddit's visited-link cue, translated to our palette: a muted title + a
-// vote-tinted chip that tells you *how* you voted at a glance.
+// Reddit's visited-link cue, translated to Roll Call: a muted title + a
+// vote chip that tells you *how* you voted at a glance. Maya/flame are
+// fills carrying ink text (the word is mandatory — hue alone is 1.56:1);
+// abstain gets the dashed hollow frame, the mark for a recorded absence.
 export function voteChipStyle(voteType: VoteType): {
   label: string;
   className: string;
@@ -17,17 +19,16 @@ export function voteChipStyle(voteType: VoteType): {
   if (voteType === "For")
     return {
       label: "Voted For",
-      className: "bg-vote-for-soft text-vote-for border-vote-for/25",
+      className: "bg-vote-for-soft text-ink border-rule",
     };
   if (voteType === "Against")
     return {
       label: "Voted Against",
-      className:
-        "bg-vote-against-soft text-vote-against border-vote-against/25",
+      className: "bg-vote-against-soft text-ink border-rule",
     };
   return {
     label: "Abstained",
-    className: "bg-vote-abstain-soft text-vote-abstain border-vote-abstain/30",
+    className: "border-hollow text-ink-muted border-dashed",
   };
 }
 
@@ -39,46 +40,70 @@ function CardNavIndicator() {
   return (
     <div
       aria-busy="true"
-      className="ring-navy/40 pointer-events-none absolute inset-0 rounded-lg ring-2"
+      className="ring-ink/40 pointer-events-none absolute inset-0 ring-2"
     >
-      <div className="border-navy/20 border-t-navy/70 absolute top-3 right-4 h-3.5 w-3.5 animate-spin rounded-full border-2" />
+      <div className="border-ink/20 border-t-ink/70 absolute top-3 right-4 h-3.5 w-3.5 animate-spin rounded-full border-2" />
     </div>
   );
 }
 
-function statusStyle(status: string): { label: string; className: string } {
-  if (status.startsWith("enacted_"))
-    return { label: "Enacted", className: "bg-enacted-soft text-enacted" };
+function statusLabel(status: string): string {
+  if (status.startsWith("enacted_")) return "Enacted";
   if (
     status === "passed_bill" ||
     status.startsWith("conference_") ||
     status === "passed_simpleres" ||
     status === "passed_concurrentres"
   )
-    return { label: "Passed", className: "bg-passed-soft text-passed" };
+    return "Passed";
   if (status.startsWith("pass_over_") || status.startsWith("pass_back_"))
-    return { label: "In Progress", className: "bg-passed-soft text-passed" };
+    return "In Progress";
   if (status.startsWith("prov_kill_") && status !== "prov_kill_veto")
-    return { label: "Stalled", className: "bg-muted text-foreground/60" };
+    return "Stalled";
   if (
     status.startsWith("fail_") ||
     status.startsWith("vetoed_") ||
     status === "prov_kill_veto"
   )
-    return { label: "Failed", className: "bg-failed-soft text-failed" };
-  if (status === "reported")
-    return { label: "In Committee", className: "bg-muted text-foreground/70" };
-  return { label: "Introduced", className: "bg-muted text-foreground/70" };
+    return "Failed";
+  if (status === "reported") return "In Committee";
+  return "Introduced";
 }
 
-function chamberTag(
-  billType: string,
-): { label: string; className: string } | null {
-  if (billType.startsWith("house"))
-    return { label: "House", className: "text-house" };
-  if (billType.startsWith("senate"))
-    return { label: "Senate", className: "text-senate" };
-  return null;
+/**
+ * Row-scale route: the bill's journey as a line of 8px dots (existing
+ * stage mapping via getJourneySteps — same logic, smaller grammar).
+ * Cleared = solid sapphire · current = solid gold (at most one) ·
+ * ahead = hollow ring · dead route = ahead style faded to 45%.
+ */
+export function MiniRoute({
+  billType,
+  currentStatus,
+}: {
+  billType: string;
+  currentStatus: string;
+}) {
+  const steps = getJourneySteps(billType, currentStatus);
+  const dead = steps.some((s) => s.status === "failed");
+  return (
+    <span className="flex items-center gap-[3px]" aria-hidden>
+      {steps.map((step, i) => {
+        let cls: string;
+        if (step.status === "completed") cls = "bg-sapphire";
+        else if (step.status === "current") cls = "bg-gold";
+        else
+          cls = `shadow-[inset_0_0_0_1.5px_var(--color-hollow)] ${
+            dead ? "opacity-45" : ""
+          }`;
+        return (
+          <span
+            key={`${step.label}-${i}`}
+            className={`h-2 w-2 rounded-full ${cls}`}
+          />
+        );
+      })}
+    </span>
+  );
 }
 
 function formatSilence(days: number): string {
@@ -105,7 +130,8 @@ function deathLabel(reason: DeathReason | null): string {
 interface TierTreatment {
   // Applied to the card wrapper. Only the tier-specific tone.
   cardClass: string;
-  // Optional chip shown next to the status chip.
+  // Optional chip shown on the meta row. A dead/dormant bill is a route
+  // that ended or went quiet — dashed hollow frame, never red.
   momentumChip?: { label: string; className: string };
   // Optional short microcopy about activity, shown on the meta row.
   silenceNote?: string;
@@ -121,32 +147,26 @@ function tierTreatment(
       ? `No action in ${formatSilence(daysSinceLastAction)}`
       : undefined;
 
+  const hollowChip = "border-hollow text-ink-muted border border-dashed";
+  const outlineChip = "border-rule text-ink-muted border";
+
   switch (tier) {
     case "DEAD":
       return {
-        cardClass: "opacity-60 grayscale-[30%]",
-        momentumChip: {
-          label: deathLabel(deathReason),
-          className: "bg-muted/70 text-foreground/60 border border-border/60",
-        },
+        cardClass: "opacity-60",
+        momentumChip: { label: deathLabel(deathReason), className: hollowChip },
         silenceNote: silence,
       };
     case "DORMANT":
       return {
         cardClass: "opacity-75",
-        momentumChip: {
-          label: "Dormant",
-          className: "bg-muted text-foreground/60",
-        },
+        momentumChip: { label: "Dormant", className: hollowChip },
         silenceNote: silence,
       };
     case "STALLED":
       return {
         cardClass: "",
-        momentumChip: {
-          label: "Stalled",
-          className: "bg-muted text-foreground/60",
-        },
+        momentumChip: { label: "Stalled", className: outlineChip },
         silenceNote: silence,
       };
     case "ADVANCING":
@@ -154,7 +174,7 @@ function tierTreatment(
         cardClass: "",
         momentumChip: {
           label: "Advancing",
-          className: "bg-passed-soft text-passed",
+          className: "border-rule text-ink border",
         },
       };
     case "ENACTED":
@@ -172,8 +192,7 @@ export function BillCard({
   bill: BillSummary;
   userVote?: VoteType | null;
 }) {
-  const status = statusStyle(bill.currentStatus);
-  const chamber = chamberTag(bill.billType);
+  const stage = statusLabel(bill.currentStatus);
   const topic = getTopicForPolicyArea(bill.policyArea);
   const displayDate = bill.latestActionDate || bill.introducedDate;
   const treatment = tierTreatment(
@@ -187,122 +206,112 @@ export function BillCard({
 
   const href = billHref(bill);
 
+  // Meta line — "H.R. 5334 · Education · Rep. Panetta · last action Aug 7".
+  const metaParts = [
+    billNumber,
+    topic?.label ?? null,
+    bill.sponsor,
+    displayDate
+      ? `last action ${formatJourneyDate(displayDate, "short")}`
+      : null,
+  ].filter((p): p is string => Boolean(p));
+
   return (
     <Link
       href={href}
-      className="group focus-visible:ring-navy/40 block rounded-lg transition-transform focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none active:scale-[0.997]"
+      className="group focus-visible:ring-gold block transition-transform focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none active:scale-[0.997]"
     >
       <div
-        className={`border-border/50 hover:border-navy/25 relative rounded-lg border bg-white px-5 py-4 transition-all duration-200 hover:shadow-[0_2px_12px_rgba(10,31,68,0.1)] ${treatment.cardClass}`}
+        className={`border-rule bg-paper hover:border-ink/40 relative border px-5 py-4 transition-colors duration-200 ${treatment.cardClass}`}
       >
         <CardNavIndicator />
-        {/* Chamber indicator line */}
-        <div
-          className={`absolute top-0 bottom-0 left-0 w-1 rounded-l-lg ${
-            bill.billType.startsWith("house")
-              ? "bg-house/70"
-              : bill.billType.startsWith("senate")
-                ? "bg-senate/70"
-                : "bg-muted"
-          }`}
-        />
+        {/* Topic line — the line palette's only home: a 5px bar in the
+            left margin. Topics beyond the eleven hues get no bar. */}
+        {topic?.line && (
+          <div
+            className={`absolute top-0 bottom-0 left-0 w-[5px] ${topic.line}`}
+          />
+        )}
 
         <div className="pl-3">
-          <div className="flex items-start justify-between gap-3">
-            <h3
-              className={`line-clamp-2 flex-1 text-base leading-snug font-semibold transition-colors ${
-                voteChip
-                  ? "text-navy/55 group-hover:text-navy/75"
-                  : "text-navy group-hover:text-navy-light"
-              }`}
-            >
-              {headline.headline}
-            </h3>
-            {voteChip && (
-              <span
-                className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-semibold tracking-wider uppercase ${voteChip.className}`}
-                title={`You voted ${userVote?.toLowerCase()} on this bill`}
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <h3
+                className={`line-clamp-2 font-sans text-base leading-snug font-semibold tracking-normal transition-colors ${
+                  voteChip ? "text-ink/50 group-hover:text-ink/70" : "text-ink"
+                }`}
               >
-                <svg
-                  className="h-2.5 w-2.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                {headline.headline}
+              </h3>
+
+              {headline.secondary && (
+                <p className="text-ink-muted mt-1 line-clamp-1 text-sm leading-relaxed">
+                  {headline.secondary}
+                </p>
+              )}
+
+              {headline.officialTitle && (
+                <p
+                  className="text-ink-muted/80 mt-1 line-clamp-1 text-xs italic"
+                  title={headline.officialTitle}
                 >
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-                {voteChip.label}
-              </span>
-            )}
-          </div>
+                  Official title: {headline.officialTitle}
+                </p>
+              )}
 
-          {headline.secondary && (
-            <p className="text-muted-foreground mt-1 line-clamp-1 text-sm leading-relaxed">
-              {headline.secondary}
-            </p>
-          )}
+              <div className="text-ink-muted mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] tabular-nums">
+                <span className="min-w-0">{metaParts.join(" · ")}</span>
+                {treatment.momentumChip && (
+                  <span
+                    className={`inline-flex items-center px-1.5 py-0.5 text-[10.5px] font-bold tracking-[0.08em] uppercase ${treatment.momentumChip.className}`}
+                  >
+                    {treatment.momentumChip.label}
+                  </span>
+                )}
+                {treatment.silenceNote && (
+                  <span className="italic">{treatment.silenceNote}</span>
+                )}
+              </div>
+            </div>
 
-          {headline.officialTitle && (
-            <p
-              className="text-muted-foreground/70 mt-1 line-clamp-1 text-xs italic"
-              title={headline.officialTitle}
-            >
-              Official title: {headline.officialTitle}
-            </p>
-          )}
-
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            {chamber && (
-              <span
-                className={`text-xs font-bold tracking-wider uppercase ${chamber.className}`}
-              >
-                {chamber.label}
-              </span>
-            )}
-            <span className="text-foreground/70 font-mono text-xs font-medium">
-              {billNumber}
-            </span>
-            {topic && (
-              <span
-                className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${topic.color}`}
-              >
-                {topic.label}
-              </span>
-            )}
-            <span
-              className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${status.className}`}
-            >
-              {status.label}
-            </span>
-            {treatment.momentumChip && (
-              <span
-                className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${treatment.momentumChip.className}`}
-              >
-                {treatment.momentumChip.label}
-              </span>
-            )}
-            {bill.sponsor && (
-              <span className="text-muted-foreground text-xs">
-                {bill.sponsor}
-              </span>
-            )}
-            <span className="text-muted-foreground text-xs">
-              {displayDate ? formatJourneyDate(displayDate, "long") : null}
-            </span>
-            {treatment.silenceNote && (
-              <span className="text-muted-foreground/70 text-xs italic">
-                {treatment.silenceNote}
-              </span>
-            )}
+            {/* Right rail — vote chip, then stage label over the row-scale
+                route. One saturated element per row: the route's gold dot. */}
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              {voteChip && (
+                <span
+                  className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10.5px] font-bold tracking-[0.08em] uppercase ${voteChip.className}`}
+                  title={`You voted ${userVote?.toLowerCase()} on this bill`}
+                >
+                  <svg
+                    className="h-2.5 w-2.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                  {voteChip.label}
+                </span>
+              )}
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-ink-muted text-[10px] font-semibold tracking-[0.14em] uppercase">
+                  {stage}
+                </span>
+                <MiniRoute
+                  billType={bill.billType}
+                  currentStatus={bill.currentStatus}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Engagement signals — shown only when there's actual activity */}
           {(bill.commentCount != null && bill.commentCount > 0) ||
           (bill.publicVoteCount != null && bill.publicVoteCount > 0) ? (
-            <div className="text-muted-foreground mt-2 flex items-center gap-3 text-xs">
+            <div className="text-ink-muted mt-2 flex items-center gap-3 text-xs tabular-nums">
               {bill.publicVoteCount != null && bill.publicVoteCount > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <svg
@@ -340,7 +349,7 @@ export function BillCard({
                       window.location.href = `${href}#discussion`;
                     }
                   }}
-                  className="hover:text-navy inline-flex cursor-pointer items-center gap-1 underline-offset-2 transition-colors hover:underline"
+                  className="hover:text-ink inline-flex cursor-pointer items-center gap-1 underline-offset-2 transition-colors hover:underline"
                 >
                   <svg
                     className="h-3 w-3"

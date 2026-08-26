@@ -19,7 +19,7 @@ export function SourceLinks({
   if (!congressGovUrl && !govtrackUrl) return null;
   return (
     <div className="text-xs">
-      <p className="text-muted-foreground/70 mb-2 px-2 font-semibold tracking-[0.12em] uppercase">
+      <p className="text-ink-muted mb-2 px-2 text-[11px] font-bold tracking-[0.18em] uppercase">
         Sources
       </p>
       <ul className="space-y-1">
@@ -44,7 +44,7 @@ function SourceLink({ href, label }: { href: string; label: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-muted-foreground hover:text-foreground hover:bg-muted/60 inline-flex w-full items-center gap-1.5 rounded-md px-2 py-1 transition-colors"
+      className="text-sapphire-deep inline-flex w-full items-center gap-1.5 px-2 py-1 underline-offset-2 transition-colors hover:underline"
     >
       <span>{label}</span>
       <ExternalLink className="h-3 w-3 opacity-70" aria-hidden="true" />

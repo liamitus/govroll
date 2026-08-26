@@ -135,10 +135,10 @@ export function BillChangeSummary({ billId, initialVersion }: Props) {
 
   return (
     <div className="space-y-1.5">
-      <p className="text-muted-foreground text-[11px] font-medium tracking-wider uppercase">
+      <p className="text-ink-muted text-[11px] font-bold tracking-[0.18em] uppercase">
         What changed in the latest version · AI-generated
       </p>
-      <div className="border-civic-gold/30 bg-civic-gold/5 rounded-md border p-3">
+      <div className="border-rule bg-paper border p-3">
         {state.status === "ready" &&
           (() => {
             const isLong = state.summary.length > COLLAPSE_THRESHOLD;
@@ -198,7 +198,7 @@ export function BillChangeSummary({ billId, initialVersion }: Props) {
                   <button
                     type="button"
                     onClick={() => setExpanded((v) => !v)}
-                    className="text-navy/80 hover:text-navy mt-1 text-xs font-medium underline-offset-2 hover:underline"
+                    className="text-sapphire-deep mt-1 text-xs font-medium underline-offset-2 hover:underline"
                   >
                     {expanded ? "Show less" : "Show more"}
                   </button>
@@ -214,7 +214,7 @@ export function BillChangeSummary({ billId, initialVersion }: Props) {
           <>
             <SummaryShimmer />
             <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-[11px]">
-              <span className="border-civic-gold/40 border-t-civic-gold inline-block h-3 w-3 animate-spin rounded-full border-2" />
+              <span className="border-gold/40 border-t-gold inline-block h-3 w-3 animate-spin rounded-full border-2" />
               Generating summary…
             </p>
           </>
@@ -229,7 +229,7 @@ export function BillChangeSummary({ billId, initialVersion }: Props) {
             .{" "}
             <a
               href="/support"
-              className="text-navy/80 hover:text-navy font-medium underline underline-offset-2"
+              className="text-sapphire-deep font-medium underline underline-offset-2"
             >
               Support Govroll
             </a>{" "}

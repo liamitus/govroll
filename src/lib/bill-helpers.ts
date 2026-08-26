@@ -220,6 +220,99 @@ function getStatusPosition(
   return { stepIndex: 0, isFailed: false };
 }
 
+/**
+ * Position mapping for the six-stop bill route (Roll Call): Introduced →
+ * Reported by Committee → Passed origin → Passed other → Presidential
+ * signature → Became Law. Resolutions keep their shorter templates and the
+ * legacy mapping above.
+ *
+ * The returned index marks the last stop the bill has CLEARED — the route
+ * renders it as the gold "current position" node, so `passed_bill` sits on
+ * "Presidential signature" (it is at the President's desk), and a veto is
+ * that same stop failed.
+ */
+function getBillStatusPosition(
+  currentStatus: string,
+  billType: string,
+): StatusPosition {
+  const originIsHouse = billType.startsWith("house");
+  const passedOrigin = 2;
+  const passedOther = 3;
+
+  if (currentStatus.startsWith("enacted_"))
+    return { stepIndex: Infinity, isFailed: false };
+
+  // Passed both chambers, at the President's desk
+  if (
+    currentStatus === "passed_bill" ||
+    currentStatus.startsWith("conference_")
+  )
+    return { stepIndex: 4, isFailed: false };
+
+  if (currentStatus === "pass_over_house")
+    return {
+      stepIndex: originIsHouse ? passedOrigin : passedOther,
+      isFailed: false,
+    };
+  if (currentStatus === "pass_over_senate")
+    return {
+      stepIndex: originIsHouse ? passedOther : passedOrigin,
+      isFailed: false,
+    };
+
+  // Ping-pong — both chambers have acted, reconciling
+  if (
+    currentStatus === "pass_back_house" ||
+    currentStatus === "pass_back_senate"
+  )
+    return { stepIndex: passedOther, isFailed: false };
+
+  if (currentStatus === "reported") return { stepIndex: 1, isFailed: false };
+  if (currentStatus === "introduced") return { stepIndex: 0, isFailed: false };
+
+  // --- Failed / killed statuses ---
+  if (currentStatus === "fail_originating_house")
+    return {
+      stepIndex: originIsHouse ? passedOrigin : passedOther,
+      isFailed: true,
+    };
+  if (currentStatus === "fail_originating_senate")
+    return {
+      stepIndex: originIsHouse ? passedOther : passedOrigin,
+      isFailed: true,
+    };
+  if (
+    currentStatus === "fail_second_house" ||
+    currentStatus === "fail_second_senate"
+  )
+    return { stepIndex: passedOther, isFailed: true };
+
+  // Cloture failure is always Senate; suspension failure is always House
+  if (currentStatus === "prov_kill_cloturefailed")
+    return {
+      stepIndex: originIsHouse ? passedOther : passedOrigin,
+      isFailed: true,
+    };
+  if (currentStatus === "prov_kill_suspensionfailed")
+    return {
+      stepIndex: originIsHouse ? passedOrigin : passedOther,
+      isFailed: true,
+    };
+
+  if (currentStatus === "prov_kill_pingpongfail")
+    return { stepIndex: passedOther, isFailed: true };
+
+  // Presidential veto and veto-related failures die at the signature stop
+  if (
+    currentStatus === "prov_kill_veto" ||
+    currentStatus === "vetoed_pocket" ||
+    currentStatus.startsWith("vetoed_override_fail_")
+  )
+    return { stepIndex: 4, isFailed: true };
+
+  return { stepIndex: 0, isFailed: false };
+}
+
 function markSteps(
   steps: Omit<JourneyStep, "status">[],
   position: StatusPosition,
@@ -265,16 +358,25 @@ export function getJourneySteps(
     return markSteps(steps, position);
   }
 
-  // Bills and joint resolutions — full legislative journey
+  // Bills and joint resolutions — the six-stop route (Roll Call §8):
+  // a bill is a route with fixed stops and a terminus.
   const other = getOtherChamber(billType);
   const steps = [
     { label: "Introduced", description: `Filed in the ${origin}` },
+    {
+      label: "Reported by Committee",
+      description: "Advanced out of committee",
+    },
     { label: `Passed ${origin}`, description: `Approved by the ${origin}` },
     { label: `Passed ${other}`, description: `Approved by the ${other}` },
+    {
+      label: "Presidential signature",
+      description: "Awaiting the President's signature",
+    },
     { label: "Became Law", description: "Signed by the President" },
   ];
 
-  return markSteps(steps, position);
+  return markSteps(steps, getBillStatusPosition(currentStatus, billType));
 }
 
 export function getStatusExplanation(
@@ -893,9 +995,20 @@ export function buildDynamicJourney(
   const dynamicJourney = [...completedSteps, ...futureSteps];
 
   // If actions are incomplete (e.g. only intro was synced but the bill is
-  // enacted), the dynamic journey will have fewer steps than the static
-  // template and look broken. Fall back to the static journey in that case.
-  if (dynamicJourney.length < staticJourney.length) {
+  // enacted), the dynamic journey will have fewer steps than the bill's
+  // core milestones and look broken. Fall back to the static journey in
+  // that case. The threshold is the pre-six-stop milestone count (intro,
+  // pass origin, pass other, law) — NOT staticJourney.length, because a
+  // legitimate dynamic journey may skip the committee stop (e.g. a bill
+  // brought straight to the floor) and must not be discarded for it.
+  const minExpectedSteps = isSimpleResolution(billType)
+    ? 2
+    : isConcurrentResolution(billType)
+      ? 3
+      : 4;
+  if (
+    dynamicJourney.length < Math.min(minExpectedSteps, staticJourney.length)
+  ) {
     return staticJourney;
   }
 

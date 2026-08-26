@@ -21,7 +21,7 @@ export function ReaderBottomBar({
 }) {
   return (
     <div
-      className="border-civic-gold/30 bg-civic-cream/90 dark:bg-card/90 supports-[backdrop-filter]:bg-civic-cream/70 fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 border-t backdrop-blur lg:hidden"
+      className="border-rule bg-paper/90 supports-[backdrop-filter]:bg-paper/75 fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 border-t backdrop-blur lg:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       role="toolbar"
       aria-label="Reader actions"
@@ -29,7 +29,7 @@ export function ReaderBottomBar({
       <button
         type="button"
         onClick={onOpenOutline}
-        className="text-foreground hover:bg-muted/40 active:bg-muted/60 flex h-14 items-center justify-center gap-2 text-sm font-medium transition-colors"
+        className="text-ink hover:bg-muted/40 active:bg-muted/60 flex h-14 items-center justify-center gap-2 text-sm font-medium transition-colors"
       >
         <List className="h-4 w-4" aria-hidden />
         Outline
@@ -37,7 +37,7 @@ export function ReaderBottomBar({
       <button
         type="button"
         onClick={onOpenChat}
-        className="text-foreground hover:bg-muted/40 active:bg-muted/60 border-civic-gold/30 flex h-14 items-center justify-center gap-2 border-l text-sm font-medium transition-colors"
+        className="text-ink hover:bg-muted/40 active:bg-muted/60 border-rule flex h-14 items-center justify-center gap-2 border-l text-sm font-medium transition-colors"
       >
         <MessageSquare className="h-4 w-4" aria-hidden />
         Ask AI

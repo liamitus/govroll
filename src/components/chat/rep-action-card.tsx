@@ -3,18 +3,21 @@
 import Link from "next/link";
 import { Phone, ExternalLink } from "lucide-react";
 import type { RepresentativeWithVote } from "@/types";
-import { partyColor } from "@/lib/representative-utils";
+import { partyLetter } from "@/lib/representative-utils";
 import { RepPhoto } from "@/components/representatives/rep-photo";
 import { normalizeRepVote } from "@/lib/votes";
 
 const NO_VOTE_SENTINEL = "No vote recorded";
 
+// Vote chips carry ink text on a signal fill — the word does the work,
+// the hue only reinforces it (maya = yes, flame = no). Signal colours
+// are never used as type.
 function voteBadgeClass(vote: string): string {
   const v = normalizeRepVote(vote);
-  if (v === "Yes") return "text-vote-yea bg-vote-yea-soft";
-  if (v === "No") return "text-vote-nay bg-vote-nay-soft";
-  if (v === "Present") return "text-vote-present bg-vote-present-soft";
-  return "text-muted-foreground bg-muted";
+  if (v === "Yes") return "text-ink bg-vote-yea-soft";
+  if (v === "No") return "text-ink bg-vote-nay-soft";
+  if (v === "Present") return "text-ink bg-vote-present-soft";
+  return "text-ink-muted bg-muted";
 }
 
 interface RepActionCardProps {
@@ -54,7 +57,7 @@ export function RepActionCard({
   if (!promoted && userReps.length === 0) return null;
 
   return (
-    <div className="border-civic-gold/30 bg-civic-cream/40 dark:bg-accent/10 mt-3 space-y-3 rounded-lg border p-3">
+    <div className="border-rule bg-paper mt-3 space-y-3 border p-3">
       {promoted ? (
         <PromotedRep
           rep={promoted}
@@ -62,7 +65,7 @@ export function RepActionCard({
           isWhyIntent={isWhyIntent}
         />
       ) : (
-        <p className="text-foreground text-sm font-medium">
+        <p className="text-ink text-sm font-medium">
           Want to share your view? Contact your representatives:
         </p>
       )}
@@ -70,7 +73,7 @@ export function RepActionCard({
       {!promotedIsUserRep && userReps.length > 0 ? (
         <div className="space-y-1.5">
           {promoted ? (
-            <p className="text-muted-foreground text-xs">
+            <p className="text-ink-muted text-xs">
               Or contact your own representatives:
             </p>
           ) : null}
@@ -94,7 +97,6 @@ function PromotedRep({
   isUserRep: boolean;
   isWhyIntent: boolean;
 }) {
-  const colors = partyColor(rep.party);
   const hasVote = rep.vote !== NO_VOTE_SENTINEL;
   const voteLabel = hasVote ? normalizeRepVote(rep.vote) : null;
   const repHref = `/representatives/${rep.slug || rep.bioguideId}`;
@@ -112,15 +114,15 @@ function PromotedRep({
 
   return (
     <div className="space-y-2">
-      <p className="text-foreground text-sm leading-snug">{ctaCopy}</p>
-      <div
-        className={`bg-card flex items-center gap-3 rounded-lg border p-2.5 ${colors.bar}`}
-      >
+      <p className="text-ink text-sm leading-snug">{ctaCopy}</p>
+      {/* Rep card grammar: paper, rule hairline, 4px sapphire left
+          border. Party is the letter node — never a colour. */}
+      <div className="bg-card border-rule border-l-sapphire flex items-center gap-3 border border-l-4 p-2.5">
         <Link
           href={repHref}
           className="flex min-w-0 flex-1 items-center gap-3 transition-opacity hover:opacity-80"
         >
-          <div className="bg-muted relative h-11 w-9 flex-shrink-0 overflow-hidden rounded-md">
+          <div className="bg-muted relative h-11 w-9 flex-shrink-0 overflow-hidden">
             <RepPhoto
               bioguideId={rep.bioguideId ?? null}
               firstName={rep.firstName}
@@ -130,13 +132,21 @@ function PromotedRep({
             />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-foreground truncate text-sm font-semibold">
+            <p className="text-ink truncate text-sm font-semibold">
               {rep.firstName} {rep.lastName}
             </p>
-            <p className="text-muted-foreground truncate text-xs">
-              {rep.party.replace("Democratic", "Democrat")} · {rep.state}
-              {rep.district ? `-${rep.district}` : ""}
-              {voteLabel ? ` · Voted ${voteLabel}` : ""}
+            <p className="text-ink-muted flex min-w-0 items-center gap-1.5 text-xs">
+              <span className="party-node party-node--sm" aria-hidden>
+                {partyLetter(rep.party)}
+              </span>
+              <span className="sr-only">
+                {rep.party.replace("Democratic", "Democrat")},
+              </span>
+              <span className="truncate">
+                {rep.state}
+                {rep.district ? `-${rep.district}` : ""}
+                {voteLabel ? ` · Voted ${voteLabel}` : ""}
+              </span>
             </p>
           </div>
         </Link>
@@ -152,17 +162,17 @@ function CompactRepRow({ rep }: { rep: RepresentativeWithVote }) {
   const voteLabel = hasVote ? normalizeRepVote(rep.vote) : null;
 
   return (
-    <div className="bg-card flex items-center gap-2 rounded-md border p-2 text-xs">
+    <div className="bg-card border-rule flex items-center gap-2 border p-2 text-xs">
       <Link
         href={repHref}
         className="min-w-0 flex-1 truncate transition-opacity hover:opacity-80"
       >
-        <span className="text-foreground font-medium">
+        <span className="text-ink font-medium">
           {rep.firstName[0]}. {rep.lastName}
         </span>
         {voteLabel ? (
           <span
-            className={`ml-1.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${voteBadgeClass(rep.vote)}`}
+            className={`ml-1.5 inline-block px-1.5 py-0.5 text-[10px] font-bold tracking-[0.1em] uppercase ${voteBadgeClass(rep.vote)}`}
           >
             {voteLabel}
           </span>
@@ -188,7 +198,7 @@ function RepActions({
           href={`tel:${rep.phone}`}
           aria-label={`Call ${rep.firstName} ${rep.lastName} at ${rep.phone}`}
           title={rep.phone}
-          className="text-muted-foreground hover:text-civic-gold hover:bg-civic-gold/10 inline-flex items-center justify-center rounded-md p-1.5 transition-colors"
+          className="text-ink-muted hover:text-sapphire-deep hover:bg-muted inline-flex items-center justify-center p-1.5 transition-colors"
         >
           <Phone className={iconClass} />
         </a>
@@ -200,7 +210,7 @@ function RepActions({
           rel="noopener noreferrer"
           aria-label={`${rep.firstName} ${rep.lastName} on Congress.gov`}
           title="Open profile on Congress.gov"
-          className="text-muted-foreground hover:text-civic-gold hover:bg-civic-gold/10 inline-flex items-center justify-center rounded-md p-1.5 transition-colors"
+          className="text-ink-muted hover:text-sapphire-deep hover:bg-muted inline-flex items-center justify-center p-1.5 transition-colors"
         >
           <ExternalLink className={iconClass} />
         </a>

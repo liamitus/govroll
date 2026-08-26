@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 /**
  * Body of the explain popover. Pure presentational + a single fetch
  * call to `/api/ai/explain-passage`. Selection wiring + positioning
@@ -95,11 +97,7 @@ export function ExplainPopoverContent({
 
   if (state.status === "idle") {
     return (
-      <button
-        type="button"
-        onClick={handleExplain}
-        className="bg-civic-gold/95 hover:bg-civic-gold focus-visible:ring-civic-gold/40 inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2"
-      >
+      <Button size="sm" onClick={handleExplain}>
         <svg
           className="h-3.5 w-3.5"
           fill="none"
@@ -115,14 +113,14 @@ export function ExplainPopoverContent({
           />
         </svg>
         Explain in plain English
-      </button>
+      </Button>
     );
   }
 
   if (state.status === "loading") {
     return (
-      <p className="text-muted-foreground inline-flex items-center gap-2 text-xs">
-        <span className="border-civic-gold inline-block h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" />
+      <p className="text-ink-muted inline-flex items-center gap-2 text-xs">
+        <span className="border-sapphire inline-block h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" />
         Asking AI…
       </p>
     );
@@ -132,13 +130,13 @@ export function ExplainPopoverContent({
     return (
       <div
         role="alert"
-        className="text-destructive max-w-xs space-y-2 text-xs leading-relaxed"
+        className="border-ink text-ink-muted max-w-xs space-y-2 border-[1.5px] border-dashed p-2.5 text-xs leading-relaxed"
       >
         <p>{state.errorMessage}</p>
         <button
           type="button"
           onClick={handleExplain}
-          className="text-civic-gold text-xs font-semibold underline-offset-2 hover:underline"
+          className="text-sapphire-deep text-xs font-semibold underline-offset-2 hover:underline"
         >
           Try again
         </button>
@@ -148,13 +146,10 @@ export function ExplainPopoverContent({
 
   // success
   return (
-    <p
-      className="text-foreground max-w-sm text-sm leading-relaxed"
-      aria-live="polite"
-    >
+    <p className="text-ink max-w-sm text-sm leading-relaxed" aria-live="polite">
       {state.explanation}
       {state.cached ? (
-        <span className="text-muted-foreground/80 ml-1 text-xs">(cached)</span>
+        <span className="text-ink-muted ml-1 text-xs">(cached)</span>
       ) : null}
     </p>
   );

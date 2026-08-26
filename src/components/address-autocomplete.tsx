@@ -221,13 +221,13 @@ export function AddressAutocomplete({
         <ul
           id="address-autocomplete-listbox"
           role="listbox"
-          className="border-border/80 absolute top-[calc(100%+6px)] right-0 left-0 z-50 overflow-hidden rounded-xl border bg-white py-1 shadow-xl"
+          className="border-rule bg-paper absolute top-[calc(100%+6px)] right-0 left-0 z-50 overflow-hidden border py-1"
         >
           {phase === "loading" && suggestions.length === 0 ? (
             [0, 1, 2].map((i) => (
               <li key={i} className="px-4 py-3" role="presentation">
                 <div
-                  className="bg-muted/60 h-4 animate-pulse rounded-md"
+                  className="bg-muted/60 h-4 animate-pulse"
                   style={{ width: `${75 - i * 15}%` }}
                 />
               </li>
@@ -242,12 +242,12 @@ export function AddressAutocomplete({
                 onMouseDown={() => handleSelect(s)}
                 onMouseEnter={() => setActiveIndex(i)}
                 className={`flex cursor-pointer items-center gap-3 px-4 py-3 text-sm transition-colors ${
-                  i === activeIndex ? "bg-navy/[0.06]" : "hover:bg-muted/40"
+                  i === activeIndex ? "bg-ink/[0.06]" : "hover:bg-muted/40"
                 }`}
               >
                 {s.isRawInput ? (
                   <svg
-                    className="text-navy/30 h-4 w-4 flex-shrink-0"
+                    className="text-hollow h-4 w-4 flex-shrink-0"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -260,7 +260,7 @@ export function AddressAutocomplete({
                   </svg>
                 ) : (
                   <svg
-                    className="text-navy/30 h-4 w-4 flex-shrink-0"
+                    className="text-hollow h-4 w-4 flex-shrink-0"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -272,7 +272,7 @@ export function AddressAutocomplete({
                     <circle cx="12" cy="10" r="3" />
                   </svg>
                 )}
-                <span className="text-foreground">
+                <span className="text-ink">
                   {s.isRawInput ? (
                     <>
                       Search{" "}
@@ -287,9 +287,9 @@ export function AddressAutocomplete({
               </li>
             ))
           ) : (
-            <li className="text-muted-foreground px-4 py-3 text-sm">
+            <li className="text-ink-muted px-4 py-3 text-sm">
               No suggestions — press{" "}
-              <span className="text-navy font-medium">Look up</span> to search
+              <span className="text-ink font-medium">Look up</span> to search
               this address anyway
             </li>
           )}

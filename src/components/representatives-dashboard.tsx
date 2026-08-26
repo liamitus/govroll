@@ -7,7 +7,7 @@ import { useAddress } from "@/hooks/use-address";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { RepPhoto } from "@/components/representatives/rep-photo";
 import {
-  partyColor,
+  partyLetter,
   chamberLabel,
   nextElection,
 } from "@/lib/representative-utils";
@@ -58,21 +58,15 @@ export function RepresentativesDashboard() {
 
   if (!address) {
     return (
-      <div className="border-navy/10 civic-pattern relative overflow-hidden rounded-lg border bg-white">
+      <div className="border-rule bg-paper relative border">
         <div className="relative px-6 py-12 text-center sm:py-14">
-          <div className="text-civic-gold/30 mx-auto mb-6 flex items-center justify-center gap-3">
-            <div className="bg-civic-gold/30 h-px w-10" />
-            <span className="text-sm">&#9733;</span>
-            <div className="bg-civic-gold/30 h-px w-10" />
-          </div>
-
-          <p className="text-navy/70 mb-3 text-xs font-semibold tracking-[0.3em] uppercase">
+          <p className="text-ink-muted mb-3 text-[11px] font-bold tracking-[0.18em] uppercase">
             Your Representatives
           </p>
-          <h2 className="text-navy mx-auto max-w-md text-2xl leading-[1.15] font-bold tracking-tight sm:text-3xl">
+          <h2 className="text-ink mx-auto max-w-md text-2xl leading-[1.15] sm:text-3xl">
             See who speaks for you in Congress
           </h2>
-          <p className="text-muted-foreground mx-auto mt-3 max-w-sm text-base leading-relaxed">
+          <p className="text-ink-muted mx-auto mt-3 max-w-sm text-base leading-relaxed">
             Enter your address to see your senators and representative.
           </p>
 
@@ -92,17 +86,17 @@ export function RepresentativesDashboard() {
                   setUserAddress(addr);
                 }}
                 placeholder="Your US street address"
-                className="border-navy/10 placeholder:text-muted-foreground focus:border-navy/30 focus:ring-navy/5 h-12 w-full rounded-md border-2 bg-white px-4 pr-24 text-base transition-all focus:ring-4 focus:outline-none"
+                className="border-rule placeholder:text-ink-muted focus:border-ink focus-visible:ring-gold bg-paper h-12 w-full border px-4 pr-24 text-base transition-colors focus:outline-none focus-visible:ring-2"
               />
-              <button className="bg-navy hover:bg-navy-light absolute top-1/2 right-1.5 z-10 h-9 -translate-y-1/2 rounded px-4 text-sm font-medium tracking-wide text-white transition-colors">
+              <button className="bg-sapphire-deep hover:bg-sapphire text-paper absolute top-1/2 right-1.5 z-10 h-9 -translate-y-1/2 px-4 text-sm font-semibold tracking-wide transition-colors">
                 Look up
               </button>
             </div>
-            <p className="text-muted-foreground mt-3 text-xs tracking-wide">
+            <p className="text-ink-muted mt-3 text-xs tracking-wide">
               We don&apos;t store your address. It stays on your device.{" "}
               <Link
                 href="/privacy"
-                className="hover:text-navy underline underline-offset-2 transition-colors"
+                className="hover:text-ink underline underline-offset-2 transition-colors"
               >
                 Privacy policy
               </Link>
@@ -118,7 +112,7 @@ export function RepresentativesDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-navy/70 text-base font-semibold tracking-[0.2em] uppercase">
+          <h2 className="text-ink-muted font-sans text-[11px] font-bold tracking-[0.18em] uppercase">
             Your Representatives
           </h2>
         </div>
@@ -142,16 +136,16 @@ export function RepresentativesDashboard() {
                   setUserAddress(addr);
                   setEditAddress(false);
                 }}
-                className="border-input focus:ring-navy/30 h-7 w-52 rounded border px-2 text-sm focus:ring-2 focus:outline-none"
+                className="border-rule bg-paper focus-visible:ring-gold h-7 w-52 border px-2 text-sm focus:outline-none focus-visible:ring-2"
                 autoFocus
               />
-              <button className="bg-navy hover:bg-navy-light h-7 rounded px-2 text-sm text-white">
+              <button className="bg-sapphire-deep hover:bg-sapphire text-paper h-7 px-2 text-sm font-semibold">
                 {inputAddr.trim() ? "Update" : "Clear"}
               </button>
               <button
                 type="button"
                 onClick={() => setEditAddress(false)}
-                className="text-muted-foreground hover:text-foreground h-7 px-2 text-sm"
+                className="text-ink-muted hover:text-ink h-7 px-2 text-sm"
               >
                 Cancel
               </button>
@@ -162,7 +156,7 @@ export function RepresentativesDashboard() {
                 setInputAddr(address);
                 setEditAddress(true);
               }}
-              className="text-muted-foreground hover:text-navy text-sm transition-colors"
+              className="text-ink-muted hover:text-ink text-sm transition-colors"
             >
               <span className="inline-block align-bottom" title={address}>
                 {shortAddress(address)}
@@ -177,15 +171,15 @@ export function RepresentativesDashboard() {
       {loading && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-muted h-40 animate-pulse rounded-lg" />
+            <div key={i} className="bg-muted h-40 animate-pulse" />
           ))}
         </div>
       )}
 
       {error && (
-        <div className="border-border/60 bg-muted/30 space-y-3 rounded-lg border p-6 text-center">
-          <p className="text-muted-foreground text-base">{error}</p>
-          <p className="text-muted-foreground/80 mx-auto max-w-sm text-sm">
+        <div className="border-rule bg-paper space-y-3 border p-6 text-center">
+          <p className="text-ink-muted text-base">{error}</p>
+          <p className="text-ink-muted/80 mx-auto max-w-sm text-sm">
             Our geocoder occasionally rejects addresses it doesn&apos;t
             recognize. Try adding the ZIP code, removing an apartment number, or
             using a nearby street address.
@@ -193,7 +187,7 @@ export function RepresentativesDashboard() {
           <div className="flex flex-wrap justify-center gap-2">
             <button
               onClick={() => refetch()}
-              className="text-navy border-border/60 hover:bg-navy/5 inline-flex items-center gap-1.5 rounded-md border bg-white px-3 py-1.5 text-xs font-medium transition-colors"
+              className="text-ink border-rule hover:border-ink/40 bg-paper inline-flex items-center gap-1.5 border px-3 py-1.5 text-xs font-semibold transition-colors"
             >
               Try again
             </button>
@@ -202,7 +196,7 @@ export function RepresentativesDashboard() {
                 setInputAddr("");
                 setUserAddress("");
               }}
-              className="text-muted-foreground hover:text-navy inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
+              className="text-ink-muted hover:text-ink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
             >
               Enter a different address
             </button>
@@ -210,84 +204,84 @@ export function RepresentativesDashboard() {
         </div>
       )}
 
-      {/* Rep Cards */}
+      {/* Rep Cards — paper on rule hairlines with a sapphire left rule;
+          party is a letter in an ink-ringed node, never a colour. */}
       {!loading && !error && reps.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {reps.map((rep, i) => {
-            const colors = partyColor(rep.party);
-            return (
-              <Link
-                key={rep.bioguideId || i}
-                href={`/representatives/${rep.slug || rep.bioguideId}`}
-                className={`border-border/60 relative flex flex-col overflow-hidden rounded-lg border bg-white ${colors.bar} animate-fade-slide-up hover:border-navy/20 cursor-pointer transition-all hover:shadow-md`}
-                style={{ animationDelay: `${i * 80}ms` }}
-              >
-                <div className="flex-1 p-4">
-                  <div className="flex gap-3.5">
-                    {/* 4:5 portrait — object-position: center 20% avoids ceiling/forehead extremes */}
-                    <div className="bg-muted relative h-20 w-16 flex-shrink-0 overflow-hidden rounded-md">
-                      <RepPhoto
-                        bioguideId={rep.bioguideId ?? null}
-                        firstName={rep.firstName}
-                        lastName={rep.lastName}
-                        alt={rep.name}
-                        imgClassName="object-[center_20%]"
-                        fallbackClassName="text-lg font-medium"
-                      />
-                    </div>
+          {reps.map((rep, i) => (
+            <Link
+              key={rep.bioguideId || i}
+              href={`/representatives/${rep.slug || rep.bioguideId}`}
+              className="border-rule bg-paper border-l-sapphire animate-fade-slide-up hover:border-ink/40 hover:border-l-sapphire relative flex cursor-pointer flex-col border border-l-4 transition-colors"
+              style={{ animationDelay: `${i * 80}ms` }}
+            >
+              <div className="flex-1 p-4">
+                <div className="flex gap-3.5">
+                  {/* Circular 46px avatar — sand ground, ink ring, Archivo
+                      initials when no photo exists. */}
+                  <div className="border-ink bg-sand relative h-[46px] w-[46px] flex-shrink-0 overflow-hidden rounded-full border-[1.5px]">
+                    <RepPhoto
+                      bioguideId={rep.bioguideId ?? null}
+                      firstName={rep.firstName}
+                      lastName={rep.lastName}
+                      alt={rep.name}
+                      imgClassName="object-[center_20%]"
+                      fallbackClassName="text-sm font-extrabold"
+                    />
+                  </div>
 
-                    {/* Info — name is primary, everything else is muted */}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-navy text-base leading-snug font-semibold">
+                  {/* Info — name is primary, everything else is muted */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-ink truncate text-base leading-snug font-bold">
                         {rep.firstName} {rep.lastName}
                       </p>
-                      <p className="text-muted-foreground mt-0.5 text-xs">
-                        {chamberLabel(rep.chamber)} · {rep.state}
-                        {rep.district ? `-${rep.district}` : ""}
-                      </p>
-
-                      <div className="mt-2 flex items-center gap-2">
-                        <span
-                          className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold ${colors.badge}`}
-                        >
-                          {rep.party.replace("Democratic", "Democrat")}
-                        </span>
-                      </div>
-
-                      <p className="text-muted-foreground mt-1.5 text-xs">
-                        Next election {nextElection(rep.termEnd, rep.chamber)}
-                      </p>
+                      <span
+                        className="party-node party-node--sm"
+                        title={rep.party}
+                        aria-label={rep.party}
+                      >
+                        {partyLetter(rep.party)}
+                      </span>
                     </div>
+                    <p className="text-ink-muted mt-0.5 text-[12.5px] tabular-nums">
+                      {chamberLabel(rep.chamber)} · {rep.state}
+                      {rep.district ? `-${rep.district}` : ""}
+                    </p>
+
+                    <p className="text-ink-muted mt-1.5 text-[12.5px] tabular-nums">
+                      Next election {nextElection(rep.termEnd, rep.chamber)}
+                    </p>
                   </div>
                 </div>
+              </div>
 
-                {/* Phone CTA — pinned to bottom, always aligned across cards */}
-                {rep.phone && (
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      window.location.href = `tel:${rep.phone}`;
-                    }}
-                    className="text-navy/80 hover:text-navy hover:bg-navy/5 mx-2.5 mb-2.5 flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-base font-medium transition-colors"
+              {/* Phone CTA — pinned to bottom, always aligned across cards */}
+              {rep.phone && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.location.href = `tel:${rep.phone}`;
+                  }}
+                  className="text-ink-muted hover:text-ink hover:bg-ink/5 mx-2.5 mb-2.5 flex cursor-pointer items-center gap-2 px-1.5 py-1.5 text-[12.5px] font-medium tabular-nums transition-colors"
+                >
+                  <svg
+                    className="h-4 w-4 flex-shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <svg
-                      className="h-4 w-4 flex-shrink-0"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                    </svg>
-                    {rep.phone}
-                  </button>
-                )}
-              </Link>
-            );
-          })}
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                  </svg>
+                  {rep.phone}
+                </button>
+              )}
+            </Link>
+          ))}
         </div>
       )}
     </div>

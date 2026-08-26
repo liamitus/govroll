@@ -17,10 +17,12 @@ export function BillStageSection({
   return (
     <section
       aria-label="Legislative stage"
-      className="bg-card space-y-3 rounded-xl border px-5 py-4"
+      className="bg-paper border-rule space-y-3 border px-5 py-4"
     >
       <BillJourney steps={steps} compact />
-      <p className="border-l-civic-gold bg-civic-cream/50 dark:bg-accent/30 text-foreground/85 rounded-md border-l-4 px-3.5 py-2 text-xs leading-relaxed">
+      {/* Gold marks "here, now" — the left rule ties this note to the
+          route's current position without adding another saturated fill. */}
+      <p className="border-l-gold bg-sand text-ink/85 border-l-4 px-3.5 py-2 text-xs leading-relaxed">
         {statusDetail}
       </p>
     </section>

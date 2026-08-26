@@ -76,11 +76,16 @@ export function BillHero(props: BillHeroProps) {
 
   return (
     <header className="space-y-3">
-      {/* Citation row — bill number + Congress + chamber. Replaces the
-          procedural long title as the page's primary identifier so the
-          headline can be a real headline instead of "To amend the FISA…". */}
-      <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-semibold tracking-[0.08em] uppercase">
-        <span className="text-foreground/80">{billNumber}</span>
+      {/* Citation kicker — "H.R. 5334 · HOUSE BILL · 119TH CONGRESS".
+          Replaces the procedural long title as the page's primary
+          identifier so the headline can be a real headline instead of
+          "To amend the FISA…". */}
+      <div className="text-ink-muted flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-bold tracking-[0.18em] uppercase tabular-nums">
+        <span className="text-ink">{billNumber}</span>
+        <span aria-hidden className="opacity-50">
+          ·
+        </span>
+        <span>{props.typeLabel}</span>
         {congressLabel && (
           <>
             <span aria-hidden className="opacity-50">
@@ -89,17 +94,15 @@ export function BillHero(props: BillHeroProps) {
             <span>{congressLabel}</span>
           </>
         )}
-        <span aria-hidden className="opacity-50">
-          ·
-        </span>
-        <span>{props.typeLabel}</span>
       </div>
 
       {/* Headline — smart fallback chain (popular → short → display →
-          summary-extract → title). */}
+          summary-extract → title). Archivo comes from the global h1 rule;
+          bill titles run at wdth 110, sentence case exactly as Congress
+          titles them. */}
       <h1
-        className={`text-xl leading-snug font-bold text-balance sm:text-2xl ${
-          isInactive ? "text-foreground/75" : ""
+        className={`wdth-110 text-xl leading-snug font-bold text-balance sm:text-2xl ${
+          isInactive ? "text-ink-muted" : ""
         }`}
       >
         {headline}
@@ -129,29 +132,31 @@ export function BillHero(props: BillHeroProps) {
         </div>
       )}
 
-      {/* Status badges */}
+      {/* Status pills — stage, not verdict. Sapphire-deep fill = terminal
+          cleared, gold fill = pending action, outline = in progress,
+          dashed/faded hollow = died. Never red, never alarm styling. */}
       <div className="flex flex-wrap items-center gap-2">
         <Badge
           className={`${
             isInactive
-              ? "bg-muted text-foreground/60 border-0"
+              ? "border-hollow text-ink-muted border border-dashed bg-transparent"
               : props.statusStyle
-          } px-2.5 py-0.5 text-xs font-semibold`}
+          } px-2.5 py-0.5 text-[10px] font-bold tracking-[0.08em] uppercase`}
         >
           {props.statusHeadline}
         </Badge>
         {props.momentumTier === "DEAD" && (
-          <Badge className="bg-foreground/80 text-background border-0 text-xs">
+          <Badge className="border-hollow text-ink-muted border border-dashed bg-transparent text-[10px] font-bold tracking-[0.08em] uppercase opacity-70">
             Dead
           </Badge>
         )}
         {props.momentumTier === "DORMANT" && (
-          <Badge className="bg-muted-foreground/80 text-background border-0 text-xs">
+          <Badge className="border-hollow text-ink-muted border bg-transparent text-[10px] font-bold tracking-[0.08em] uppercase">
             Dormant
           </Badge>
         )}
         {props.momentumTier === "STALLED" && (
-          <Badge className="border-0 bg-amber-500/80 text-xs text-white">
+          <Badge className="border-rule text-ink-muted border bg-transparent text-[10px] font-bold tracking-[0.08em] uppercase">
             Stalled
           </Badge>
         )}
@@ -179,7 +184,7 @@ export function BillHero(props: BillHeroProps) {
                   className="text-foreground/90 flex gap-2 text-sm leading-relaxed"
                 >
                   <span
-                    className="text-civic-gold mt-[0.55em] h-1 w-1 flex-none rounded-full bg-current"
+                    className="bg-sapphire mt-[0.55em] h-1 w-1 flex-none rounded-full"
                     aria-hidden
                   />
                   <span>{point}</span>
@@ -199,7 +204,7 @@ export function BillHero(props: BillHeroProps) {
           {fallbackIsLong && (
             <button
               onClick={() => setCrsExpanded((v) => !v)}
-              className="text-navy/70 hover:text-navy mt-1.5 cursor-pointer text-xs font-medium transition-colors"
+              className="text-sapphire-deep mt-1.5 cursor-pointer text-xs font-medium underline-offset-2 transition-colors hover:underline"
             >
               {crsExpanded ? "Show less" : "Show full summary"}
             </button>
@@ -213,10 +218,10 @@ export function BillHero(props: BillHeroProps) {
           {props.readerHref && (
             <a
               href={props.readerHref}
-              className="border-civic-gold/50 bg-civic-cream/50 text-foreground hover:bg-civic-cream focus-visible:ring-civic-gold/40 dark:bg-card dark:hover:bg-accent/30 inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2"
+              className="bg-sapphire-deep text-paper hover:bg-sapphire-deep/90 focus-visible:ring-gold inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2"
             >
               <svg
-                className="text-civic-gold h-4 w-4"
+                className="h-4 w-4"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -274,7 +279,7 @@ export function BillHero(props: BillHeroProps) {
       )}
 
       {/* Meta row — dates only. */}
-      <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums">
         <span>Introduced {props.introducedDate}</span>
         {props.lastActionDate && (
           <span>Last action {props.lastActionDate}</span>

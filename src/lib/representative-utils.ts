@@ -1,42 +1,20 @@
 // Shared utilities for representative display
 
-export function partyColor(party: string) {
+/**
+ * Roll Call encodes party by letter ONLY — D · R · I in identical
+ * circular frames (`.party-node` in globals.css). Party never gets a
+ * colour, a fill, or a heavier mark: red/blue would put a partisan
+ * read on every screen, and node fill is already reserved for stage
+ * (docs/design/roll-call.md, "the encoding law").
+ */
+export function partyLetter(party: string): string {
   const p = party.toLowerCase();
-  if (p.includes("democrat"))
-    return {
-      bar: "party-bar-democrat",
-      badge: "bg-dem text-white",
-      dot: "bg-dem",
-    };
-  if (p.includes("republican"))
-    return {
-      bar: "party-bar-republican",
-      badge: "bg-rep text-white",
-      dot: "bg-rep",
-    };
-  if (p.includes("independent"))
-    return {
-      bar: "party-bar-independent",
-      badge: "bg-ind text-white",
-      dot: "bg-ind",
-    };
-  if (p.includes("libertarian"))
-    return {
-      bar: "party-bar-libertarian",
-      badge: "bg-lib/15 text-lib",
-      dot: "bg-lib",
-    };
-  if (p.includes("green"))
-    return {
-      bar: "party-bar-green",
-      badge: "bg-green text-white",
-      dot: "bg-green",
-    };
-  return {
-    bar: "party-bar-unknown",
-    badge: "bg-gray-400 text-white",
-    dot: "bg-gray-400",
-  };
+  if (p.includes("democrat")) return "D";
+  if (p.includes("republican")) return "R";
+  if (p.includes("independent")) return "I";
+  if (p.includes("libertarian")) return "L";
+  if (p.includes("green")) return "G";
+  return "?";
 }
 
 export function chamberLabel(chamber: string) {

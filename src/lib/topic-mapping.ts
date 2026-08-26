@@ -7,24 +7,33 @@ export interface TopicInfo {
   label: string;
   /** CRS policyArea values that map to this topic */
   policyAreas: string[];
-  color: string;
+  /**
+   * Roll Call line-palette background class (`bg-line-*`), or null.
+   *
+   * Line colour is identification, never scanning: it renders ONLY as a
+   * 5–6px rule or left-margin bar — never a chip fill, never type
+   * (four of the eleven hues fail AA as text on sand). Eleven hues is
+   * the ceiling of the ramp (guide §5.3), so topics beyond the brand's
+   * eleven carry no line colour and are set typographically.
+   */
+  line: string | null;
 }
 
 export const TOPICS: TopicInfo[] = [
   {
     label: "Health",
     policyAreas: ["Health"],
-    color: "bg-rose-100 text-rose-700",
+    line: "bg-line-health",
   },
   {
     label: "Defense",
     policyAreas: ["Armed Forces and National Security"],
-    color: "bg-slate-100 text-slate-700",
+    line: "bg-line-defense",
   },
   {
     label: "Education",
     policyAreas: ["Education"],
-    color: "bg-violet-100 text-violet-700",
+    line: "bg-line-education",
   },
   {
     label: "Economy",
@@ -32,7 +41,7 @@ export const TOPICS: TopicInfo[] = [
       "Economics and Public Finance",
       "Finance and Financial Sector",
     ],
-    color: "bg-emerald-100 text-emerald-700",
+    line: "bg-line-economy",
   },
   {
     label: "Environment",
@@ -41,27 +50,27 @@ export const TOPICS: TopicInfo[] = [
       "Public Lands and Natural Resources",
       "Water Resources Development",
     ],
-    color: "bg-green-100 text-green-700",
+    line: "bg-line-environment",
   },
   {
     label: "Immigration",
     policyAreas: ["Immigration"],
-    color: "bg-amber-100 text-amber-700",
+    line: "bg-line-immigration",
   },
   {
     label: "Crime & Justice",
     policyAreas: ["Crime and Law Enforcement", "Law"],
-    color: "bg-red-100 text-red-700",
+    line: "bg-line-justice",
   },
   {
     label: "Civil Rights",
     policyAreas: ["Civil Rights and Liberties, Minority Issues"],
-    color: "bg-purple-100 text-purple-700",
+    line: "bg-line-civil-rights",
   },
   {
     label: "Technology",
     policyAreas: ["Science, Technology, Communications"],
-    color: "bg-cyan-100 text-cyan-700",
+    line: "bg-line-technology",
   },
   {
     label: "Foreign Affairs",
@@ -69,47 +78,47 @@ export const TOPICS: TopicInfo[] = [
       "International Affairs",
       "Foreign Trade and International Finance",
     ],
-    color: "bg-blue-100 text-blue-700",
+    line: "bg-line-foreign",
   },
   {
     label: "Housing",
     policyAreas: ["Housing and Community Development"],
-    color: "bg-orange-100 text-orange-700",
+    line: "bg-line-housing",
   },
   {
     label: "Transportation",
     policyAreas: ["Transportation and Public Works"],
-    color: "bg-sky-100 text-sky-700",
+    line: null,
   },
   {
     label: "Agriculture",
     policyAreas: ["Agriculture and Food"],
-    color: "bg-lime-100 text-lime-700",
+    line: null,
   },
   {
     label: "Energy",
     policyAreas: ["Energy"],
-    color: "bg-yellow-100 text-yellow-700",
+    line: null,
   },
   {
     label: "Government",
     policyAreas: ["Government Operations and Politics", "Congress", "Taxation"],
-    color: "bg-zinc-100 text-zinc-700",
+    line: null,
   },
   {
     label: "Families",
     policyAreas: ["Families", "Social Welfare"],
-    color: "bg-pink-100 text-pink-700",
+    line: null,
   },
   {
     label: "Labor",
     policyAreas: ["Labor and Employment"],
-    color: "bg-indigo-100 text-indigo-700",
+    line: null,
   },
   {
     label: "Commerce",
     policyAreas: ["Commerce"],
-    color: "bg-teal-100 text-teal-700",
+    line: null,
   },
 ];
 

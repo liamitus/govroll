@@ -311,13 +311,12 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               <DialogTitle>Check Your Email</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
-              <p className="text-muted-foreground text-base">
+              <p className="text-ink-muted text-base">
                 We just sent a link to{" "}
-                <span className="text-foreground font-medium">{email}</span>.
-                Click it to continue — it should land in your inbox in under a
-                minute.
+                <span className="text-ink font-medium">{email}</span>. Click it
+                to continue — it should land in your inbox in under a minute.
               </p>
-              <p className="text-muted-foreground text-sm">
+              <p className="text-ink-muted text-sm">
                 Didn&apos;t see it? Check your spam folder.
               </p>
               <Button
@@ -335,7 +334,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               <DialogTitle>Reset Password</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleForgotPassword} className="space-y-4">
-              <p className="text-muted-foreground text-base">
+              <p className="text-ink-muted text-base">
                 Enter your email and we&apos;ll send you a link to reset your
                 password.
               </p>
@@ -350,17 +349,21 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 />
               </div>
 
-              {error && <p className="text-sm text-red-500">{error}</p>}
+              {error && (
+                <p className="border-ink text-ink-muted border-[1.5px] border-dashed px-3 py-2 text-sm">
+                  {error}
+                </p>
+              )}
 
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting ? "Sending..." : "Send Reset Link"}
               </Button>
 
-              <p className="text-muted-foreground text-center text-base">
+              <p className="text-ink-muted text-center text-base">
                 <button
                   type="button"
                   onClick={() => switchMode("login")}
-                  className="text-primary underline"
+                  className="text-sapphire-deep underline"
                 >
                   Back to Sign In
                 </button>
@@ -418,7 +421,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
 
             <div className="relative">
               <Separator />
-              <span className="bg-popover text-muted-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-2 text-xs">
+              <span className="bg-popover text-ink-muted absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-2 text-xs">
                 or
               </span>
             </div>
@@ -442,7 +445,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                     <button
                       type="button"
                       onClick={() => switchMode("forgot")}
-                      className="text-muted-foreground hover:text-primary text-sm underline"
+                      className="text-ink-muted hover:text-sapphire-deep text-sm underline"
                     >
                       Forgot password?
                     </button>
@@ -461,7 +464,11 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 )}
               </div>
 
-              {error && <p className="text-sm text-red-500">{error}</p>}
+              {error && (
+                <p className="border-ink text-ink-muted border-[1.5px] border-dashed px-3 py-2 text-sm">
+                  {error}
+                </p>
+              )}
 
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting
@@ -474,11 +481,11 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               </Button>
 
               {mode === "register" && (
-                <p className="text-muted-foreground text-center text-sm leading-relaxed">
+                <p className="text-ink-muted text-center text-sm leading-relaxed">
                   By creating an account, you agree to our{" "}
                   <Link
                     href="/terms"
-                    className="hover:text-foreground underline underline-offset-2"
+                    className="hover:text-ink underline underline-offset-2"
                     onClick={() => onOpenChange(false)}
                   >
                     Terms of Service
@@ -486,7 +493,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                   and{" "}
                   <Link
                     href="/privacy"
-                    className="hover:text-foreground underline underline-offset-2"
+                    className="hover:text-ink underline underline-offset-2"
                     onClick={() => onOpenChange(false)}
                   >
                     Privacy Policy
@@ -495,14 +502,14 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 </p>
               )}
 
-              <p className="text-muted-foreground text-center text-base">
+              <p className="text-ink-muted text-center text-base">
                 {mode === "login" ? (
                   <>
                     Don&apos;t have an account?{" "}
                     <button
                       type="button"
                       onClick={() => switchMode("register")}
-                      className="text-primary underline"
+                      className="text-sapphire-deep underline"
                     >
                       Sign up
                     </button>
@@ -513,7 +520,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                     <button
                       type="button"
                       onClick={() => switchMode("login")}
-                      className="text-primary underline"
+                      className="text-sapphire-deep underline"
                     >
                       Sign in
                     </button>

@@ -9,7 +9,6 @@ import {
 } from "@tanstack/react-query";
 import { BillCard } from "./bill-card";
 import { BillGroupCard } from "./bill-group-card";
-import { RecessNotice } from "@/components/congress-status/recess-notice";
 import { TOPICS } from "@/lib/topic-mapping";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserPref } from "@/hooks/use-user-pref";
@@ -63,6 +62,13 @@ const filterOptions = {
 // value into the server-backed pref the first time a signed-in user lands
 // here, then clear the key. Idempotent — once cleared it never runs again.
 const LEGACY_HIDE_VOTED_STORAGE_KEY = "bills:hide-voted";
+
+// Topic filter chips are neutral — line colour is identification on rows,
+// never a chip fill (the encoding law). Outline chip → active ink fill.
+const CHIP_BASE =
+  "shrink-0 border px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors";
+const CHIP_IDLE = "border-rule text-ink hover:border-ink/40 bg-paper";
+const CHIP_ACTIVE = "border-ink bg-ink text-sand";
 
 export function BillListClient() {
   const [rawFilters, setFilters] = useQueryStates(filterParsers, filterOptions);
@@ -203,11 +209,7 @@ export function BillListClient() {
           typeof rawFilters
         >)
       }
-      className={`rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-all ${
-        current === value
-          ? "bg-navy text-white"
-          : "text-muted-foreground hover:text-navy hover:bg-navy/5"
-      }`}
+      className={`${CHIP_BASE} ${current === value ? CHIP_ACTIVE : "text-ink-muted hover:text-ink border-transparent"}`}
     >
       {label}
     </button>
@@ -215,54 +217,37 @@ export function BillListClient() {
 
   return (
     <div className="space-y-3">
-      {/* Row 1 — Search + Sort (stacks on mobile) */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-        <div className="relative flex-1">
-          <svg
-            className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <circle cx="11" cy="11" r="8" strokeWidth="2" />
-            <path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          <input
-            placeholder="Search bills or sponsors..."
-            value={queryFilters.search}
-            onChange={(e) => setFilters({ search: e.target.value })}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            className="border-border/60 placeholder:text-muted-foreground focus:ring-navy/20 focus:border-navy/20 h-10 w-full rounded-lg border bg-white pr-3 pl-9 text-base focus:ring-2 focus:outline-none"
-          />
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {SORT_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setFilters({ sortBy: opt.value })}
-              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
-                queryFilters.sortBy === opt.value
-                  ? "bg-navy/10 text-navy"
-                  : "text-muted-foreground hover:text-navy"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+      {/* Row 1 — Search */}
+      <div className="relative">
+        <svg
+          className="text-ink-muted absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <circle cx="11" cy="11" r="8" strokeWidth="2" />
+          <path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        <input
+          placeholder="Search bills or sponsors..."
+          value={queryFilters.search}
+          onChange={(e) => setFilters({ search: e.target.value })}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          className="border-rule bg-paper placeholder:text-ink-muted focus:border-ink focus-visible:ring-gold h-10 w-full border pr-3 pl-9 text-base focus:outline-none focus-visible:ring-2"
+        />
       </div>
 
       {/* Search examples — appear on focus when input is empty */}
       {searchFocused && queryFilters.search === "" && (
         <div className="animate-fade-slide-up flex flex-wrap items-center gap-1.5 px-0.5">
-          <span className="text-muted-foreground/70 text-xs">Try:</span>
+          <span className="text-ink-muted text-xs">Try:</span>
           {SEARCH_EXAMPLES.map((example) => (
             <button
               key={example}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setFilters({ search: example })}
-              className="bg-muted/50 text-muted-foreground hover:bg-navy/10 hover:text-navy rounded-full px-2 py-0.5 text-xs transition-colors"
+              className="border-rule text-ink-muted hover:border-ink/40 hover:text-ink border px-2 py-0.5 text-xs tabular-nums transition-colors"
             >
               {example}
             </button>
@@ -270,16 +255,37 @@ export function BillListClient() {
         </div>
       )}
 
-      {/* Row 2 — Topics + Filters toggle */}
+      {/* Row 2 — Sort tabs: 2px ink baseline, active tab carries a 3px
+          sapphire underline overlapping it. */}
+      <div
+        aria-label="Sort bills"
+        className="border-ink flex items-end gap-5 border-b-2"
+      >
+        {SORT_OPTIONS.map((opt) => {
+          const active = queryFilters.sortBy === opt.value;
+          return (
+            <button
+              key={opt.value}
+              aria-pressed={active}
+              onClick={() => setFilters({ sortBy: opt.value })}
+              className={`-mb-[2px] border-b-[3px] px-0.5 pb-1.5 text-[13px] font-semibold transition-colors ${
+                active
+                  ? "border-sapphire text-ink"
+                  : "text-ink-muted hover:text-ink border-transparent"
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Row 3 — Topics + Filters toggle */}
       <div className="flex items-center gap-2">
         <div className="scrollbar-hide -mx-1 flex flex-1 gap-1.5 overflow-x-auto px-1 pb-0.5">
           <button
             onClick={() => setFilters({ topic: "" })}
-            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
-              queryFilters.topic === ""
-                ? "bg-navy text-white"
-                : "bg-muted/50 text-muted-foreground hover:text-navy hover:bg-navy/5"
-            }`}
+            className={`${CHIP_BASE} ${queryFilters.topic === "" ? CHIP_ACTIVE : CHIP_IDLE}`}
           >
             All Topics
           </button>
@@ -291,11 +297,7 @@ export function BillListClient() {
                   topic: queryFilters.topic === t.label ? "" : t.label,
                 })
               }
-              className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
-                queryFilters.topic === t.label
-                  ? "bg-navy text-white"
-                  : "bg-muted/50 text-muted-foreground hover:text-navy hover:bg-navy/5"
-              }`}
+              className={`${CHIP_BASE} ${queryFilters.topic === t.label ? CHIP_ACTIVE : CHIP_IDLE}`}
             >
               {t.label}
             </button>
@@ -304,10 +306,10 @@ export function BillListClient() {
 
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${
+          className={`flex shrink-0 items-center gap-1.5 border px-2.5 py-1 text-xs font-semibold transition-colors ${
             showFilters || activeFilterCount > 0
-              ? "border-navy/20 bg-navy/5 text-navy"
-              : "border-border/50 text-muted-foreground hover:text-navy hover:border-navy/20"
+              ? "border-ink text-ink"
+              : "border-rule text-ink-muted hover:text-ink hover:border-ink/40"
           }`}
         >
           <svg
@@ -321,7 +323,7 @@ export function BillListClient() {
           </svg>
           Filters
           {activeFilterCount > 0 && (
-            <span className="bg-navy flex h-4 w-4 items-center justify-center rounded-full text-xs leading-none text-white">
+            <span className="bg-ink text-sand flex h-4 w-4 items-center justify-center rounded-full text-xs leading-none tabular-nums">
               {activeFilterCount}
             </span>
           )}
@@ -331,7 +333,7 @@ export function BillListClient() {
       {/* Expandable filter row */}
       {showFilters && (
         <div className="animate-fade-slide-up flex flex-wrap items-center gap-3 pb-2">
-          <div className="border-border/50 flex items-center gap-0.5 rounded-full border px-1 py-0.5">
+          <div className="border-rule flex items-center gap-0.5 border px-1 py-0.5">
             {filterPill("All", "both", queryFilters.chamber, "chamber", "both")}
             {filterPill(
               "House",
@@ -349,7 +351,7 @@ export function BillListClient() {
             )}
           </div>
 
-          <div className="border-border/50 flex items-center gap-0.5 rounded-full border px-1 py-0.5">
+          <div className="border-rule flex items-center gap-0.5 border px-1 py-0.5">
             {filterPill("Any", "", queryFilters.status, "status", "")}
             {filterPill(
               "Introduced",
@@ -380,10 +382,10 @@ export function BillListClient() {
 
       {/* Count + hidden bills link */}
       <div className="flex min-h-[24px] items-center justify-between">
-        <p className="text-muted-foreground flex items-center gap-2 text-sm">
+        <p className="text-ink-muted flex items-center gap-2 text-[13px] tabular-nums">
           {isRefiltering && (
-            <span className="text-navy/70 inline-flex items-center gap-1.5">
-              <span className="border-navy/15 border-t-navy/70 h-3 w-3 animate-spin rounded-full border-2" />
+            <span className="inline-flex items-center gap-1.5">
+              <span className="border-ink/15 border-t-ink/70 h-3 w-3 animate-spin rounded-full border-2" />
               Updating…
             </span>
           )}
@@ -395,7 +397,7 @@ export function BillListClient() {
               {queryFilters.momentum === "live" && hiddenByMomentum > 0 && (
                 <button
                   onClick={() => setFilters({ momentum: "all" })}
-                  className="text-muted-foreground/70 hover:text-navy underline decoration-dotted underline-offset-2 transition-colors"
+                  className="hover:text-ink underline decoration-dotted underline-offset-2 transition-colors"
                 >
                   {`(${hiddenByMomentum.toLocaleString("en-US")} dormant or dead hidden)`}
                 </button>
@@ -403,7 +405,7 @@ export function BillListClient() {
               {queryFilters.momentum === "all" && (
                 <button
                   onClick={() => setFilters({ momentum: "live" })}
-                  className="text-muted-foreground/70 hover:text-navy underline decoration-dotted underline-offset-2 transition-colors"
+                  className="hover:text-ink underline decoration-dotted underline-offset-2 transition-colors"
                 >
                   (show active only)
                 </button>
@@ -411,7 +413,7 @@ export function BillListClient() {
               {user && userVotes.size > 0 && (
                 <button
                   onClick={() => setHideVoted(!hideVoted)}
-                  className="text-muted-foreground/70 hover:text-navy underline decoration-dotted underline-offset-2 transition-colors"
+                  className="hover:text-ink underline decoration-dotted underline-offset-2 transition-colors"
                 >
                   {hideVoted
                     ? `(${hiddenByVoteCount} voted hidden)`
@@ -423,16 +425,11 @@ export function BillListClient() {
         </p>
       </div>
 
-      {/* Recess strip — during a named recess the feed's activity dates go
-          quiet for a week+; explain that here, next to the dates themselves,
-          or the feed reads as stale data. */}
-      <RecessNotice />
-
       {/* Jump-to row — when the user typed a bill citation. Sits above
           the main feed so they can still browse other results. */}
       {citation && (
         <div className="animate-fade-slide-up">
-          <div className="text-muted-foreground mb-1.5 px-0.5 text-[11px] font-medium tracking-wide uppercase">
+          <div className="text-ink-muted mb-1.5 px-0.5 text-[11px] font-bold tracking-[0.18em] uppercase tabular-nums">
             {exactMatch ? (
               <>
                 Jump to {citation.shortLabel} {citation.number}
@@ -448,7 +445,7 @@ export function BillListClient() {
             )}
           </div>
           {exactMatch && (
-            <div className="border-navy/20 hover:border-navy/40 rounded-lg border border-dashed transition-colors">
+            <div className="border-hollow hover:border-ink/40 border border-dashed transition-colors">
               <BillCard
                 bill={exactMatch}
                 userVote={userVotes.get(exactMatch.id) ?? null}
@@ -494,24 +491,24 @@ export function BillListClient() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="border-border/50 relative overflow-hidden rounded-lg border bg-white px-5 py-4"
+              className="border-rule bg-paper relative overflow-hidden border px-5 py-4"
               aria-hidden
             >
-              <div className="bg-muted absolute top-0 bottom-0 left-0 w-1 rounded-l-lg" />
+              <div className="bg-rule absolute top-0 bottom-0 left-0 w-[5px]" />
               <div className="space-y-2.5 pl-3">
                 <div
-                  className="bg-muted/60 h-4 rounded motion-safe:animate-pulse"
+                  className="bg-muted h-4 motion-safe:animate-pulse"
                   style={{ width: `${70 - i * 3}%` }}
                 />
                 <div
-                  className="bg-muted/40 h-3 rounded motion-safe:animate-pulse"
+                  className="bg-muted/70 h-3 motion-safe:animate-pulse"
                   style={{ width: `${55 - i * 2}%` }}
                 />
                 <div className="flex items-center gap-2 pt-1">
-                  <div className="bg-muted/50 h-3 w-10 rounded motion-safe:animate-pulse" />
-                  <div className="bg-muted/40 h-4 w-16 rounded motion-safe:animate-pulse" />
-                  <div className="bg-muted/40 h-4 w-14 rounded motion-safe:animate-pulse" />
-                  <div className="bg-muted/30 h-3 w-20 rounded motion-safe:animate-pulse" />
+                  <div className="bg-muted/80 h-3 w-10 motion-safe:animate-pulse" />
+                  <div className="bg-muted/70 h-4 w-16 motion-safe:animate-pulse" />
+                  <div className="bg-muted/70 h-4 w-14 motion-safe:animate-pulse" />
+                  <div className="bg-muted/60 h-3 w-20 motion-safe:animate-pulse" />
                 </div>
               </div>
             </div>
@@ -521,19 +518,19 @@ export function BillListClient() {
 
       {isFetchingNextPage && (
         <div className="flex justify-center py-6">
-          <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <div className="border-navy/15 border-t-navy/60 h-4 w-4 animate-spin rounded-full border-2" />
+          <div className="text-ink-muted flex items-center gap-2 text-sm">
+            <div className="border-ink/15 border-t-ink/60 h-4 w-4 animate-spin rounded-full border-2" />
             Loading more…
           </div>
         </div>
       )}
 
       {error && (
-        <div className="border-border/60 bg-muted/30 space-y-3 rounded-lg border p-6 text-center">
-          <p className="text-muted-foreground text-base">{error}</p>
+        <div className="border-rule bg-paper space-y-3 border p-6 text-center">
+          <p className="text-ink-muted text-base">{error}</p>
           <button
             onClick={() => refetch()}
-            className="text-navy border-border/60 hover:bg-navy/5 inline-flex items-center gap-1.5 rounded-md border bg-white px-3 py-1.5 text-xs font-medium transition-colors"
+            className="text-ink border-rule hover:border-ink/40 bg-paper inline-flex items-center gap-1.5 border px-3 py-1.5 text-xs font-semibold transition-colors"
           >
             Try again
           </button>
@@ -542,7 +539,7 @@ export function BillListClient() {
 
       {!isLoading && !error && bills.length === 0 && (
         <div className="py-16 text-center">
-          <p className="text-muted-foreground text-base">
+          <p className="text-ink-muted text-base">
             No bills found matching your filters.
           </p>
         </div>
